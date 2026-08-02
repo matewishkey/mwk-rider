@@ -48,6 +48,31 @@ if (fix.json) {
   check('all six domains ran', new Set(fix.json.results.map(r => r.section)).size >= 6);
 }
 
+console.log('every finding carries a stable rule id:');
+// The id is public API — agents filter, suppress and report by it. It must be
+// present on every row and shaped `section/rule`, never carry a path.
+if (fix.json) {
+  const rows = fix.json.results;
+  check('every row has an id', rows.every(r => typeof r.id === 'string' && r.id.length > 0));
+  check('  …shaped section/rule, with no path or subject in it',
+    rows.every(r => /^[a-z0-9]+\/[a-z0-9.-]+$/.test(r.id ?? '')),
+    JSON.stringify(rows.filter(r => !/^[a-z0-9]+\/[a-z0-9.-]+$/.test(r.id ?? '')).map(r => r.id).slice(0, 3)));
+  check('  …and one rule keeps one id across its instances',
+    new Set(rows.filter(r => r.name?.startsWith('dep:')).map(r => r.id)).size === 1);
+}
+
+// Location belongs in file/line, not baked into the name string: an agent that
+// reads a finding must not have to grep dist/ to learn which file it means.
+const clsDir = tmpProject('wishbusterz-rider-cls-');
+writeFileSync(join(clsDir, 'package.json'), JSON.stringify({ name: 'fx', type: 'module', dependencies: { astro: '^7.1.6' } }));
+writeFileSync(join(clsDir, 'astro.config.mjs'), "export default { output: 'static' };\n");
+mkdirSync(join(clsDir, 'src', 'pages'), { recursive: true });
+writeFileSync(join(clsDir, 'src', 'pages', 'index.astro'), '<p>x</p>\n<img src="/hero.png">\n');
+const clsRow = runJson(clsDir, ['-s', 'perf']).json?.results.find(r => r.id === 'perf/cls-img-dimensions' && r.outcome === 'fix');
+check('a located finding reports file + line as fields',
+  clsRow?.file === 'src/pages/index.astro' && clsRow?.line === 2, JSON.stringify(clsRow));
+check('  …and its name is just the rule', clsRow?.name === 'cls:img-dimensions');
+
 console.log('section scoping (-s seo) returns only that domain:');
 const scoped = runJson(FIXTURE, ['-s', 'seo']);
 check('only seo results', scoped.json?.results.every(r => r.section === 'seo'));

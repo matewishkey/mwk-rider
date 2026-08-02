@@ -107,7 +107,7 @@ function checkCls(project, reporter) {
     reporter.pass(SEC, 'cls:img-dimensions', 'all content <img> carry width + height (or use <Image>)');
   } else {
     for (const o of offenders) {
-      reporter.fix(SEC, `cls:img-dimensions (${o.file}:${o.line})`, `<img src="${truncate(o.src, 60)}"> lacks width/height → layout shift (CLS)`, 'use <Image> from astro:assets (bakes width/height), or add explicit width + height');
+      reporter.fix(SEC, 'cls:img-dimensions', `<img src="${truncate(o.src, 60)}"> lacks width/height → layout shift (CLS)`, 'use <Image> from astro:assets (bakes width/height), or add explicit width + height', { file: o.file, line: o.line });
     }
   }
 }

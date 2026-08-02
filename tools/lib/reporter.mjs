@@ -9,6 +9,31 @@
 
 import { isHouseStyle } from './policy.mjs';
 
+/**
+ * Stable rule identifier — `section/name`, lowercased and hyphenated.
+ *
+ * `name` alone was never an identifier: it carried the subject and location
+ * ("routed (src/pages/index.astro:140)"), so it varied per finding and nothing
+ * could be suppressed, counted or referenced by rule. Both are separate fields
+ * now, and the id is what you cite. Treat these as public API: renaming one
+ * breaks anybody filtering on it.
+ */
+export function ruleId(section, name) {
+  const base = String(name).replace(/\s*\(.*\)\s*$/, '');
+  return `${slug(section)}/${slug(base)}`;
+}
+
+function slug(s) {
+  return String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+// Where a finding is, for the human line: dist/index.html:12, or a URL live.
+function where({ file, line, url } = {}) {
+  if (file) return ` (${file}${line != null ? ':' + line : ''})`;
+  if (url) return ` (${url})`;
+  return '';
+}
+
 export class Reporter {
   constructor({ json = false, quiet = false, strict = false } = {}) {
     // Offline and live checks share section names (`images`, `perf`, `data`), so
@@ -27,43 +52,46 @@ export class Reporter {
     return !this.strict && isHouseStyle(section, name);
   }
 
-  pass(section, name, message = '') {
-    this._record({ section, name, outcome: 'pass', message });
+  // Every outcome takes an optional trailing `at` — { file, line, url, id }.
+  // `id` overrides the derived rule id; the rest locate the finding.
+  pass(section, name, message = '', at = {}) {
+    this._record({ section, name, outcome: 'pass', message }, at);
     if (!this.json && !this.quiet) {
-      console.log(`✅ ${section}: ${name}${message ? ' — ' + message : ''}`);
+      console.log(`✅ ${section}: ${name}${where(at)}${message ? ' — ' + message : ''}`);
     }
   }
 
-  fix(section, name, message, fix) {
-    if (this._demoted(section, name)) return this.suggest(section, name, message, fix, true);
-    this._record({ section, name, outcome: 'fix', message, fix });
+  fix(section, name, message, fix, at = {}) {
+    if (this._demoted(section, name)) return this.suggest(section, name, message, fix, { ...at, houseStyle: true });
+    this._record({ section, name, outcome: 'fix', message, fix }, at);
     if (!this.json) {
-      console.log(`🔧 ${section}: ${name} — ${message}`);
+      console.log(`🔧 ${section}: ${name}${where(at)} — ${message}`);
       if (fix) console.log(`     fix: ${fix}`);
     }
   }
 
-  block(section, name, message, fix) {
-    if (this._demoted(section, name)) return this.suggest(section, name, message, fix, true);
-    this._record({ section, name, outcome: 'block', message, fix });
+  block(section, name, message, fix, at = {}) {
+    if (this._demoted(section, name)) return this.suggest(section, name, message, fix, { ...at, houseStyle: true });
+    this._record({ section, name, outcome: 'block', message, fix }, at);
     if (!this.json) {
-      console.log(`🛑 ${section}: ${name} — ${message}`);
+      console.log(`🛑 ${section}: ${name}${where(at)} — ${message}`);
       if (fix) console.log(`     resolve: ${fix}`);
     }
   }
 
-  suggest(section, name, message, suggestion, houseStyle = false) {
-    this._record({ section, name, outcome: 'suggest', message, fix: suggestion, houseStyle });
+  suggest(section, name, message, suggestion, at = {}) {
+    const houseStyle = at.houseStyle === true;
+    this._record({ section, name, outcome: 'suggest', message, fix: suggestion, houseStyle }, at);
     if (!this.json && !this.quiet) {
-      console.log(`💡 ${section}: ${name} — ${message}${houseStyle ? ' [baseline]' : ''}`);
+      console.log(`💡 ${section}: ${name}${where(at)} — ${message}${houseStyle ? ' [baseline]' : ''}`);
       if (suggestion) console.log(`     suggestion: ${suggestion}`);
     }
   }
 
-  skip(section, name, reason) {
-    this._record({ section, name, outcome: 'skip', message: reason });
+  skip(section, name, reason, at = {}) {
+    this._record({ section, name, outcome: 'skip', message: reason }, at);
     if (!this.json && !this.quiet) {
-      console.log(`⏭  ${section}: ${name} — ${reason}`);
+      console.log(`⏭  ${section}: ${name}${where(at)} — ${reason}`);
     }
   }
 
@@ -72,8 +100,14 @@ export class Reporter {
     if (!this.json) console.error(`error: ${message}`);
   }
 
-  _record(r) {
-    this.results.push({ ...r, source: this.source });
+  // Location fields are only emitted when known — a row full of nulls costs an
+  // agent tokens to read and tells it nothing.
+  _record(r, at = {}) {
+    const row = { id: at.id ?? ruleId(r.section, r.name), ...r, source: this.source };
+    if (at.file) row.file = at.file;
+    if (at.line != null) row.line = at.line;
+    if (at.url) row.url = at.url;
+    this.results.push(row);
   }
 
   finish() {

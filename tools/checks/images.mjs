@@ -59,7 +59,7 @@ export async function run({ project, reporter }) {
     reporter.pass(SEC, 'routed', 'all content <img> go through an image transform');
   } else {
     for (const f of findings.imgNotRouted) {
-      reporter.fix(SEC, `routed (${f.file}:${f.line})`, `<img src="${truncate(f.src, 80)}"> not routed through an image transform`, '<Image> from astro:assets (adds width/height too), or a /cdn-cgi/image/width=,format=auto,quality=80/… URL');
+      reporter.fix(SEC, 'routed', `<img src="${truncate(f.src, 80)}"> not routed through an image transform`, '<Image> from astro:assets (adds width/height too), or a /cdn-cgi/image/width=,format=auto,quality=80/… URL', { file: f.file, line: f.line });
     }
   }
 
@@ -68,7 +68,7 @@ export async function run({ project, reporter }) {
   } else {
     for (const f of findings.bgNotRouted) {
       const sizeLabel = f.sizeBytes != null ? ` (${humanSize(f.sizeBytes)})` : '';
-      reporter.fix(SEC, `background-image (${f.file}:${f.line})`, `background-image: url(${truncate(f.url, 80)})${sizeLabel} not routed through a transform`, 'rewrite as image-set() with /cdn-cgi/image/width=,format=auto,quality=80/…');
+      reporter.fix(SEC, 'background-image', `background-image: url(${truncate(f.url, 80)})${sizeLabel} not routed through a transform`, 'rewrite as image-set() with /cdn-cgi/image/width=,format=auto,quality=80/…', { file: f.file, line: f.line });
     }
   }
 
@@ -80,11 +80,11 @@ export async function run({ project, reporter }) {
       if (f.imported) {
         // Imported through astro:assets → optimized at build time. Flagging this
         // as a defect contradicts the `routed` pass in the same run.
-        reporter.suggest(SEC, `assets:size (${f.assetPath})`, `${humanSize(f.sizeBytes)} source — ${refLabel}; imported via astro:assets, so Astro ships an optimized derivative, not this file`, 'fine to leave; shrink the source only to keep the repo light');
+        reporter.suggest(SEC, 'assets:size', `${humanSize(f.sizeBytes)} source — ${refLabel}; imported via astro:assets, so Astro ships an optimized derivative, not this file`, 'fine to leave; shrink the source only to keep the repo light', { file: f.assetPath });
       } else if (f.references.length === 0) {
-        reporter.fix(SEC, `assets:size (${f.assetPath})`, `${humanSize(f.sizeBytes)} — unused`, 'delete (unused large raster in src/assets/)');
+        reporter.fix(SEC, 'assets:size', `${humanSize(f.sizeBytes)} — unused`, 'delete (unused large raster in src/assets/)', { file: f.assetPath });
       } else {
-        reporter.fix(SEC, `assets:size (${f.assetPath})`, `${humanSize(f.sizeBytes)} — ${refLabel}, referenced without an astro:assets import`, 'import it so <Image> optimizes it at build time, or serve it through an image transform');
+        reporter.fix(SEC, 'assets:size', `${humanSize(f.sizeBytes)} — ${refLabel}, referenced without an astro:assets import`, 'import it so <Image> optimizes it at build time, or serve it through an image transform', { file: f.assetPath });
       }
     }
   }
@@ -94,7 +94,7 @@ export async function run({ project, reporter }) {
       reporter.pass(SEC, 'dist:size', `no built content image over ${humanSize(SIZE_WARN_DIST)} in dist/`);
     } else {
       for (const f of findings.oversizedDist) {
-        reporter.fix(SEC, `dist:size (${f.path})`, `${humanSize(f.sizeBytes)} shipped — over ${humanSize(SIZE_WARN_DIST)}`, 'resize at build (<Image> width=) or serve via an image transform; a hero should be 50–250 KB');
+        reporter.fix(SEC, 'dist:size', `${humanSize(f.sizeBytes)} shipped — over ${humanSize(SIZE_WARN_DIST)}`, 'resize at build (<Image> width=) or serve via an image transform; a hero should be 50–250 KB', { file: f.path });
       }
     }
 

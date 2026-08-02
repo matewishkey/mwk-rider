@@ -262,19 +262,19 @@ async function auditImages(home, postPath, base, get, head, reporter) {
     const optimized = /\/_astro\//.test(img.src);
     const routed = /\/cdn-cgi\/image\//.test(img.src);
     if (optimized || routed) routedOk++;
-    else reporter.fix('images', `optimized (${truncate(img.src, 70)})`, 'content image not optimized — neither Astro build (/_astro/) nor an image transform (/cdn-cgi/image/)', '<Image>/astro:assets for local assets; a /cdn-cgi/image/ URL for R2-hosted content');
+    else reporter.fix('images', 'optimized', 'content image not optimized — neither Astro build (/_astro/) nor an image transform (/cdn-cgi/image/)', '<Image>/astro:assets for local assets; a /cdn-cgi/image/ URL for R2-hosted content', { url: img.src });
 
     // attrValue, not /\bwidth=/: \b matches inside `data-width=`, so a tag with
     // only data-attributes passed the CLS check. A value is required — a bare
     // `width` reserves no space.
     const sized = attrValue(img.attrs, 'width') != null && attrValue(img.attrs, 'height') != null;
     if (sized) sizedOk++;
-    else reporter.fix('images', `cls (${truncate(img.src, 70)})`, 'no width/height attr → layout shift (CLS)', 'use <Image> (bakes dimensions) or add width+height');
+    else reporter.fix('images', 'cls', 'no width/height attr → layout shift (CLS)', 'use <Image> (bakes dimensions) or add width+height', { url: img.src });
 
     // Transform-param anti-patterns, visible in the URL itself.
     const smells = transformSmells(img.src);
     if (smells?.explicitFormat) {
-      reporter.fix('images', `transform:format (${truncate(img.src, 60)})`, `forces format=${smells.explicitFormat} not format=auto — no AVIF, and a raw-source fallback for clients that don't accept ${smells.explicitFormat}`, 'emit format=auto so Cloudflare negotiates AVIF/webp');
+      reporter.fix('images', 'transform:format', `forces format=${smells.explicitFormat} not format=auto — no AVIF, and a raw-source fallback for clients that don't accept ${smells.explicitFormat}`, 'emit format=auto so Cloudflare negotiates AVIF/webp', { url: img.src });
     }
     if (smells?.missingQuality) noQuality.push(img.src);
 
@@ -283,7 +283,7 @@ async function auditImages(home, postPath, base, get, head, reporter) {
     const r = await head(img.src, { headers: { Accept: BROWSER_ACCEPT, 'Sec-Fetch-Dest': 'image', 'Sec-Fetch-Mode': 'no-cors' } });
     const len = Number(r.headers?.get?.('content-length') ?? 0);
     if (len > 300 * 1024) {
-      reporter.fix('images', `bytes (${truncate(img.src, 60)})`, `${(len / 1024).toFixed(0)} KB served — over 300 KB budget`, 'lower the transform width=/use format=auto + quality=80; a hero should be 50–250 KB');
+      reporter.fix('images', 'bytes', `${(len / 1024).toFixed(0)} KB served — over 300 KB budget`, 'lower the transform width=/use format=auto + quality=80; a hero should be 50–250 KB', { url: img.src });
     }
   }
   if (routedOk === imgs.length) reporter.pass('images', 'routed', `${routedOk}/${imgs.length} through an image transform`);
@@ -345,12 +345,16 @@ function assertHas(reporter, section, name, html, re, failMsg) {
   else               reporter.fix(section, name, failMsg, 'emit it in the rendered HTML');
 }
 
+// `label` is which page was read (home / a content path). It's the location of
+// the finding, not a different rule — so it rides in `url`, and both pages
+// report under one stable id.
 function checkHeadings(reporter, label, html) {
   const a = headingAudit(headingLevels(html));
-  if (!a.h1) reporter.pass('seo', `headings:h1:${label}`, 'exactly one <h1>');
-  else reporter.fix('seo', `headings:h1:${label}`, a.h1, 'exactly one <h1> per page (the title)');
-  if (!a.skip) reporter.pass('seo', `headings:order:${label}`, 'no skipped levels');
-  else reporter.suggest('seo', `headings:order:${label}`, a.skip, 'keep the outline sequential; a shared header/footer level is the usual cause');
+  const at = { url: label };
+  if (!a.h1) reporter.pass('seo', 'headings:h1', 'exactly one <h1>', at);
+  else reporter.fix('seo', 'headings:h1', a.h1, 'exactly one <h1> per page (the title)', at);
+  if (!a.skip) reporter.pass('seo', 'headings:order', 'no skipped levels', at);
+  else reporter.suggest('seo', 'headings:order', a.skip, 'keep the outline sequential; a shared header/footer level is the usual cause', at);
 }
 
 function firstHashedAsset(html) {

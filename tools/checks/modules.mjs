@@ -86,8 +86,11 @@ export async function run({ project, reporter }) {
 
   // Baseline integrations present
   for (const dep of BASELINE_DEPS) {
-    if (deps[dep]) reporter.pass(SEC, `dep:${dep}`, deps[dep]);
-    else           reporter.fix(SEC, `dep:${dep}`, 'not installed', `npm i ${dep}`);
+    // One rule ("a baseline integration is missing"), many packages — so the id
+    // is fixed and the package stays in the name. Deriving it per package would
+    // mint a new "rule" for every dependency we ever add.
+    if (deps[dep]) reporter.pass(SEC, `dep:${dep}`, deps[dep], { id: 'modules/dep' });
+    else           reporter.fix(SEC, `dep:${dep}`, 'not installed', `npm i ${dep}`, { id: 'modules/dep' });
   }
 
   // Search is Orama — flag any competing/custom search library
