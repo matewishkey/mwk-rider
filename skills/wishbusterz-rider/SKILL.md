@@ -36,12 +36,13 @@ Useful flags: `-s <domain>` (repeatable) to scope; `--strict` to require the hou
 
 `--rules --json` lists every rule the tool can emit, with its severity and one line of why. That is the authoritative list; prefer it over any summary written down elsewhere.
 
-Six offline domains, plus three that need `--url`:
+Seven offline domains, plus three that need `--url`:
 
 - **modules** — the baseline Astro stack is present and wired: version floor, Node/TypeScript floors, baseline integrations, strict TS, `<ClientRouter>`, the Cloudflare adapter iff `<Image>` under SSR, and Astro 7 migration residue. `output` is only flagged when explicitly `'server'` — `static` is Astro's default.
 - **seo** — the head meta actually emitted (asserted against `dist/` when the site is built, source otherwise), no `keywords` anti-pattern, a `robots.txt` carrying a `Sitemap:` line, `<lastmod>` in the built sitemap, exactly one `<h1>` per content page (a skipped heading level is an advisory `💡` — usually a shared header/footer).
 - **images** — content images routed through an image transform and not oversized, in `src/assets/` and in `dist/`. On built HTML it also flags Cloudflare transform params and content `<img>` with no `alt`. (A bare `alt` is Astro's serialisation of `alt=""` and is correct — decorative.)
-- **perf** — `/_astro/*` marked immutable in `public/_headers`; content `<img>` carry width/height (no CLS).
+- **perf** — `/_astro/*` marked immutable in `public/_headers`; content `<img>` carry width/height (no CLS); the heaviest page's render-blocking CSS and the site's total webfont weight stay inside budget, in woff2 rather than ttf/otf.
+- **content** — the pages a site is repeatedly asked for: a media kit (logo, paste-ready boilerplate, a contact route) and a design/styleguide page that renders the real tokens. Both house style, so `💡` unless `--strict`.
 - **data** — the machine-readable surface: JSON-LD **parsed out of `dist/`** (an Article-family type per post plus a site-wide `WebSite`, and it must be valid JSON), `/llms.txt` built from the content store with a draft/preview filter, an RSS feed that actually contains items, an Orama search-index endpoint, a Zod-validated content schema.
 - **analytics** — no hardcoded Google Analytics / GTM snippet in `src/` or `dist/`. The baseline delivers analytics through Cloudflare Zaraz, which loads GA at the edge behind its consent banner. The Zaraz loader is edge-injected, so the positive check runs only under `--url`.
 - **live** (`--url`) — real Cache-Control headers, served image bytes (measured with a browser-realistic `Accept` so transforms negotiate AVIF/webp), the rendered SEO surface and JSON-LD on the homepage and a content page, `/llms.txt`, the Zaraz loader. The content page is discovered from the sitemap, then homepage links, then `/llms.txt` — override it with `--post`. Neither `astro dev` nor `astro preview` applies `_headers`, so point `--url` at a `wrangler dev` of `dist/` or the deployed site for the cache checks to mean anything.

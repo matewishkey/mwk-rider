@@ -4,7 +4,7 @@
 //   2. Content <img> tags carry width + height (no layout shift / CLS).
 //      <Image> from astro:assets bakes these in; raw <img> without them shifts.
 
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, extname, relative } from 'node:path';
 
 import { attrValue } from '../lib/html.mjs';
@@ -24,6 +24,7 @@ const CANONICAL_MAXAGE = 31536000;
 export async function run({ project, reporter }) {
   checkHeaders(project, reporter);
   checkCls(project, reporter);
+  checkWeight(project, reporter);
 }
 
 // 1. public/_headers — hashed assets immutable -------------------------------
@@ -149,4 +150,164 @@ function lineOf(text, index) {
 
 function truncate(s, n) {
   return s.length > n ? s.slice(0, n - 1) + '…' : s;
+}
+
+// 3. Payload weight — CSS and fonts -------------------------------------------
+//
+// Both are render-blocking and both are trivially measurable from dist/. Nothing
+// checked either: modules:fonts only detects a third-party font *CDN*.
+//
+// CSS is measured PER PAGE, not across dist/. Astro emits a stylesheet per route,
+// so a 484-page site legitimately has dozens of .css files while any single page
+// links two — totalling the directory would punish a site for having pages.
+
+const CSS_BYTES_SUGGEST = 100 * 1024;
+const CSS_BYTES_FIX     = 250 * 1024;
+const CSS_LINKS_SUGGEST = 3;
+const FONT_FAMILIES_SUGGEST = 2;
+const FONT_FACES_SUGGEST    = 4;
+const FONT_BYTES_SUGGEST = 200 * 1024;
+const FONT_BYTES_FIX     = 500 * 1024;
+
+const FONT_FILE_RE = /\.(woff2|woff|ttf|otf|eot)$/i;
+const LEGACY_FONT_RE = /\.(ttf|otf|eot)$/i;
+
+export function checkWeight(project, reporter) {
+  if (!project.hasDist) {
+    reporter.skip(SEC, 'css:bytes', 'no dist/ — build the site to measure the CSS it ships');
+    reporter.skip(SEC, 'font:bytes', 'no dist/ — build the site to measure the fonts it ships');
+    return;
+  }
+  const files = distTree(join(project.root, 'dist'));
+  checkCssWeight(project, reporter, files);
+  checkFontWeight(project, reporter, files);
+}
+
+function checkCssWeight(project, reporter, files) {
+  const dist = join(project.root, 'dist');
+  const pages = files.filter((f) => f.endsWith('.html'));
+  if (pages.length === 0) {
+    reporter.skip(SEC, 'css:bytes', 'no built HTML — nothing to measure');
+    return;
+  }
+
+  let worst = { bytes: 0, page: null }, mostLinks = { n: 0, page: null };
+  for (const page of pages) {
+    let html;
+    try { html = readFileSync(page, 'utf8'); } catch { continue; }
+    const hrefs = [...html.matchAll(/<link\b[^>]*rel=["']stylesheet["'][^>]*>/gi)]
+      .map((m) => m[0].match(/href=["']([^"']+)["']/)?.[1])
+      .filter(Boolean);
+    let bytes = 0;
+    for (const href of hrefs) {
+      if (/^https?:/i.test(href)) continue;   // a third-party sheet: not ours to size
+      bytes += sizeOf(join(dist, href.replace(/^\//, '')));
+    }
+    // Inlined <style> counts: Astro inlines small stylesheets, and those bytes
+    // are just as render-blocking as a linked file.
+    for (const m of html.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/gi)) bytes += Buffer.byteLength(m[1], 'utf8');
+    const rel = relative(project.root, page);
+    if (bytes > worst.bytes) worst = { bytes, page: rel };
+    if (hrefs.length > mostLinks.n) mostLinks = { n: hrefs.length, page: rel };
+  }
+
+  const at = worst.page ? { file: worst.page } : {};
+  if (worst.bytes > CSS_BYTES_FIX) {
+    reporter.fix(SEC, 'css:bytes', `${humanKB(worst.bytes)} of render-blocking CSS on the heaviest page — over the ${humanKB(CSS_BYTES_FIX)} budget`, 'this is usually an unpurged framework: enable the purge/content scan so only used rules ship', at);
+  } else if (worst.bytes > CSS_BYTES_SUGGEST) {
+    reporter.suggest(SEC, 'css:bytes', `${humanKB(worst.bytes)} of render-blocking CSS on the heaviest page (soft budget ${humanKB(CSS_BYTES_SUGGEST)})`, 'check whether a framework is shipping rules the page never uses', at);
+  } else {
+    reporter.pass(SEC, 'css:bytes', `heaviest page ships ${humanKB(worst.bytes)} of CSS`, at);
+  }
+
+  if (mostLinks.n > CSS_LINKS_SUGGEST) {
+    reporter.fix(SEC, 'css:files', `${mostLinks.n} render-blocking stylesheets on one page`, 'each one is a separate round-trip before first paint — bundle them', { file: mostLinks.page });
+  } else {
+    reporter.pass(SEC, 'css:files', `at most ${mostLinks.n} stylesheet link(s) per page`);
+  }
+}
+
+function checkFontWeight(project, reporter, files) {
+  const fontFiles = files.filter((f) => FONT_FILE_RE.test(f));
+  const bytes = fontFiles.reduce((s, f) => s + sizeOf(f), 0);
+
+  // @font-face blocks, deduped by content: the same block is repeated in every
+  // page's inlined <style>, so counting occurrences across dist/ multiplies by
+  // the page count (2904 of them on a real 484-page site).
+  const blocks = new Set();
+  for (const f of files) {
+    if (!/\.(css|html)$/i.test(f)) continue;
+    let text;
+    try { text = readFileSync(f, 'utf8'); } catch { continue; }
+    for (const m of text.matchAll(/@font-face\s*\{[\s\S]*?\}/gi)) blocks.add(m[0].replace(/\s+/g, ' '));
+  }
+
+  // Astro's Fonts API emits a second @font-face per family carrying fallback
+  // metrics — its family name contains "fallback:". Counting those as real
+  // families reported every correctly-configured two-font site as having four.
+  const real = [...blocks].filter((b) => !/font-family\s*:\s*["']?[^;"'}]*fallback:/i.test(b));
+  const families = new Set();
+  for (const b of real) {
+    const name = b.match(/font-family\s*:\s*["']?([^;"'}]+)/i)?.[1]?.trim().toLowerCase();
+    // Astro hashes the family name (`outfit-cce106cc3d487109`); one family, one name.
+    if (name) families.add(name.replace(/-[0-9a-f]{8,}$/, ''));
+  }
+
+  if (fontFiles.length === 0 && real.length === 0) {
+    reporter.skip(SEC, 'font:bytes', 'no webfonts in dist/ — nothing to measure');
+    return;
+  }
+
+  if (bytes > FONT_BYTES_FIX) {
+    reporter.fix(SEC, 'font:bytes', `${humanKB(bytes)} of webfonts in ${fontFiles.length} file(s) — over the ${humanKB(FONT_BYTES_FIX)} budget`, 'subset to the characters actually used, drop unused weights, and prefer one variable font over four static ones');
+  } else if (bytes > FONT_BYTES_SUGGEST) {
+    reporter.suggest(SEC, 'font:bytes', `${humanKB(bytes)} of webfonts in ${fontFiles.length} file(s) (soft budget ${humanKB(FONT_BYTES_SUGGEST)})`, 'subsetting or a variable font usually halves this');
+  } else {
+    reporter.pass(SEC, 'font:bytes', `${humanKB(bytes)} of webfonts in ${fontFiles.length} file(s)`);
+  }
+
+  if (families.size > FONT_FAMILIES_SUGGEST) {
+    reporter.fix(SEC, 'font:families', `${families.size} font families (${[...families].join(', ')})`, 'two families — one for headings, one for body — is enough for almost any content site');
+  } else {
+    reporter.pass(SEC, 'font:families', `${families.size} font ${families.size === 1 ? 'family' : 'families'}`);
+  }
+
+  if (real.length > FONT_FACES_SUGGEST) {
+    reporter.fix(SEC, 'font:faces', `${real.length} @font-face declarations`, 'each is a separate file to download — a variable font covers a whole weight range in one');
+  } else {
+    reporter.pass(SEC, 'font:faces', `${real.length} @font-face declaration(s)`);
+  }
+
+  const legacy = fontFiles.filter((f) => LEGACY_FONT_RE.test(f));
+  if (legacy.length) {
+    reporter.fix(SEC, 'font:format', `${legacy.length} font file(s) served as ttf/otf/eot`, 'convert to woff2 — universally supported for years and roughly half the bytes', { file: relative(project.root, legacy[0]) });
+  } else {
+    reporter.pass(SEC, 'font:format', 'all webfonts are woff2/woff');
+  }
+}
+
+function distTree(dir) {
+  const out = [];
+  if (!existsSync(dir)) return out;
+  const stack = [dir];
+  while (stack.length) {
+    const d = stack.pop();
+    let entries;
+    try { entries = readdirSync(d, { withFileTypes: true }); } catch { continue; }
+    for (const e of entries) {
+      if (e.name.startsWith('.')) continue;
+      const full = join(d, e.name);
+      if (e.isDirectory()) stack.push(full);
+      else out.push(full);
+    }
+  }
+  return out;
+}
+
+function sizeOf(p) {
+  try { return statSync(p).size; } catch { return 0; }
+}
+
+function humanKB(bytes) {
+  return `${(bytes / 1024).toFixed(bytes < 10240 ? 1 : 0)} KB`;
 }

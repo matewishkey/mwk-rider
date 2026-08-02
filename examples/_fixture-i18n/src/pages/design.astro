@@ -1,0 +1,45 @@
+---
+// The design reference: renders the real tokens rather than describing them, so
+// a divergent hardcoded value shows up next to the swatch it should have
+// matched. Checked by content:designkit. See BEST-PRACTICES.md § content.
+import RootLayout from '../layouts/RootLayout.astro';
+
+const COLOURS = ['--c-bg', '--c-fg', '--c-muted', '--c-accent', '--c-border'];
+const SCALE = [
+  ['Display', '2.25rem'],
+  ['Heading', '1.5rem'],
+  ['Body', '1rem'],
+  ['Small', '0.875rem'],
+];
+---
+<RootLayout title="Design" description="The site's tokens and components, rendered from the real values.">
+  <h1>Design</h1>
+
+  <h2>Colour</h2>
+  <ul class="swatches">
+    {COLOURS.map((token) => (
+      <li>
+        <span class="swatch" style={`background: var(${token})`}></span>
+        <code>{token}</code>
+      </li>
+    ))}
+  </ul>
+
+  <h2>Type scale</h2>
+  <ul>
+    {SCALE.map(([name, size]) => (
+      <li style={`font-size: ${size}`}>{name} — {size}</li>
+    ))}
+  </ul>
+
+  <h2>Buttons</h2>
+  <p>
+    <button type="button">Primary</button>
+    <button type="button" disabled>Disabled</button>
+  </p>
+
+  <h2>Form controls</h2>
+  <p>
+    <label>Search <input type="search" placeholder="query" /></label>
+  </p>
+</RootLayout>

@@ -89,8 +89,18 @@ const RULES = [
   ['perf/headers', 'perf', '_headers', 'Without public/_headers, hashed bundles are served max-age=0 and every repeat visit re-validates all JS/CSS.'],
   ['perf/headers-astro', 'perf', '_headers:/_astro/*', 'Content-hashed assets never change under a given URL, so they should be immutable for a year.'],
   ['perf/cls-img-dimensions', 'perf', 'cls:img-dimensions', 'Explicit width+height (or <Image>, which bakes them) prevents layout shift.'],
+  ['perf/css-bytes', 'perf', 'css:bytes', 'Render-blocking CSS on the heaviest page. Measured per page because Astro emits a stylesheet per route.'],
+  ['perf/css-files', 'perf', 'css:files', 'Each render-blocking stylesheet is another round-trip before first paint.'],
+  ['perf/font-bytes', 'perf', 'font:bytes', 'Webfonts are render-blocking weight that subsetting or a variable font usually halves.'],
+  ['perf/font-families', 'perf', 'font:families', 'Two families — headings and body — is enough for almost any content site.'],
+  ['perf/font-faces', 'perf', 'font:faces', 'Each @font-face is a separate file to download; a variable font covers a weight range in one.'],
+  ['perf/font-format', 'perf', 'font:format', 'woff2 has been universally supported for years and is roughly half the bytes of ttf/otf.'],
   ['perf/cache-astro', 'perf', 'cache:_astro', 'Live only: the real Cache-Control on a hashed asset. Neither astro dev nor astro preview applies _headers.'],
   ['perf/cache-html', 'perf', 'cache:html', 'Live only: HTML marked immutable means a deploy stays invisible until the cache expires.'],
+
+  // --- content ---------------------------------------------------------------
+  ['content/mediakit', 'content', 'mediakit', 'The one URL you hand to press, partners and directories; without it "send us your logo" becomes an email thread.'],
+  ['content/designkit', 'content', 'designkit', 'A page rendering the real tokens and components shows what exists without reading every file — and makes drift visible.'],
 
   // --- data ------------------------------------------------------------------
   ['data/jsonld-emitted', 'data', 'jsonld:emitted', 'Structured data is how a page earns rich results; without it a crawler infers everything.'],

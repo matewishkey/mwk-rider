@@ -37,6 +37,18 @@ const HOUSE_STYLE = [
   'images:transform:*',         // /cdn-cgi/image transform params
   'analytics:no-hardcoded-ga',  // "use Zaraz instead of a GA snippet" is our call
 
+  // --- pages that are ours to want -------------------------------------------
+  // A stranger's Astro blog is not broken for having no media kit or design
+  // page. These are worth suggesting and never worth failing a build over.
+  'content:mediakit',
+  'content:designkit',
+  // Thresholds we picked. The 🔧 tiers of css:bytes/font:bytes/font:format are
+  // NOT here: 250 KB of render-blocking CSS on one page, half a megabyte of
+  // webfonts, or a .ttf served to browsers are defects on anyone's site.
+  'perf:css:files',
+  'perf:font:families',
+  'perf:font:faces',
+
   // --- content surface: valuable, but blog/content-site specific ---------------
   'data:llms.txt',
   'data:llms.txt:filter',

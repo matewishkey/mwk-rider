@@ -25,7 +25,8 @@ node ~/.claude/wishbusterz-rider-tools/audit.mjs --help
 | `modules` | Astro 7+, Node ≥ 22.12, TypeScript ≤ 6.x, baseline integrations, `output: 'static'`, strict TS, `<ClientRouter>`, custom 404, adapter iff `<Image>` under SSR, remotePatterns (if og.config declares a media domain), Astro 7 migration residue (`astro7:experimental`, `astro7:markdown`, `astro7:db`, `astro7:transitions`) |
 | `seo` | Head meta emitted (asserted against `dist/` when built, source otherwise); no `keywords` anti-pattern; `dist/robots.txt` with a `Sitemap:` line; `<lastmod>` in the built sitemap; one `<h1>` per content page; brand fields (if og.config present) |
 | `images` | `<img>` + CSS `background-image` routed through an image transform; no oversized raster in `src/assets/`; no oversized built image in `dist/` |
-| `perf` | `public/_headers` marks `/_astro/*` immutable; content `<img>` carry width/height (CLS) |
+| `perf` | `public/_headers` marks `/_astro/*` immutable; content `<img>` carry width/height (CLS); render-blocking CSS on the heaviest page and total webfont weight stay inside budget; woff2 not ttf/otf |
+| `content` | A media-kit page (logo, paste-ready boilerplate, a contact route) and a design/styleguide page that renders the real tokens. Both house style — `💡` unless `--strict` |
 | `analytics` | Flags a hardcoded Google Analytics / GTM snippet in `src/` + `dist/`; the positive "Zaraz loader present" check is live-only |
 | `data` | JSON-LD parsed out of `dist/` (an Article-family type + `WebSite`, and it must be valid JSON); `/llms.txt` from `getCollection()` with a draft/preview filter; the built RSS feed has items; Zod-validated content schema |
 | `live` | Only with `--url`: real Cache-Control, served image bytes, rendered SEO + JSON-LD, `/llms.txt`. The content page is discovered from the sitemap → homepage links → `/llms.txt`, or forced with `--post` |
@@ -71,6 +72,8 @@ tools/
     image-size.mjs       PNG/JPEG intrinsic dimensions from raw bytes
     src-scan.mjs         read src/ once; find head-meta by behaviour, not filename
     reporter.mjs         outcome collection, human/JSON output, exit code
+    rules.mjs            the rule catalogue behind --rules --json
+    untrusted.mjs        fence bytes fetched from an audited site before printing
     cf-image.mjs         Cloudflare transform-URL param parsing (shared offline + live)
     html.mjs             dist/served HTML scanning — headings, alt text, content-page gate
     dist.mjs             read the build output (find + read files under dist/)
@@ -81,6 +84,7 @@ tools/
     images.mjs           image delivery + sizes (source + dist)
     perf.mjs             cache headers + CLS
     data.mjs             JSON-LD, llms.txt, RSS, content schema
+    content.mjs          media-kit + design reference pages
     analytics.mjs        no hardcoded GA/GTM snippet (delivered via Zaraz)
     live.mjs             HTTP checks against a served site (--url)
     lighthouse.mjs       measured PSI scores + Core Web Vitals (--url + key)

@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 // wishbusterz-rider — check an Astro site against baseline best practices.
 //
-// Six offline domains read source + dist:
+// Seven offline domains read source + dist:
 //   modules   expected baseline integrations + config are present and wired
 //   seo       canonical, title/description, OG meta, sitemap
 //   images    content images routed through a transform + not oversized
 //   perf      immutable cache headers for hashed assets + no-CLS <img>
 //   data      machine-readable surface: JSON-LD, /llms.txt, RSS
 //   analytics no hardcoded Google Analytics/GTM snippet (delivered via Zaraz)
+//   content   pages a site is repeatedly asked for: a media kit, a design reference
 //
 // Pass --url <base> to also run, against a running/deployed site:
 //   live        real headers, served image bytes, rendered HTML
@@ -29,6 +30,7 @@ const OFFLINE = {
   perf:    () => import('./checks/perf.mjs'),
   data:    () => import('./checks/data.mjs'),
   analytics: () => import('./checks/analytics.mjs'),
+  content: () => import('./checks/content.mjs'),
 };
 const URL_ONLY = ['live', 'lighthouse', 'browser'];
 const ALL_DOMAINS = [...Object.keys(OFFLINE), ...URL_ONLY];

@@ -48,7 +48,7 @@ baseline means upgrading the fixture in the same commit.
   which passes just as happily when the check is broken. **A new check needs both halves.**
 
 - **Manual offline:** `node tools/audit.mjs` run *inside* `examples/_fixture-i18n/`. No
-  flag runs all six offline domains; `-s <name>` scopes to one. The fixture should return
+  flag runs all seven offline domains; `-s <name>` scopes to one. The fixture should return
   `0 🔧 / 0 🛑` — `💡` suggestions are fine, they don't count. If the fixture is flagged,
   the tool has a bug (or the fixture drifted). Check **both** modes: the fixture is fully
   compliant, so `--strict` must be clean too.

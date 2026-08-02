@@ -2,7 +2,7 @@
 
 <sub>`wishbusterz-rider`</sub>
 
-An on-demand best-practices auditor for **Astro** sites. One slash command (`/wishbusterz-rider`), one zero-dependency script, nine domains (six offline + three live). No framework, no contract, nothing installed into the sites it audits — it reports, you decide.
+An on-demand best-practices auditor for **Astro** sites. One slash command (`/wishbusterz-rider`), one zero-dependency script, ten domains (seven offline + three live). No framework, no contract, nothing installed into the sites it audits — it reports, you decide.
 
 ```
 ✅ modules: astro:version — ^7.1.6
@@ -165,7 +165,7 @@ skills/wishbusterz-rider/SKILL.md   how an agent should run and report an audit
 tools/
   audit.mjs                  entry: detect project, run domains, report
   test.mjs                   the gate: fixture + known-bad synthetic projects
-  checks/{modules,seo,images,perf,data,analytics,live,lighthouse,browser}.mjs
+  checks/{modules,seo,images,perf,data,analytics,content,live,lighthouse,browser}.mjs
   lib/{project,reporter,policy,rules,cf-image,html,dist,jsonld,image-size,src-scan,untrusted}.mjs
 examples/_fixture-i18n/      a compliant multi-locale Astro site — the test target
 examples/ci/audit.yml        copy-paste GitHub Actions job for your own site

@@ -50,7 +50,7 @@ if (fix.json) {
   check('no 🔧 fixes', s.fix === 0, `${s.fix} fixes`);
   check('no 🛑 blocks', s.block === 0, `${s.block} blocks`);
   check('has passing checks', s.pass > 0, `${s.pass} passes`);
-  check('all six domains ran', new Set(fix.json.results.map(r => r.section)).size >= 6);
+  check('all seven offline domains ran', new Set(fix.json.results.map(r => r.section)).size >= 7);
 }
 
 console.log('every finding carries a stable rule id:');
@@ -524,6 +524,66 @@ const fontRow = runJson(fontDir, ['-s', 'modules', '--strict']).json?.results.fi
 check('font-CDN usage is flagged under --strict', fontRow?.outcome === 'fix', JSON.stringify(fontRow));
 const fontLoose = runJson(fontDir, ['-s', 'modules']).json?.results.find(r => r.name === 'fonts');
 check('  …and is advisory by default', fontLoose?.outcome === 'suggest');
+
+console.log('the new practices fire on a known-bad build and stay quiet on a good one:');
+// House style: advisory by default, binding under --strict. Both halves matter —
+// a check that can only ever suggest never binds, and one that always binds
+// fails the build of every stranger who does not share the opinion.
+const MEDIA_OK = `<html><head><link rel="canonical" href="/media-kit"></head><body><h1>Media kit</h1>
+  <p>${'x'.repeat(130)}</p>
+  <a href="/brand/logo.svg" download>logo</a>
+  <a href="mailto:press@example.test">press@example.test</a></body></html>`;
+const DESIGN_OK = `<html><head><link rel="canonical" href="/design"></head><body><h1>Design</h1>
+  <h2>Colour</h2><h2>Type</h2><h2>Buttons</h2><h2>Forms</h2>
+  <span style="background: var(--c-bg)"></span><span style="background: var(--c-fg)"></span>
+  <span style="background: var(--c-accent)"></span><span style="background: var(--c-border)"></span>
+  <span style="background: #123456"></span></body></html>`;
+
+const noPages = mkBuilt({ 'dist/index.html': '<html><body><h1>hi</h1></body></html>' });
+for (const id of ['content/mediakit', 'content/designkit']) {
+  check(`${id} suggests by default and binds under --strict`,
+    runJson(noPages, ['-s', 'content']).json?.results.find(r => r.id === id)?.outcome === 'suggest' &&
+    row(noPages, 'content', id)?.outcome === 'fix');
+}
+const good = mkBuilt({ 'dist/media-kit/index.html': MEDIA_OK, 'dist/design/index.html': DESIGN_OK });
+check('a real media kit passes', row(good, 'content', 'content/mediakit')?.outcome === 'pass',
+  JSON.stringify(row(good, 'content', 'content/mediakit')));
+check('  …and a design page rendering tokens passes', row(good, 'content', 'content/designkit')?.outcome === 'pass',
+  JSON.stringify(row(good, 'content', 'content/designkit')));
+const stub = mkBuilt({
+  'dist/press/index.html': '<html><body><h1>Press</h1><p>Email us.</p></body></html>',
+  'dist/styleguide/index.html': '<html><body><h1>Styleguide</h1><p>Coming soon.</p></body></html>',
+});
+check('a media-kit page with no logo or boilerplate is not a pass',
+  row(stub, 'content', 'content/mediakit')?.outcome === 'fix');
+check('  …nor is a design page that is a stub',
+  row(stub, 'content', 'content/designkit')?.outcome === 'fix');
+
+// Astro's Fonts API emits a second @font-face per family carrying fallback
+// metrics, and inlines the same block into every page. Counting either naively
+// reported both real two-font sites as having four families.
+const FACE = (fam) => `@font-face{font-family:"${fam}";src:url(/f/${fam}.woff2) format("woff2")}`;
+const FALLBACK = (fam) => `@font-face{font-family:"${fam} fallback: Arial";src:local("Arial")}`;
+const fontCss = [FACE('outfit-cce106cc3d487109'), FALLBACK('outfit-cce106cc3d487109'),
+                 FACE('playfair-32c490a4574b0743'), FALLBACK('playfair-32c490a4574b0743')].join('\n');
+const twoFonts = mkBuilt({
+  'dist/index.html': `<html><head><style>${fontCss}</style></head><body><h1>a</h1></body></html>`,
+  'dist/about/index.html': `<html><head><style>${fontCss}</style></head><body><h1>b</h1></body></html>`,
+  'dist/f/outfit-cce106cc3d487109.woff2': 'x'.repeat(20 * 1024),
+  'dist/f/playfair-32c490a4574b0743.woff2': 'x'.repeat(20 * 1024),
+});
+const famRow = row(twoFonts, 'perf', 'perf/font-families');
+check('two families with Astro fallback faces, inlined on every page → 2, not 4',
+  famRow?.outcome === 'pass' && /\b2 font families\b/.test(famRow?.message ?? ''), JSON.stringify(famRow));
+const ttf = mkBuilt({ 'dist/index.html': '<html><body>x</body></html>', 'dist/f/x.ttf': 'x'.repeat(1024) });
+check('a .ttf served to browsers is flagged (universal, not house style)',
+  runJson(ttf, ['-s', 'perf']).json?.results.find(r => r.id === 'perf/font-format')?.outcome === 'fix');
+const fatCss = mkBuilt({
+  'dist/index.html': `<html><head><link rel="stylesheet" href="/a.css"></head><body>x</body></html>`,
+  'dist/a.css': 'a{color:red}'.padEnd(300 * 1024, ' '),
+});
+check('260 KB of render-blocking CSS on one page → fix',
+  runJson(fatCss, ['-s', 'perf']).json?.results.find(r => r.id === 'perf/css-bytes')?.outcome === 'fix');
 
 console.log('--rules is the catalogue, and it does not drift:');
 // The catalogue is what an agent reads to learn what this tool checks. If a

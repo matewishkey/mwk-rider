@@ -247,6 +247,70 @@ thing a version bump leaves behind. Each maps to a documented v7 breaking change
 - **Content `<img>` carry width + height.** Explicit dimensions (or `<Image>`,
   which bakes them) prevent layout shift (CLS). → `perf: cls:img-dimensions`
 
+- **Render-blocking CSS stays small.** Measured on the *heaviest single page*:
+  the bytes of every `<link rel="stylesheet">` it pulls plus its inlined
+  `<style>` blocks. Per page, not per `dist/` — Astro emits a stylesheet per
+  route, so a 484-page site legitimately has dozens of `.css` files while any one
+  page links two, and totalling the directory would punish a site for having
+  pages. `💡` over 100 KB, `🔧` over 250 KB. Four real Astro builds measured
+  8–25 KB on their heaviest page, so the soft budget has four times the headroom
+  a well-built site needs and the hard one only catches an unpurged framework.
+  → `perf: css:bytes`
+- **Few render-blocking stylesheets.** Each one is a separate round-trip before
+  first paint. `💡` over 3 on a single page (the measured sites sit at 1–2).
+  House style. → `perf: css:files`
+- **Fonts stay light.** Total `.woff2`/`.woff`/`.ttf`/`.otf` bytes in `dist/`:
+  `💡` over 200 KB, `🔧` over 500 KB (measured sites: 42 KB and 107 KB). Two
+  families is enough for a content site — one for headings, one for body — and a
+  variable font covers a whole weight range in one file.
+  → `perf: font:bytes`, `perf: font:families` (`💡` over 2),
+  `perf: font:faces` (`💡` over 4)
+
+  **Counting `@font-face` needs two corrections**, both found by measuring real
+  builds rather than reasoning about them. Blocks are deduped *by content*: Astro
+  inlines the same block into every page's `<style>`, so a naive count returned
+  2904 for one 484-page site. And Astro's Fonts API emits a second face per
+  family carrying fallback metrics, whose `font-family` contains `fallback:` —
+  counting those as real families reported both correctly-configured two-font
+  sites as having four, which is exactly the false positive that gets a tool
+  uninstalled.
+- **woff2, not ttf/otf.** Universally supported for years and roughly half the
+  bytes. Serving a raw font format to browsers is a defect on anyone's site, so
+  this one is universal. → `perf: font:format`
+
+## content — pages a site is repeatedly asked for
+
+*Check file: `tools/checks/content.mjs`. Reads built `dist/` HTML, so any routing
+convention counts — detection is on what the page renders, not its filename.*
+
+Both practices here are **house style**. A personal Astro blog is not broken for
+lacking either, and a tool that says otherwise gets uninstalled. They report
+`💡 [baseline]` by default and bind under `--strict`.
+
+- **A media kit.** A small business or project site is regularly asked for "your
+  logo and a short description". Without one canonical page that becomes an email
+  thread and inconsistent assets in the wild — the wrong logo, a stale
+  description, someone's screenshot. It is the one URL you hand to press,
+  partners, sponsors and directories. A route matching `/media-kit`, `/press` or
+  `/presskit` must carry three things to be worth linking: a downloadable logo
+  asset, a paste-ready paragraph of boilerplate, and a contact route or `mailto:`.
+  → `content: mediakit` (`⏭` with no `dist/`)
+- **A design reference page.** This is the one that pays off for the agent
+  audience. A `/design` (or `/styleguide`, `/design-kit`, `/tokens`) route that
+  renders the site's *actual* tokens and components — colours, type scale,
+  spacing, buttons, cards, form controls — lets an agent or a new contributor see
+  what exists and where it is used without reading every component file. It also
+  makes drift visible: rendered from the real tokens, a divergent hardcoded
+  colour shows up next to the swatch it should have matched.
+
+  The check asks only that the route exists and renders more than a heading —
+  design tokens referenced, colour swatches, or several component sections.
+  Detection is deliberately loose, because the risk here is false-positiving on a
+  legitimate variant. The strongest version of this page generates itself *from*
+  the token source so it cannot drift, but that is site-side work: the auditor
+  checks the page is there and is not a stub, and does not try to generate it.
+  → `content: designkit` (`⏭` with no `dist/`)
+
 ## data — the machine-readable surface
 
 *Check file: `tools/checks/data.mjs`. Source: `src/components/SEO.astro`,
