@@ -106,8 +106,6 @@ against a known-good site and a known-bad one.
   Sharp can't run on Workers. So the check passes on any static build (with or
   without `<Image>`) and only flags an SSR site that uses `<Image>` without the
   adapter. → `modules: adapter:cloudflare`
-- **`output: 'static'`.** The sites are static; SSR config would change caching
-  and delivery assumptions. → `modules: output:static`
 - **Strict TypeScript.** `extends: astro/tsconfigs/strict` catches whole classes
   of content/schema bugs at build. → `modules: tsconfig:strict`
 - **`<ClientRouter />` in the root layout.** View transitions / SPA-style nav. →
