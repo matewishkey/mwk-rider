@@ -282,6 +282,25 @@ check('live rows are tagged source=live so --json keys do not collide',
   fromLive.length > 0 && fromLive.every(r => r.source === 'live'),
   JSON.stringify(fromLive.filter(r => r.source !== 'live').slice(0, 2)));
 
+console.log('optional browser domain degrades cleanly and the fonts check fires:');
+// The browser domain must never become a hard requirement: without playwright
+// installed it skips, and the run still exits 0.
+const noPw = runJson(tmpdir(), ['-s', 'browser', '--url', 'https://example.com']);
+const pwRow = noPw.json?.results.find(r => r.section === 'browser');
+check('browser domain skips without playwright', pwRow?.outcome === 'skip', JSON.stringify(pwRow));
+check('  …and the run still exits 0', noPw.code === 0, `exit ${noPw.code}`);
+
+const fontDir = tmpProject('wishbusterz-rider-font-');
+writeFileSync(join(fontDir, 'package.json'), JSON.stringify({ name: 'fx', type: 'module', dependencies: { astro: '^7.1.6' } }));
+writeFileSync(join(fontDir, 'astro.config.mjs'), "export default { output: 'static' };\n");
+mkdirSync(join(fontDir, 'src', 'layouts'), { recursive: true });
+writeFileSync(join(fontDir, 'src', 'layouts', 'Layout.astro'),
+  '<link href="https://fonts.googleapis.com/css2?family=Inter" rel="stylesheet">\n');
+const fontRow = runJson(fontDir, ['-s', 'modules', '--strict']).json?.results.find(r => r.name === 'fonts');
+check('font-CDN usage is flagged under --strict', fontRow?.outcome === 'fix', JSON.stringify(fontRow));
+const fontLoose = runJson(fontDir, ['-s', 'modules']).json?.results.find(r => r.name === 'fonts');
+check('  …and is advisory by default', fontLoose?.outcome === 'suggest');
+
 console.log('');
 if (failures === 0) { console.log('PASS — all assertions ok'); process.exit(0); }
 else { console.log(`FAIL — ${failures} assertion(s) failed`); process.exit(1); }

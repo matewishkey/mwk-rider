@@ -216,6 +216,23 @@ export async function run({ project, reporter }) {
     reporter.fix(SEC, '404:custom', 'src/pages/404.astro missing', 'create a branded 404 page');
   }
 
+  // Fonts: Astro has a first-party fonts API (config `fonts:` + <Font> from
+  // astro:assets) that self-hosts, generates fallback metrics to stop the swap
+  // shifting layout, and emits preload links. A third-party font CDN costs an
+  // extra connection on the critical path and leaks visitor IPs to that host.
+  const fontCdn = await collectSrc(
+    project.root,
+    /(fonts\.googleapis\.com|fonts\.gstatic\.com|use\.typekit\.net|fonts\.bunny\.net)/g,
+  );
+  const hasFontsConfig = /\bfonts\s*:\s*\[/.test(cfg);
+  if (fontCdn.length > 0 && !hasFontsConfig) {
+    reporter.fix(SEC, 'fonts', `webfonts loaded from ${fontCdn.join(', ')} — an extra connection on the critical path, and no fallback metrics (font swap shifts layout)`, "move to Astro's built-in fonts API: `fonts: [{ provider: fontProviders.google(), name: '…', cssVariable: '--font-…' }]` in astro.config, then <Font cssVariable=\"--font-…\" preload /> from astro:assets");
+  } else if (hasFontsConfig) {
+    reporter.pass(SEC, 'fonts', 'astro:fonts configured (self-hosted, with fallback metrics)');
+  } else {
+    reporter.skip(SEC, 'fonts', 'no webfonts detected — nothing to check');
+  }
+
   // image.remotePatterns includes the media domain (only checkable if og.config declares one)
   const mediaDomain = project.ogConfig?.mediaDomain ?? project.ogConfig?.brand?.mediaDomain;
   if (mediaDomain) {

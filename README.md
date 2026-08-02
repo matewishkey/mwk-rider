@@ -2,7 +2,7 @@
 
 <sub>`wishbusterz-rider`</sub>
 
-An on-demand best-practices auditor for **Astro** sites. One slash command (`/wishbusterz-rider`), one zero-dependency script, eight domains (six offline + two live). No framework, no contract, nothing installed into the sites it audits — it reports, you decide.
+An on-demand best-practices auditor for **Astro** sites. One slash command (`/wishbusterz-rider`), one zero-dependency script, nine domains (six offline + three live). No framework, no contract, nothing installed into the sites it audits — it reports, you decide.
 
 ```
 ✅ modules: astro:version — ^7.1.6
@@ -49,7 +49,16 @@ export PAGESPEED_API_KEY=…
 node /tmp/rider/tools/audit.mjs -s lighthouse --url https://your-site.com
 ```
 
-See [`.env.example`](.env.example) for every optional key, and [`.github/workflows/audit.yml`](.github/workflows/audit.yml) for a copy-paste CI job.
+**Want to test the running site in a real browser?** Install Playwright in *your* project and the `browser` domain switches itself on:
+
+```bash
+npm i -D playwright && npx playwright install chromium
+node /tmp/rider/tools/audit.mjs -s browser --url https://your-site.com
+```
+
+That catches what no static check can: scripts that throw, assets that 404 only when requested, real measured layout shift, and images served at 4× the size they're displayed.
+
+See [`.env.example`](.env.example) for every optional key, and [`examples/ci/audit.yml`](examples/ci/audit.yml) for a copy-paste CI job.
 
 ## Required vs suggested
 
@@ -75,6 +84,7 @@ Use `--strict` when you've adopted the baseline deliberately and want it enforce
 | **data** | The machine-readable surface other tools consume: JSON-LD (BlogPosting + WebSite), `/llms.txt` built from the content store, RSS, an Orama search-index endpoint, a Zod-validated content schema. Endpoints match by pattern, so single- and per-locale naming both pass. |
 | **analytics** | No hardcoded Google Analytics / GTM snippet in `src/` or `dist/` — the baseline delivers analytics via Cloudflare Zaraz, which loads GA at the edge behind its consent banner (CMP). The Zaraz loader (`/cdn-cgi/zaraz/`) is edge-injected, so the positive "Zaraz present" check runs under `--url`. |
 | **live** | With `--url`: real Cache-Control headers, served image bytes (measured with a browser-realistic `Accept`) + transform-param flags, rendered SEO + JSON-LD, `/llms.txt` — against a running or deployed site. |
+| **browser** | With `--url`: what only a real browser sees — uncaught JS exceptions, requests that failed or 404'd, **measured** CLS, images downloaded far larger than they're displayed, heavy third-party origins. Needs `playwright` installed **in the site you're auditing**; skips cleanly without it. |
 | **lighthouse** | With `--url`: real **measured** scores via the PageSpeed Insights API — Performance/SEO/Accessibility/Best-Practices + Core Web Vitals (LCP/TBT/CLS). Needs a free PSI key (below); skips gracefully without one. |
 
 The static domains answer *"is it wired right?"*; `lighthouse` answers *"what's the real score?"* — complementary layers.
@@ -132,7 +142,7 @@ commands/wishbusterz-rider.md       the slash command (orchestration)
 tools/
   audit.mjs                  entry: detect project, run domains, report
   test.mjs                   the gate: fixture + known-bad synthetic projects
-  checks/{modules,seo,images,perf,data,analytics,live,lighthouse}.mjs
+  checks/{modules,seo,images,perf,data,analytics,live,lighthouse,browser}.mjs
   lib/{project,reporter,policy,cf-image,html,image-size,src-scan}.mjs
 examples/_fixture-i18n/      a compliant multi-locale Astro site — the test target
 examples/ci/audit.yml        copy-paste GitHub Actions job for your own site

@@ -100,6 +100,13 @@ against a known-good site and a known-bad one.
   of content/schema bugs at build. → `modules: tsconfig:strict`
 - **`<ClientRouter />` in the root layout.** View transitions / SPA-style nav. →
   `modules: ClientRouter`
+- **Webfonts through Astro's own fonts API, not a font CDN.** `fonts:` in
+  `astro.config` plus `<Font />` from `astro:assets` self-hosts the files,
+  generates fallback metrics so the swap doesn't shift layout, and emits the
+  preload link. A `fonts.googleapis.com` stylesheet costs an extra DNS+TLS
+  round-trip on the critical path, ships no fallback metrics, and discloses every
+  visitor's IP to the font host. Advisory by default — which fonts you use, and
+  how, is a defensible choice. → `modules: fonts`
 - **Custom `src/pages/404.astro`.** A branded 404, not the host default. →
   `modules: 404:custom`
 - **Media domain in `image.remotePatterns`.** R2-hosted content (`media.<domain>`)
@@ -368,6 +375,10 @@ worth it — following *How we add a practice* above. Listed so we don't lose th
   would surface a large raw-source fallback directly; today the offline
   `transform:format` check catches the same `format=webp` smell more cheaply.
 - **BreadcrumbList JSON-LD.** The fixture emits it; not asserted by `data`.
+- ~~**Runtime behaviour needs a headless browser.**~~ Closed by the `browser`
+  domain: uncaught exceptions, failed/404 sub-requests, measured CLS, and images
+  oversized relative to their rendered box are now checked with real Chromium
+  (optional — `playwright` is not a dependency of this tool).
 - **Zaraz consent banner actually renders + GA waits for consent.** The
   `analytics` live check confirms the Zaraz loader is present, but the consent
   modal and whether tags hold until consent are decided by client JS at runtime

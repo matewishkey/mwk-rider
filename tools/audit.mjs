@@ -12,6 +12,9 @@
 // Pass --url <base> to also run, against a running/deployed site:
 //   live        real headers, served image bytes, rendered HTML
 //   lighthouse  real PageSpeed Insights scores + Core Web Vitals (needs a PSI key)
+//   browser     what only a real browser sees: JS errors, failed requests,
+//               measured CLS, images oversized for their rendered box
+//               (needs playwright installed; skips without it)
 //
 // Usage: node audit.mjs --help
 
@@ -27,7 +30,7 @@ const OFFLINE = {
   data:    () => import('./checks/data.mjs'),
   analytics: () => import('./checks/analytics.mjs'),
 };
-const URL_ONLY = ['live', 'lighthouse'];
+const URL_ONLY = ['live', 'lighthouse', 'browser'];
 const ALL_DOMAINS = [...Object.keys(OFFLINE), ...URL_ONLY];
 const STRATEGIES = ['mobile', 'desktop'];
 
@@ -69,8 +72,9 @@ Usage:
   wishbusterz-rider --quiet               Print only findings (skip ✅ lines)
 
 Offline domains: ${Object.keys(OFFLINE).join(', ')}
-With --url:      live, lighthouse
-                 (lighthouse needs a free $PAGESPEED_API_KEY; it skips without one)
+With --url:      live, lighthouse, browser
+                 (lighthouse needs a free $PAGESPEED_API_KEY; browser needs
+                  playwright installed — each skips cleanly without it)
 
 Note: --url works from any directory — offline domains need an Astro project in cwd,
 but a live/lighthouse run only needs the URL.
@@ -162,6 +166,14 @@ if (values.url) {
       await mod.run({ reporter, url: base, strategy });
     } catch (err) {
       reporter.error(`lighthouse check crashed: ${err.message}`);
+    }
+  }
+  if (!wanted || wanted.has('browser')) {
+    try {
+      const mod = await import('./checks/browser.mjs');
+      await mod.run({ reporter, url: base, post: values.post });
+    } catch (err) {
+      reporter.error(`browser check crashed: ${err.message}`);
     }
   }
 } else if (wanted && URL_ONLY.some((d) => wanted.has(d))) {

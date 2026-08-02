@@ -29,6 +29,7 @@ const HOUSE_STYLE = [
   'modules:ClientRouter',       // view transitions are a preference
   'modules:engines.node',       // declaring an engines floor is good hygiene, not a defect
   'modules:astro:version',      // being a major behind is worth knowing, not a failure
+  'modules:fonts',              // a font CDN is a real cost, but a defensible choice
 
   // --- delivery shape: assumes Cloudflare Pages/Workers ------------------------
   'perf:_headers',              // the `_headers` file is a CF/Netlify convention
