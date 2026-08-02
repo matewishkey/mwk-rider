@@ -176,6 +176,27 @@ thing a version bump leaves behind. Each maps to a documented v7 breaking change
   guard in the **generator** (assert a 200 before screenshotting), which lives in
   the audited site, not here. wishbusterz-rider documents the practice; the site
   implements the guard.
+- **The head meta is on every published page, not merely somewhere.** Coverage
+  is measured over the pages the **sitemap** declares — the site's own answer to
+  "what am I publishing". Every other denominator is wrong: "every file in
+  `dist/`" counts OG-image templates and preview routes that correctly carry no
+  canonical, and "pages that have a canonical" (which is what `isContentPage`
+  means) makes the canonical check measure itself — delete the canonical from 18
+  of 19 pages and the set shrinks to 1, which reports 1/1 ✅. A dogfood agent
+  reproduced exactly that. All → pass, none → fix, some → 💡 naming the pages.
+  → `seo: meta:*`
+- **`og:image:width`/`height` are advice, not a requirement.** A card renders
+  without them; they only let a platform reserve space before fetching it. Two
+  independently-built, well-made dogfood sites had these two as their *only*
+  required finding — which is the signal that the severity was wrong rather than
+  the sites. → `seo: meta:og:image:width`, `seo: meta:og:image:height` (💡)
+- **Each page's canonical is its own URL.** Presence is not enough: a site where
+  twenty pages all declared the same canonical passed, and that markup asks
+  crawlers to drop nineteen of them as duplicates — strictly worse than having no
+  canonical at all. Only a value covering *more than half* the pages is reported,
+  and only as advice, because deliberate duplicates are legitimate: the bundled
+  i18n fixture shares a canonical between a locale fallback rewrite and the page
+  it mirrors, which is correct. → `seo: canonical:unique`
 - **No `<meta name="keywords">`.** Ignored by search engines and a weak spam
   signal — its presence is the anti-pattern. → `seo: no-keywords`
 - **Brand fields set:** `siteName`, `siteUrl`, `tagline` feed the SEO meta. →
@@ -237,6 +258,12 @@ thing a version bump leaves behind. Each maps to a documented v7 breaking change
 *Check file: `tools/checks/perf.mjs` (offline) and cache checks in
 `tools/checks/live.mjs` (served).*
 
+  Every `<img>` tag counts, on every page. The check used to de-duplicate by
+  `src` across the whole build, so the *first* occurrence of an image decided the
+  verdict for all of them: the same photo used with alt on the homepage and
+  without alt on a post was reported as fine. Four of five independent dogfood
+  builds found that — a silent false negative with exit 0, which is the worst
+  outcome this tool has. Each offending page is now its own finding, named.
 - **Hashed assets are immutable.** `public/_headers` marks `/_astro/*`
   `public, max-age=31536000, immutable` so repeat visits don't re-validate every
   JS/CSS/font. (A plain `astro dev` server doesn't apply `_headers` — the live
@@ -317,6 +344,13 @@ lacking either, and a tool that says otherwise gets uninstalled. They report
 `src/lib/jsonld.*`, `src/pages/**`, `src/content.config.ts`. Endpoints are matched
 by **pattern**, so single-locale and per-locale naming both pass.*
 
+- **Every collection is schema-validated**, not just one of them. The check was
+  a whole-file `/z\.object\(/` on the raw text of `content.config.ts`: two
+  collections where only one had a schema passed, and so did a file whose only
+  mention of Zod was in a *comment* — the exact failure mode this repo had
+  already fixed for meta tags and then repeated here. All five dogfood builds
+  found it. Now: comments blanked, each `defineCollection` body checked for a
+  `schema:`, and the unschema'd ones named. → `data: content:schema`
 - **JSON-LD emitted, covering both core shapes.** The built pages carry
   `application/ld+json` with an Article-family type per post and a site-wide
   `WebSite`. Read from `dist/` and **parsed**, not grepped: the old check required
@@ -327,6 +361,9 @@ by **pattern**, so single-locale and per-locale naming both pass.*
   `ScholarlyArticle`, `LiveBlogPosting`, `Report`, `CreativeWork` counts; all earn
   the same rich results. `@graph` and top-level arrays are unwrapped.
   → `data: jsonld:emitted`, `data: jsonld:shapes` (`⏭` with no `dist/`)
+  Coverage uses the sitemap denominator too. "More than zero" was the old bar:
+  one page out of nineteen reported ✅ and exit 0, printing a ratio with no
+  threshold to read it against.
 - **The JSON-LD parses.** A block that isn't valid JSON is discarded whole by
   search engines while looking perfectly fine in the source — worse than emitting
   none. → `data: jsonld:parses`
@@ -346,8 +383,6 @@ by **pattern**, so single-locale and per-locale naming both pass.*
 - **An Orama search-index endpoint.** A `search-index*.json` endpoint built from
   `getCollection()` is the source the client-side Orama search loads. →
   `data: search:index` (pairs with `modules: search:engine`)
-- **Content collection is Zod-validated.** A schema in `src/content.config.ts`
-  gives consumers a stable, validated shape. → `data: content:schema`
 
 **Shared invariant:** one publish predicate — `!draft && !previewOnly` — across
 llms, RSS, and search-index, so all three discovery surfaces agree on what's

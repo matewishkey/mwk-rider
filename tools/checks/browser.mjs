@@ -86,6 +86,9 @@ export async function run({ reporter, url, post }) {
       return;
     }
     reporter.pass(SEC, 'load', `${target} — HTTP ${nav.status()}`);
+    // Everything below measures THIS ONE PAGE. Saying so is the difference
+    // between a site-wide verdict and a homepage sample that reads like one.
+    reporter.skip(SEC, 'scope', `every browser finding below is measured on ${target} alone — pass --post <path> to measure a content page instead`);
     reporter.skip(SEC, 'untrusted-input', UNTRUSTED_NOTE);
 
     // --- JavaScript that threw ------------------------------------------------
@@ -131,8 +134,12 @@ export async function run({ reporter, url, post }) {
       }
       return out;
     }, OVERSIZED_RATIO);
-    if (oversized.length === 0) {
-      reporter.pass(SEC, 'images:rendered-size', 'no image served far larger than it is displayed');
+    const imgCount = await page.evaluate(() => document.querySelectorAll('img').length);
+    if (imgCount === 0) {
+      // An identical ✅ on a page with no images is a pass for work never done.
+      reporter.skip(SEC, 'images:rendered-size', 'no <img> on the audited page — nothing to measure');
+    } else if (oversized.length === 0) {
+      reporter.pass(SEC, 'images:rendered-size', `none of the ${imgCount} image(s) is served far larger than it is displayed`);
     } else {
       const o = oversized[0];
       reporter.suggest(SEC, 'images:rendered-size', `${oversized.length} image(s) served well over their displayed size, e.g. ${o.natural}px served for a ${o.rendered}px box`, 'set width/sizes so the transform serves the size actually rendered');

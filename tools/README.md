@@ -61,6 +61,19 @@ No key → the domain `⏭ skips` (everything else still runs). Score → outcom
 
 Exit: `0` clean (💡 suggestions don't count) · `1` findings (🔧/🛑) · `2` tooling error.
 
+## Reading `--json`
+
+`id` identifies the **rule**, not the row. One rule fires as many times as it
+finds something — five `modules/dep` rows, one `images/alt` row per offending
+page — so `id` is what you filter, suppress and report by, and it is stable
+across releases. An individual finding is `(id, source, file/line or url)`;
+`name` carries the subject (`dep:@astrojs/rss`) and is for humans.
+
+`file`/`line`/`url` appear only when the finding has a location: a project-level
+check like `modules:engines.node` has none, and an empty field would be noise.
+`source` is `offline` or `live`, which is how the two `images:alt` rules — one
+reading `dist/`, one reading served HTML — stay apart in a combined run.
+
 ## Files
 
 ```

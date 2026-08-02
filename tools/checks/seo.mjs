@@ -4,7 +4,7 @@
 
 import { eachDistHtml, isContentPage, headingLevels, headingAudit } from '../lib/html.mjs';
 import { readSrcFiles, headMetaFiles } from '../lib/src-scan.mjs';
-import { distFiles, readDist, countMatches } from '../lib/dist.mjs';
+import { distFiles, readDist, countMatches, sitemapPages } from '../lib/dist.mjs';
 
 const SEC = 'seo';
 
@@ -16,13 +16,18 @@ const SEC = 'seo';
 // both halves of that failure are closed.
 const metaRe = (key) => new RegExp(`(?:property|name)\\s*=\\s*["']${key}["']`, 'i');
 const CANONICAL_RE = /rel\s*=\s*["']canonical["']/i;
+// The fourth field is severity when the tag is absent. og:image:width/height
+// are a layout hint — a card renders fine without them, platforms just can't
+// reserve space before fetching it. Two well-built dogfood sites had exactly
+// these two as their ONLY required finding, which is the signal that the
+// severity was wrong rather than the sites.
 const META_TAGS = [
-  ['og:image',        metaRe('og:image')],
-  ['og:image:width',  metaRe('og:image:width')],
-  ['og:image:height', metaRe('og:image:height')],
-  ['og:type',         metaRe('og:type')],
-  ['og:url',          metaRe('og:url')],
-  ['canonical',       CANONICAL_RE],
+  ['og:image',        metaRe('og:image'),        'fix'],
+  ['og:image:width',  metaRe('og:image:width'),  'suggest'],
+  ['og:image:height', metaRe('og:image:height'), 'suggest'],
+  ['og:type',         metaRe('og:type'),         'fix'],
+  ['og:url',          metaRe('og:url'),          'fix'],
+  ['canonical',       CANONICAL_RE,              'fix'],
 ];
 
 export async function run({ project, reporter }) {
@@ -41,7 +46,7 @@ export async function run({ project, reporter }) {
 
   // Individual tags run whether or not a dedicated component exists — an absent
   // component must not silently skip them.
-  checkMetaTags(project, reporter, head);
+  checkMetaTags(project, reporter, head, headFiles.map((f) => f.path));
 
   // Anti-pattern: <meta name="keywords"> (ignored by search engines, signals spam)
   const kw = srcFiles.find((f) => /name=["']keywords["']/.test(f.code));
@@ -76,42 +81,86 @@ export async function run({ project, reporter }) {
  * branches and no aspirational TODOs. Source is the fallback for an unbuilt
  * project, and is matched comment-blanked.
  *
- * Presence is judged across the whole build (a tag emitted anywhere counts),
- * mirroring the source semantics. Coverage is reported separately for the og:*
- * tags: how many *content* pages omit one. Canonical gets no coverage line —
- * a content page is *defined* as one carrying a canonical, so it would be
- * measuring itself.
+ * Coverage, not mere presence. "Emitted anywhere in the build" passed a site
+ * that had a canonical on one page out of nineteen. Every tag is now judged
+ * across the site's declared pages: all → pass, none → fix, some → suggest,
+ * naming the pages that omit it.
  */
-function checkMetaTags(project, reporter, headSrc) {
-  const all = [], content = [];
-  if (project.hasDist) {
-    eachDistHtml(project.root, (rel, html) => {
-      all.push({ rel, html });
-      if (isContentPage(html)) content.push({ rel, html });
-    });
-  }
+function checkMetaTags(project, reporter, headSrc, headFilePaths = []) {
+  const all = [];
+  if (project.hasDist) eachDistHtml(project.root, (rel, html) => all.push({ rel, html }));
+
+  // The denominator is the sitemap when there is one — the site's own list of
+  // what it publishes. Falling back to "every built page" counts OG templates
+  // and preview routes; using "pages that have a canonical" made the canonical
+  // check measure itself.
+  const declared = project.hasDist ? sitemapPages(project.root) : null;
+  const pages = declared
+    ? all.filter((p) => declared.has(p.rel.replace(/^dist\//, '')))
+    : all;
+  const denominator = declared ? 'sitemap page(s)' : 'built page(s)';
+
+  // Name the file rather than "the component that renders <head>": the same run
+  // already identified it, and making the reader go and find it again is work
+  // the tool could have done.
+  const where2 = headFilePaths.length ? ` (${headFilePaths.join(', ')})` : '';
+  const emitFrom = `emit it from the component that renders <head>${where2}`;
 
   if (all.length === 0) {
     const where = project.hasDist ? 'dist/ has no HTML' : 'no dist/';
-    for (const [name, re] of META_TAGS) {
+    for (const [name, re, severity] of META_TAGS) {
       if (re.test(headSrc)) reporter.pass(SEC, `meta:${name}`, `emitted in src/ (${where} — build to check the shipped HTML)`);
-      else                  reporter.fix(SEC, `meta:${name}`, `tag not emitted anywhere in src/ (${where}, so source is all there is to read)`, `emit the ${name} tag from the component that renders <head>`);
+      else reporter[severity](SEC, `meta:${name}`, `tag not emitted anywhere in src/ (${where}, so source is all there is to read)`, emitFrom);
     }
     return;
   }
 
-  for (const [name, re] of META_TAGS) {
-    if (!all.some((p) => re.test(p.html))) {
-      reporter.fix(SEC, `meta:${name}`, `not emitted on any of the ${all.length} built page(s)`, `emit the ${name} tag from the component that renders <head>`);
-      continue;
-    }
-    const missing = name === 'canonical' ? [] : content.filter((p) => !re.test(p.html));
-    if (missing.length === 0) {
-      reporter.pass(SEC, `meta:${name}`, `emitted in dist/ (${content.length} content page(s))`);
+  const judged = pages.length ? pages : all;
+  for (const [name, re, severity] of META_TAGS) {
+    const missing = judged.filter((p) => !re.test(p.html));
+    if (missing.length === judged.length) {
+      reporter[severity](SEC, `meta:${name}`, `not emitted on any of the ${judged.length} ${denominator}`, emitFrom);
+    } else if (missing.length === 0) {
+      reporter.pass(SEC, `meta:${name}`, `on all ${judged.length} ${denominator}`);
     } else {
-      reporter.suggest(SEC, `meta:${name}`, `${missing.length}/${content.length} content page(s) omit it — ${sampleOf(missing.map((p) => p.rel))}`, `emit ${name} on every content page, not just some`);
+      // Partial coverage is the interesting case and used to be invisible: a
+      // tag on one page out of nineteen read as ✅.
+      reporter.suggest(SEC, `meta:${name}`, `${missing.length}/${judged.length} ${denominator} omit it — ${sampleOf(missing.map((p) => p.rel))}`, `emit ${name} on every published page, not just some`);
     }
   }
+
+  checkCanonicalValues(reporter, judged, denominator);
+}
+
+/**
+ * A canonical link is only doing its job if it differs per page.
+ *
+ * Presence alone passed a site where twenty pages all declared the same
+ * canonical URL — which tells a crawler nineteen of them are duplicates of the
+ * twentieth and should be dropped from the index. That is strictly worse than
+ * having no canonical at all, and it read as ✅.
+ *
+ * Only a value covering MORE THAN HALF the pages is reported, and only as
+ * advice. Sharing a canonical across a few pages is a legitimate, deliberate
+ * thing to do — the bundled i18n fixture does it, because a locale fallback
+ * rewrite serves the default locale's content and *is* a duplicate of it. A
+ * site-wide constant is the failure; a handful of intentional duplicates is not.
+ */
+function checkCanonicalValues(reporter, pages, denominator) {
+  const byValue = new Map();
+  for (const p of pages) {
+    const href = p.html.match(/<link[^>]+rel=["']canonical["'][^>]*>/i)?.[0]?.match(/href=["']([^"']+)["']/)?.[1];
+    if (!href) continue;
+    if (!byValue.has(href)) byValue.set(href, []);
+    byValue.get(href).push(p.rel);
+  }
+  if (byValue.size < 2 && pages.length < 2) return;   // nothing to compare
+  const worst = [...byValue.entries()].sort((a, b) => b[1].length - a[1].length)[0];
+  if (!worst || worst[1].length * 2 <= pages.length) {
+    reporter.pass(SEC, 'canonical:unique', `${byValue.size} distinct canonical URL(s) across ${pages.length} ${denominator}`);
+    return;
+  }
+  reporter.suggest(SEC, 'canonical:unique', `${worst[1].length} of ${pages.length} pages declare the SAME canonical URL (${worst[0]}) — that asks crawlers to drop ${worst[1].length - 1} of them as duplicates: ${sampleOf(worst[1])}`, "compute the canonical from each page's own URL rather than a site-wide constant (unless these really are deliberate duplicates, e.g. locale fallbacks)");
 }
 
 /**
@@ -169,7 +218,7 @@ function checkSitemap(project, reporter) {
   if (lastmods >= urls) {
     reporter.pass(SEC, 'sitemap:lastmod', `${lastmods}/${urls} entries carry <lastmod> (${maps.join(', ')})`);
   } else {
-    reporter.suggest(SEC, 'sitemap:lastmod', `${lastmods}/${urls} sitemap entries carry <lastmod> (${maps.join(', ')})`, 'pass a serialize() to @astrojs/sitemap emitting entry.data.dateModified ?? entry.data.date — without it crawlers cannot tell what changed');
+    reporter.suggest(SEC, 'sitemap:lastmod', `${lastmods}/${urls} sitemap entries carry <lastmod> (${maps.join(', ')})`, 'set item.lastmod in @astrojs/sitemap\'s serialize(item) hook, from whichever date field your own frontmatter uses. If you already have a serialize(), it is not reaching these URLs — the callback receives only { url, changefreq, lastmod, priority, links }, so a per-page date has to be looked up by URL');
   }
 }
 

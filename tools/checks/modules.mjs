@@ -249,7 +249,7 @@ export async function run({ project, reporter }) {
   } else if (hasFontsConfig) {
     reporter.pass(SEC, 'fonts', 'astro:fonts configured (self-hosted, with fallback metrics)');
   } else {
-    reporter.skip(SEC, 'fonts', 'no webfonts detected — nothing to check');
+    reporter.skip(SEC, 'fonts', 'no third-party font CDN referenced in src/ — this check only looks for that; perf:font:* measures the fonts actually shipped in dist/');
   }
 
   // image.remotePatterns includes the media domain (only checkable if og.config declares one)

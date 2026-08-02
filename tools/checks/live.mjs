@@ -16,6 +16,11 @@ import { untrusted, capped, UNTRUSTED_NOTE } from '../lib/untrusted.mjs';
 // hundreds — or that was built to have hundreds.
 const MAX_IMAGE_FINDINGS = 25;
 
+// Neither `astro dev` nor `astro preview` applies _headers (measured), so a
+// cache verdict against one says nothing about the deploy — in either
+// direction. The sibling check carried this caveat and the other did not.
+const LOCAL_CAVEAT = ' — NB against `astro dev`/`astro preview` this proves nothing: neither applies _headers. Judge it on `wrangler dev` of dist/ or the deployed site';
+
 // A host that accepts the connection and never answers used to hang the audit
 // indefinitely — in CI, forever.
 const NET_TIMEOUT_MS = 15_000;
@@ -69,7 +74,7 @@ export async function run({ base, reporter, post }) {
   reporter.skip('live', 'untrusted-input', UNTRUSTED_NOTE);
 
   await auditCache(home, head, reporter);
-  const postPath = post ?? (await discoverPost(home, base, get));
+  const postPath = await resolveSlash(post ?? (await discoverPost(home, base, get)), get);
   await auditSeo(home, postPath, base, get, head, reporter);
   await auditImages(home, postPath, base, get, head, reporter);
   await auditData(get, reporter);
@@ -119,7 +124,7 @@ async function auditCache(home, head, reporter) {
       const immutable = /\bimmutable\b/.test(cc);
       const maxAge = Number(cc.match(/max-age=(\d+)/)?.[1] ?? 0);
       if (immutable && maxAge >= 86400) {
-        reporter.pass('perf', 'cache:_astro', untrusted(cc || '(none)', 80));
+        reporter.pass('perf', 'cache:_astro', `${untrusted(cc || '(none)', 80)}${LOCAL_CAVEAT}`);
       } else {
         reporter.fix(
           'perf',
@@ -135,7 +140,7 @@ async function auditCache(home, head, reporter) {
   if (/\bimmutable\b/.test(htmlCC)) {
     reporter.fix('perf', 'cache:html', `homepage Cache-Control ${untrusted(htmlCC, 80)} is immutable — deploys won't show until cache expires`, 'do not list HTML routes in _headers; let them revalidate');
   } else {
-    reporter.pass('perf', 'cache:html', `homepage revalidates (${untrusted(htmlCC || 'default', 80)})`);
+    reporter.pass('perf', 'cache:html', `homepage revalidates (${untrusted(htmlCC || 'default', 80)})${LOCAL_CAVEAT}`);
   }
 }
 
@@ -163,7 +168,10 @@ async function auditSeo(home, postPath, base, get, head, reporter) {
   }
   const postRes = await get(postPath);
   if (!postRes.ok || postRes.status !== 200) {
-    reporter.fix('seo', 'post', `${postPath} → ${postRes.status ?? postRes.error}`, 'expected a 200 content page');
+    // Naming the casualties matters most HERE. This path used to return in
+    // silence, so a 404 on one URL voided thirteen checks and the run still
+    // read as though the site had been audited.
+    reporter.fix('seo', 'post', `${postPath} → ${postRes.status ?? postRes.error}; these did NOT run: ${POST_ONLY_CHECKS.join(', ')}`, 'pass --post <path> with a URL that answers 200', { url: postPath });
     return;
   }
   const h = postRes.text;
@@ -173,12 +181,12 @@ async function auditSeo(home, postPath, base, get, head, reporter) {
     ['canonical',    /<link[^>]+rel=["']canonical["']/,                    'canonical link missing'],
     ['og:title',     /<meta[^>]+property=["']og:title["']/,                'og:title missing'],
     ['og:image',     /<meta[^>]+property=["']og:image["']/,                'og:image missing'],
-    ['og:image:width',  /<meta[^>]+property=["']og:image:width["']/,        'og:image:width missing'],
-    ['og:image:height', /<meta[^>]+property=["']og:image:height["']/,       'og:image:height missing'],
+    ['og:image:width',  /<meta[^>]+property=["']og:image:width["']/,        'og:image:width missing', 'suggest'],
+    ['og:image:height', /<meta[^>]+property=["']og:image:height["']/,       'og:image:height missing', 'suggest'],
     ['og:url',       /<meta[^>]+property=["']og:url["']/,                  'og:url missing'],
   ];
-  for (const [name, re, msg] of checks) {
-    assertHas(reporter, 'seo', name, h, re, msg);
+  for (const [name, re, msg, severity] of checks) {
+    assertHas(reporter, 'seo', name, h, re, msg, severity);
   }
   checkHeadings(reporter, 'post', h);
   checkLdTypes(reporter, 'post:jsonld', h, hasArticleType,
@@ -238,6 +246,10 @@ function rebaseOnAudited(assetUrl, html, base) {
 // is the generator's resp.ok() guard — a site-side fix (see BEST-PRACTICES § seo),
 // not something the audit can catch from outside.
 async function checkOgCard(ogImg, html, reporter, base) {
+  if (!/\.(png|jpe?g)(\?|#|$)/i.test(new URL(ogImg, base).pathname)) {
+    reporter.skip('seo', 'og:image:card', 'card is not PNG/JPEG — its intrinsic size cannot be read from the bytes, so the 600×315 minimum was NOT verified', { url: ogImg });
+    return;
+  }
   // A relative og:image used to throw inside fetchBytes and be swallowed, so the
   // check emitted no line at all — indistinguishable from "card is fine".
   const buf = await fetchBytes(absolutize(ogImg, base));
@@ -316,7 +328,7 @@ async function auditImages(home, postPath, base, get, head, reporter) {
     const optimized = /\/_astro\//.test(img.src);
     const routed = /\/cdn-cgi\/image\//.test(img.src);
     if (optimized || routed) routedOk++;
-    else reporter.fix('images', 'optimized', 'content image not optimized — neither Astro build (/_astro/) nor an image transform (/cdn-cgi/image/)', '<Image>/astro:assets for local assets; a /cdn-cgi/image/ URL for R2-hosted content', { url: img.src });
+    else reporter.fix('images', 'routed', 'content image not optimized — neither Astro build (/_astro/) nor an image transform (/cdn-cgi/image/)', '<Image>/astro:assets for local assets; a /cdn-cgi/image/ URL for R2-hosted content', { url: img.src });
 
     // attrValue, not /\bwidth=/: \b matches inside `data-width=`, so a tag with
     // only data-attributes passed the CLS check. A value is required — a bare
@@ -340,9 +352,10 @@ async function auditImages(home, postPath, base, get, head, reporter) {
       reporter.fix('images', 'bytes', `${(len / 1024).toFixed(0)} KB served — over 300 KB budget`, 'lower the transform width=/use format=auto + quality=80; a hero should be 50–250 KB', { url: img.src });
     }
   }
-  if (routedOk === inspected.length) reporter.pass('images', 'routed', `${routedOk}/${inspected.length} through an image transform`);
-  if (sizedOk === inspected.length)  reporter.pass('images', 'cls', `${sizedOk}/${inspected.length} have width+height`);
-  if (noAlt.length === 0) reporter.pass('images', 'alt', `${inspected.length}/${inspected.length} carry an alt attribute`);
+  const sampled = `on ${pages.length === 1 ? 'the homepage only' : `${pages.length} pages`}`;
+  if (routedOk === inspected.length) reporter.pass('images', 'routed', `${routedOk}/${inspected.length} through an image transform, ${sampled}`);
+  if (sizedOk === inspected.length)  reporter.pass('images', 'cls', `${sizedOk}/${inspected.length} have width+height, ${sampled}`);
+  if (noAlt.length === 0) reporter.pass('images', 'alt', `${inspected.length}/${inspected.length} carry an alt attribute, ${sampled}`);
   else reporter.fix('images', 'alt', `${noAlt.length} content <img> have no alt attribute`, 'add alt text (alt="" only if decorative)', { url: noAlt[0] });
   if (noQuality.length) reporter.suggest('images', 'transform:quality', `${noQuality.length} transform URL(s) set no quality= (Cloudflare defaults to 85)`, 'add an explicit quality (e.g. quality=80) to cap output size on photographic content', { url: noQuality[0] });
 }
@@ -394,9 +407,10 @@ function mkHead(base) {
   };
 }
 
-function assertHas(reporter, section, name, html, re, failMsg) {
+function assertHas(reporter, section, name, html, re, failMsg, severity = 'fix') {
   if (re.test(html)) reporter.pass(section, name);
-  else               reporter.fix(section, name, failMsg, 'emit it in the rendered HTML');
+  else if (severity === 'suggest') reporter.suggest(section, name, failMsg, 'emit it in the rendered HTML — platforms lay the card out before fetching it');
+  else reporter.fix(section, name, failMsg, 'emit it in the rendered HTML');
 }
 
 // Parse the JSON-LD rather than substring-matching it: a page emitting Article
@@ -467,6 +481,20 @@ async function discoverPost(home, base, get) {
   return pickContentPath([...r.text.matchAll(/\]\((\S+?)\)/g)].map((m) => m[1]), base);
 }
 
+/**
+ * A site with `trailingSlash: 'always'` (or 'never') answers on exactly one
+ * form. Try the other before letting a slash abandon thirteen checks.
+ */
+async function resolveSlash(path, get) {
+  if (!path) return path;
+  const first = await get(path);
+  if (first.ok && first.status === 200) return path;
+  const flipped = path.endsWith('/') ? (path.replace(/\/+$/, '') || '/') : path + '/';
+  if (flipped === path) return path;
+  const alt = await get(flipped);
+  return (alt.ok && alt.status === 200) ? flipped : path;
+}
+
 async function sitemapCandidates(base, get) {
   const out = [];
   for (const entry of ['/sitemap-index.xml', '/sitemap.xml', '/sitemap-0.xml']) {
@@ -500,14 +528,18 @@ function pickContentPath(urls, base) {
     try {
       const abs = new URL(u, base);
       if (abs.origin !== origin) continue;
-      path = abs.pathname.replace(/\/+$/, '') || '/';
+      // Keep the trailing slash EXACTLY as the site declared it. Normalising it
+      // away requested /wiki/x on a `trailingSlash: 'always'` site, which 404s —
+      // the sitemap had just told us the canonical form and we discarded it.
+      path = abs.pathname || '/';
     } catch { continue; }
-    if (NON_PAGE_EXT.test(path)) continue;
-    if (INDEX_ROUTES.has(path.toLowerCase())) continue;
-    if (PAGINATION.test(path)) continue;
+    const bare = path.replace(/\/+$/, '') || '/';
+    if (NON_PAGE_EXT.test(bare)) continue;
+    if (INDEX_ROUTES.has(bare.toLowerCase())) continue;
+    if (PAGINATION.test(bare)) continue;
     // A single leading segment that is itself an index route ("/blog/tag/x")
     // still counts as content; a bare "/tag/x" listing does not.
-    if (/^\/(?:tags?|categor(?:y|ies)|author)\//i.test(path)) continue;
+    if (/^\/(?:tags?|categor(?:y|ies)|author)\//i.test(bare)) continue;
     if (!paths.includes(path)) paths.push(path);
   }
   if (!paths.length) return null;

@@ -137,9 +137,11 @@ export async function run({ project, reporter }) {
     if (findings.altTotal === 0) {
       reporter.skip(SEC, 'alt', 'no content <img> in dist/ — nothing to check');
     } else if (findings.altMissing.length === 0) {
-      reporter.pass(SEC, 'alt', `all ${findings.altTotal} content <img> in dist/ carry an alt attribute`);
+      reporter.pass(SEC, 'alt', `all ${findings.altTotal} content <img> tag(s) in dist/ carry an alt attribute`);
     } else {
-      reporter.fix(SEC, 'alt', `${findings.altMissing.length} content <img> in dist/ have no alt attribute (e.g. ${truncate(findings.altMissing[0], 80)})`, 'add alt text (alt="" only if the image is purely decorative); <Image> from astro:assets requires it');
+      for (const m of findings.altMissing) {
+        reporter.fix(SEC, 'alt', `<img src="${truncate(m.src, 80)}"> has no alt attribute`, 'add alt text (alt="" only if the image is purely decorative); <Image> from astro:assets requires it', { file: m.file });
+      }
     }
   }
 }
@@ -234,7 +236,6 @@ function scanDist(projectRoot, findings) {
 // One pass over built HTML: transform-param anti-patterns + content <img> alt.
 function scanDistHtml(projectRoot, findings) {
   const seenUrl = new Set();
-  const seenAlt = new Set();
   eachDistHtml(projectRoot, (rel, html) => {
     const re = /\/cdn-cgi\/image\/[^"'`)\s>]+/g;
     let m;
@@ -249,11 +250,19 @@ function scanDistHtml(projectRoot, findings) {
         findings.transformParams.push({ file: rel, url, ...smells });
       }
     }
+    // Every tag counts. De-duplicating by `src` across the whole build meant
+    // the FIRST occurrence of an image decided the verdict for all of them: the
+    // same photo used with alt on the homepage and without alt on a post was
+    // reported as fine. Four independent dogfood builds found that — a silent
+    // false negative with exit 0, which is the worst outcome this tool has.
     for (const { src, hasAlt } of contentImgs(html)) {
-      if (seenAlt.has(src)) continue;
-      seenAlt.add(src);
       findings.altTotal++;
-      if (!hasAlt) findings.altMissing.push(src);
+      if (hasAlt) continue;
+      // One finding per (page, image); the same tag repeated on one page is one
+      // edit, but the same image on two pages is two.
+      if (!findings.altMissing.some((m) => m.file === rel && m.src === src)) {
+        findings.altMissing.push({ file: rel, src });
+      }
     }
   });
 }

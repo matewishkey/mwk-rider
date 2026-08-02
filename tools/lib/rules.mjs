@@ -47,6 +47,7 @@ const RULES = [
   ['seo/meta-og-type', 'seo', 'meta:og:type', 'og:type tells a scraper whether the page is an article or a site.'],
   ['seo/meta-og-url', 'seo', 'meta:og:url', 'og:url is the canonical address a share resolves to.'],
   ['seo/meta-canonical', 'seo', 'meta:canonical', 'Without a canonical link, parameterised and duplicate URLs compete with each other in the index.'],
+  ['seo/canonical-unique', 'seo', 'canonical:unique', 'A canonical shared by most of the site asks crawlers to drop those pages as duplicates — worse than having none.'],
   ['seo/no-keywords', 'seo', 'no-keywords', '<meta name="keywords"> is ignored by search engines and is a weak spam signal.'],
   ['seo/brand-sitename', 'seo', 'brand.siteName', 'The brand fields feed the SEO meta; an unset one renders as an empty tag.'],
   ['seo/brand-siteurl', 'seo', 'brand.siteUrl', 'The brand fields feed the SEO meta; an unset one renders as an empty tag.'],
@@ -142,6 +143,7 @@ const RULES = [
   // --- browser ---------------------------------------------------------------
   ['browser/playwright', 'browser', 'playwright', 'Reports that the optional browser domain could not run because playwright is not installed.'],
   ['browser/launch', 'browser', 'launch', 'Reports that Chromium could not be launched.'],
+  ['browser/scope', 'browser', 'scope', 'Names the single page every browser finding was measured on — a homepage sample must not read as a site-wide verdict.'],
   ['browser/load', 'browser', 'load', 'The page must finish loading in a real browser before anything else can be measured.'],
   ['browser/js-errors', 'browser', 'js:errors', 'An uncaught exception can leave interactive parts of the page dead with no visible sign.'],
   ['browser/console', 'browser', 'console', 'Console errors are usually a symptom of something misconfigured.'],

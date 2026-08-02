@@ -67,7 +67,9 @@ const HOUSE_STYLE = [
   // missing Cloudflare `_headers` semantics that the same tool demotes to 💡 when
   // run offline — the exact cries-wolf failure this file exists to prevent.
   'perf:cache:_astro',
-  'perf:cache:html',
+  // 'perf:cache:html' is deliberately NOT here. Immutable HTML means a deploy
+  // stays invisible until the cache expires — a real bug on any host, and it
+  // was demoted to 💡 while an optional og:image:width hint was a required 🔧.
   'analytics:zaraz',            // Zaraz specifically, not analytics in general
   'analytics:ga:raw',
   'data:llms.txt:served',

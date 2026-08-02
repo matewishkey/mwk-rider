@@ -8,9 +8,9 @@
 
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import { readSrcFiles } from '../lib/src-scan.mjs';
+import { readSrcFiles, stripComments } from '../lib/src-scan.mjs';
 import { eachDistHtml } from '../lib/html.mjs';
-import { distFiles, readDist, countMatches } from '../lib/dist.mjs';
+import { distFiles, readDist, countMatches, sitemapPages } from '../lib/dist.mjs';
 import { collectJsonLd, ldTypes, hasArticleType } from '../lib/jsonld.mjs';
 
 const SEC = 'data';
@@ -77,9 +77,42 @@ export async function run({ project, reporter }) {
     reporter.fix(SEC, 'search:index', `search-index endpoint(s) exist but none call getCollection() (${searchIdx.map(short).join(', ')})`, 'build the index from getCollection()');
   }
 
-  // Content collection is schema-validated (stable shape for consumers)
-  if (project.contentConfig && /z\.object\(/.test(project.contentConfig)) reporter.pass(SEC, 'content:schema', 'collection has a Zod schema');
-  else reporter.fix(SEC, 'content:schema', 'content collection has no Zod schema', 'define a Zod schema in src/content.config.ts');
+  checkContentSchema(project, reporter);
+}
+
+/**
+ * Every collection is schema-validated, not just one of them.
+ *
+ * The old check was a whole-file `/z\.object\(/` on the raw text of
+ * content.config.ts. Two collections where only one had a schema passed; so did
+ * a file whose only mention of Zod was in a comment — the exact failure this
+ * repo had already fixed for meta tags and then repeated here. All five dogfood
+ * builds found it.
+ */
+function checkContentSchema(project, reporter) {
+  if (!project.contentConfig) {
+    reporter.fix(SEC, 'content:schema', 'no src/content.config.ts (or src/content/config.ts)', 'define your collections with a Zod schema so consumers get a validated, stable shape');
+    return;
+  }
+  const code = stripComments(project.contentConfig);
+  // `const blog = defineCollection({…})` and `{ blog: defineCollection({…}) }`
+  // are both idiomatic; take the text up to the next definition as the body.
+  const defs = [...code.matchAll(/(?:const\s+(\w+)\s*=|(\w+)\s*:)\s*defineCollection\s*\(/g)];
+  if (defs.length === 0) {
+    reporter.fix(SEC, 'content:schema', 'content.config.ts defines no collections (no defineCollection call outside comments)', 'define each collection with defineCollection({ loader, schema })', { file: 'src/content.config.ts' });
+    return;
+  }
+  const unschemad = [];
+  for (const [i, m] of defs.entries()) {
+    const end = i + 1 < defs.length ? defs[i + 1].index : code.length;
+    const body = code.slice(m.index, end);
+    if (!/\bschema\s*:/.test(body)) unschemad.push(m[1] ?? m[2] ?? '(unnamed)');
+  }
+  if (unschemad.length === 0) {
+    reporter.pass(SEC, 'content:schema', `${defs.length} collection(s), each with a schema`, { file: 'src/content.config.ts' });
+  } else {
+    reporter.fix(SEC, 'content:schema', `${unschemad.length}/${defs.length} collection(s) have no schema: ${unschemad.join(', ')}`, 'give every collection a Zod schema — an unvalidated one has no guaranteed shape for any consumer', { file: 'src/content.config.ts' });
+  }
 }
 
 /**
@@ -101,12 +134,17 @@ function checkJsonLd(project, reporter) {
     return;
   }
 
-  const objects = [], broken = [];
+  // Judged over the pages the site declares in its sitemap, for the same reason
+  // seo's coverage checks are: "every built page" counts OG templates.
+  const declared = sitemapPages(project.root);
+  const objects = [], broken = [], without = [];
   let pages = 0, pagesWithLd = 0;
   eachDistHtml(project.root, (rel, html) => {
+    if (declared && !declared.has(rel.replace(/^dist\//, ''))) return;
     pages++;
     const found = collectJsonLd(html);
     if (found.objects.length) pagesWithLd++;
+    else without.push(rel);
     objects.push(...found.objects);
     for (const b of found.broken) broken.push(`${rel}: ${b}`);
   });
@@ -117,10 +155,15 @@ function checkJsonLd(project, reporter) {
     return;
   }
 
+  // "More than zero" was the bar: 1 page out of 19 reported ✅ and exit 0, with
+  // the ratio printed but no threshold to read it against.
+  const scope = declared ? 'sitemap page(s)' : 'built page(s)';
   if (pagesWithLd === 0) {
-    reporter.fix(SEC, 'jsonld:emitted', `no JSON-LD on any of the ${pages} built page(s)`, 'emit JSON-LD structured data from the component that renders <head>');
+    reporter.fix(SEC, 'jsonld:emitted', `no JSON-LD on any of the ${pages} ${scope}`, 'emit JSON-LD structured data from the component that renders <head>');
+  } else if (without.length) {
+    reporter.suggest(SEC, 'jsonld:emitted', `${without.length}/${pages} ${scope} emit no JSON-LD — ${without.slice(0, 3).join('; ')}${without.length > 3 ? ' …' : ''}`, 'emit it from the shared head component so every published page carries it, not just some');
   } else {
-    reporter.pass(SEC, 'jsonld:emitted', `${pagesWithLd}/${pages} built page(s)`);
+    reporter.pass(SEC, 'jsonld:emitted', `on all ${pages} ${scope}`);
   }
 
   // Invalid JSON-LD is worse than none: search engines discard the block, but

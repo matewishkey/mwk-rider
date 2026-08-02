@@ -380,8 +380,12 @@ writeFileSync(join(todoDir, 'src', 'components', 'BaseHead.astro'),
   '---\n// TODO: emit og:image:width and og:image:height and og:type here.\n// Also rel="canonical" and og:url.\n---\n');
 writeFileSync(join(todoDir, 'src', 'pages', 'index.astro'), '<p>hi</p>\n');
 const todoRows = runJson(todoDir, ['-s', 'seo']).json?.results ?? [];
+// og:image:width/height are a layout hint, so their absence is advice, not a
+// defect — see META_TAGS in checks/seo.mjs. Everything else here is required.
+const HINT_METAS = new Set(['og:image:width', 'og:image:height']);
+const expectedMiss = (n) => (HINT_METAS.has(n) ? 'suggest' : 'fix');
 check('a TODO comment does not satisfy any meta:* check',
-  META_NAMES.every(n => todoRows.find(r => r.name === `meta:${n}`)?.outcome === 'fix'),
+  META_NAMES.every(n => todoRows.find(r => r.name === `meta:${n}`)?.outcome === expectedMiss(n)),
   JSON.stringify(todoRows.filter(r => r.name?.startsWith('meta:') && r.outcome !== 'fix')));
 check('  …nor make the file count as a head-meta component',
   todoRows.find(r => r.name === 'SEO component')?.outcome === 'fix');
@@ -584,6 +588,70 @@ const fatCss = mkBuilt({
 });
 check('260 KB of render-blocking CSS on one page → fix',
   runJson(fatCss, ['-s', 'perf']).json?.results.find(r => r.id === 'perf/css-bytes')?.outcome === 'fix');
+
+console.log('the dogfood round-2 defects stay fixed:');
+// Every one of these was found by an independent agent auditing a site it had
+// built without reading this repo. Four of the five found the alt one.
+const PAGE = (body) => `<html><head><link rel="canonical" href="/x"><title>t</title></head><body>${body}</body></html>`;
+
+// De-duplicating by src let the FIRST occurrence decide the verdict for all of
+// them — a silent false negative with exit 0.
+const altMix = mkBuilt({
+  'dist/index.html': '<html><body><img src="/a.webp" alt="described" width="16" height="9"></body></html>',
+  'dist/post/index.html': '<html><body><img src="/a.webp" width="16" height="9"></body></html>',
+});
+const altRow = runJson(altMix, ['-s', 'images']).json?.results.find(r => r.id === 'images/alt' && r.outcome === 'fix');
+check('an image with alt on one page and without on another is still caught',
+  altRow != null && altRow.file === 'dist/post/index.html', JSON.stringify(altRow));
+
+// A whole-file /z\.object\(/ passed two collections where only one had a schema,
+// and passed a file whose only mention of Zod was in a comment.
+const SCHEMA_CONFIG = `import { defineCollection, z } from 'astro:content';
+const blog = defineCollection({ loader: glob({}), schema: z.object({ title: z.string() }) });
+const wiki = defineCollection({ loader: glob({}) });
+export const collections = { blog, wiki };`;
+const halfSchema = mkBuilt({ 'src/content.config.ts': SCHEMA_CONFIG });
+const schemaRow = row(halfSchema, 'data', 'data/content-schema');
+check('one collection of two with no schema → fix, naming it',
+  schemaRow?.outcome === 'fix' && /wiki/.test(schemaRow?.message ?? ''), JSON.stringify(schemaRow));
+const commentSchema = mkBuilt({
+  'src/content.config.ts': "import { defineCollection } from 'astro:content';\n// TODO: add schema: z.object({ title: z.string() })\nconst blog = defineCollection({ loader: glob({}) });\nexport const collections = { blog };",
+});
+check('  …and a schema mentioned only in a comment does not count',
+  row(commentSchema, 'data', 'data/content-schema')?.outcome === 'fix');
+
+// "More than zero" was the bar for both of these.
+const thinLd = mkBuilt({
+  'dist/index.html': PAGE('') .replace('</head>', '<script type="application/ld+json">{"@type":"WebSite"}<\/script></head>'),
+  'dist/a/index.html': PAGE('<p>a</p>'),
+  'dist/b/index.html': PAGE('<p>b</p>'),
+});
+check('JSON-LD on 1 page of 3 is not a pass',
+  runJson(thinLd, ['-s', 'data']).json?.results.find(r => r.id === 'data/jsonld-emitted')?.outcome === 'suggest');
+
+// The canonical check used to define its own denominator as "pages that have a
+// canonical", so deleting canonical from every page but one reported 1/1 ✅.
+const thinCanonical = mkBuilt({
+  'dist/index.html': '<html><head><link rel="canonical" href="/"><title>t</title></head><body><h1>a</h1></body></html>',
+  'dist/a/index.html': '<html><head><title>t</title></head><body><h1>a</h1></body></html>',
+  'dist/b/index.html': '<html><head><title>t</title></head><body><h1>b</h1></body></html>',
+});
+check('a canonical on 1 page of 3 is not a pass',
+  runJson(thinCanonical, ['-s', 'seo']).json?.results.find(r => r.id === 'seo/meta-canonical')?.outcome === 'suggest');
+
+// Presence-only passed a site whose every page claimed one canonical URL.
+const sameCanonical = mkBuilt(Object.fromEntries(
+  ['index', 'a/index', 'b/index', 'c/index'].map(n =>
+    [`dist/${n}.html`, '<html><head><link rel="canonical" href="https://x.test/"><title>t</title></head><body><h1>x</h1></body></html>'])));
+check('every page declaring the same canonical URL is reported',
+  runJson(sameCanonical, ['-s', 'seo']).json?.results.find(r => r.id === 'seo/canonical-unique')?.outcome === 'suggest');
+
+// A scan that opened nothing is not a clean bill of health.
+const emptyProject = tmpProject('wishbusterz-rider-empty-');
+writeFileSync(join(emptyProject, 'package.json'), JSON.stringify({ name: 'fx', type: 'module', dependencies: { astro: '^7.1.6' } }));
+writeFileSync(join(emptyProject, 'astro.config.mjs'), "export default { output: 'static' };\n");
+check('analytics does not pass on a project with nothing to scan',
+  runJson(emptyProject, ['-s', 'analytics']).json?.results.find(r => r.id === 'analytics/no-hardcoded-ga')?.outcome === 'skip');
 
 console.log('--rules is the catalogue, and it does not drift:');
 // The catalogue is what an agent reads to learn what this tool checks. If a

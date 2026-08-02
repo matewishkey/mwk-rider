@@ -48,11 +48,13 @@ export async function run({ project, reporter }) {
     hits.push({ where, label });
   };
 
+  let scanned = 0;
   walkSource(project.root, (relPath) => {
     if (!SCAN_EXTS.has(extname(relPath).toLowerCase())) return;
     let text;
     try { text = readFileSync(join(project.root, relPath), 'utf8'); }
     catch { return; }
+    scanned++;
     for (const [re, label] of GA_SIGNALS) {
       if (re.test(text)) record(relPath, label);
     }
@@ -60,14 +62,19 @@ export async function run({ project, reporter }) {
 
   if (project.hasDist) {
     eachDistHtml(project.root, (rel, html) => {
+      scanned++;
       for (const [re, label] of GA_SIGNALS) {
         if (re.test(html)) record(rel, label);
       }
     });
   }
 
-  if (hits.length === 0) {
-    reporter.pass(SEC, 'no-hardcoded-ga', 'no hardcoded Google Analytics / GTM snippet — analytics should be delivered via Cloudflare Zaraz at the edge (verify the loader on --url)');
+  if (scanned === 0) {
+    // A project with no scannable source and no dist/ used to report ✅ — a
+    // clean bill of health for a scan that opened nothing.
+    reporter.skip(SEC, 'no-hardcoded-ga', 'no scannable source files and no dist/ — nothing was read, so this is not a pass');
+  } else if (hits.length === 0) {
+    reporter.pass(SEC, 'no-hardcoded-ga', `no hardcoded Google Analytics / GTM snippet in ${scanned} file(s) — analytics should be delivered via Cloudflare Zaraz at the edge (verify the loader on --url)`);
   } else {
     const sample = hits.slice(0, 3).map((h) => `${h.label} in ${h.where}`).join('; ');
     reporter.fix(SEC, 'no-hardcoded-ga', `${hits.length} hardcoded analytics signal(s) — ${sample}${hits.length > 3 ? ' …' : ''}`, 'load Google Analytics through Cloudflare Zaraz so the consent banner (CMP) gates it, instead of shipping a raw snippet that fires before consent');

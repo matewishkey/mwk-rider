@@ -34,3 +34,36 @@ export function readDist(root, rel) {
 export function countMatches(text, re) {
   return (text.match(re) ?? []).length;
 }
+
+/**
+ * The pages the site itself declares as indexable, as dist-relative HTML paths.
+ *
+ * Coverage checks need a denominator, and every obvious choice is wrong.
+ * "Every HTML file in dist/" counts OG-image templates and component preview
+ * routes that legitimately carry no canonical. "Pages that have a canonical" —
+ * which is what `isContentPage` means — makes the canonical check measure
+ * itself: delete the canonical from 18 of 19 pages and the set shrinks to 1,
+ * which then reports 1/1 ✅. Reproduced exactly that way on a dogfood build.
+ *
+ * The sitemap is the site's own answer to "which pages are you publishing", so
+ * it is the honest denominator. Returns null when there is no sitemap, and the
+ * caller falls back to every built page.
+ */
+export function sitemapPages(root) {
+  const maps = distFiles(root, /sitemap[-a-z0-9]*\.xml$/i);
+  const paths = new Set();
+  for (const f of maps) {
+    for (const m of readDist(root, f).matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/gi)) {
+      let pathname;
+      try { pathname = new URL(m[1]).pathname; } catch { continue; }
+      if (/\.xml$/i.test(pathname)) continue;    // a sitemap index listing sitemaps
+      const clean = pathname.replace(/^\/+|\/+$/g, '');
+      // Astro writes either `about/index.html` or `about.html` depending on
+      // build.format; accept whichever exists.
+      for (const candidate of clean ? [`${clean}/index.html`, `${clean}.html`] : ['index.html']) {
+        if (existsSync(join(root, 'dist', candidate))) { paths.add(candidate); break; }
+      }
+    }
+  }
+  return paths.size ? paths : null;
+}
