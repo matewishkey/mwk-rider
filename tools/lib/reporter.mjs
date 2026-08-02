@@ -54,10 +54,18 @@ export class Reporter {
 
   // Every outcome takes an optional trailing `at` — { file, line, url, id }.
   // `id` overrides the derived rule id; the rest locate the finding.
+  // Offline and live checks share rule names — `images:alt` reads dist/, then
+  // reads served HTML. In a combined --url run the same label printed twice with
+  // opposite verdicts and nothing said which was which; `source` was in the JSON
+  // all along and missing from the line a human reads.
+  _tag() {
+    return this.source === 'live' ? '[live] ' : '';
+  }
+
   pass(section, name, message = '', at = {}) {
     this._record({ section, name, outcome: 'pass', message }, at);
     if (!this.json && !this.quiet) {
-      console.log(`✅ ${section}: ${name}${where(at)}${message ? ' — ' + message : ''}`);
+      console.log(`✅ ${this._tag()}${section}: ${name}${where(at)}${message ? ' — ' + message : ''}`);
     }
   }
 
@@ -65,7 +73,7 @@ export class Reporter {
     if (this._demoted(section, name)) return this.suggest(section, name, message, fix, { ...at, houseStyle: true });
     this._record({ section, name, outcome: 'fix', message, fix }, at);
     if (!this.json) {
-      console.log(`🔧 ${section}: ${name}${where(at)} — ${message}`);
+      console.log(`🔧 ${this._tag()}${section}: ${name}${where(at)} — ${message}`);
       if (fix) console.log(`     fix: ${fix}`);
     }
   }
@@ -74,7 +82,7 @@ export class Reporter {
     if (this._demoted(section, name)) return this.suggest(section, name, message, fix, { ...at, houseStyle: true });
     this._record({ section, name, outcome: 'block', message, fix }, at);
     if (!this.json) {
-      console.log(`🛑 ${section}: ${name}${where(at)} — ${message}`);
+      console.log(`🛑 ${this._tag()}${section}: ${name}${where(at)} — ${message}`);
       if (fix) console.log(`     resolve: ${fix}`);
     }
   }
@@ -86,7 +94,7 @@ export class Reporter {
     // run — hiding those made a quiet run look cleaner than it was, and
     // contradicted what --help and tools/README.md promise.
     if (!this.json) {
-      console.log(`💡 ${section}: ${name}${where(at)} — ${message}${houseStyle ? ' [baseline]' : ''}`);
+      console.log(`💡 ${this._tag()}${section}: ${name}${where(at)} — ${message}${houseStyle ? ' [baseline]' : ''}`);
       if (suggestion) console.log(`     suggestion: ${suggestion}`);
     }
   }
@@ -94,7 +102,7 @@ export class Reporter {
   skip(section, name, reason, at = {}) {
     this._record({ section, name, outcome: 'skip', message: reason }, at);
     if (!this.json) {
-      console.log(`⏭  ${section}: ${name}${where(at)} — ${reason}`);
+      console.log(`⏭  ${this._tag()}${section}: ${name}${where(at)} — ${reason}`);
     }
   }
 
