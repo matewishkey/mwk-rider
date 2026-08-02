@@ -80,13 +80,20 @@ against a known-good site and a known-bad one.
   TS 7 breaks `astro check`, which is the type gate the baseline relies on. Pin
   `^6` until the peer range widens. → `modules: typescript:version`
 - **Baseline integrations installed:** `@astrojs/mdx`, `@astrojs/sitemap`,
-  `@astrojs/rss`, `@astrojs/check`, `astro-robots-txt`, `@orama/orama`. Each
-  backs a downstream practice (RSS feed, sitemap, type-checking, robots, search).
-  → `modules: dep:<name>`
+  `@astrojs/rss`, `@astrojs/check`, `@orama/orama`. Each backs a downstream
+  practice (RSS feed, sitemap, type-checking, search). → `modules: dep:<name>`
+
+  `astro-robots-txt` was on this list and no longer is. The practice is that the
+  build *ships* a robots.txt pointing at the sitemap — a generated endpoint does
+  that at least as well as the package, and collides with it if you have both.
+  Requiring the package tested our habit, not the outcome. → `seo: robots`
 - **Search is Orama, nothing else.** One client-side search engine fed by a
   content-driven index keeps bundle size and behavior predictable; a competing
   lib (Algolia, Pagefind, Fuse, Lunr, …) means two answers to the same question.
-  → `modules: search:engine` (pairs with `data: search:index`)
+  The check judges what's *present*: Orama → pass, a competitor → fix, no search
+  library at all → `⏭`. It used to pass on the mere absence of a competitor, so a
+  site with no search was reported as "Orama ✅" — a pass for something that
+  wasn't there. → `modules: search:engine` (pairs with `data: search:index`)
 - **Cloudflare adapter only for SSR `<Image>`.** On `output: 'static'` (the
   baseline), `astro:assets`' `<Image>` is optimized at *build time* by Sharp and
   emitted to `dist/` — no adapter exists or is needed. The Cloudflare image
@@ -170,9 +177,18 @@ thing a version bump leaves behind. Each maps to a documented v7 breaking change
   signal — its presence is the anti-pattern. → `seo: no-keywords`
 - **Brand fields set:** `siteName`, `siteUrl`, `tagline` feed the SEO meta. →
   `seo: brand.<field>` (and 💡 `brand:optional` for author/twitter handles)
-- **Sitemap carries lastmod.** A custom `@astrojs/sitemap` serializer must emit
-  `lastmod` (`dateModified ?? date`); the default mtime behavior is fine
-  otherwise. → `seo: sitemap:lastmod`
+- **`robots.txt` served, pointing at the sitemap.** The built site must carry a
+  `robots.txt` with a `Sitemap:` line — that line is how a crawler that starts at
+  the root finds the full URL list. Read from `dist/robots.txt`, so any way of
+  producing it counts: an endpoint, a `public/` file, or an integration.
+  → `seo: robots` (`⏭` with no `dist/`)
+- **Sitemap carries lastmod.** Read from the built `sitemap*.xml`: how many
+  `<url>` entries carry a `<lastmod>`. `@astrojs/sitemap` emits none unless a
+  `serialize()` supplies one (verified against the integration docs), so the
+  integration being configured proves nothing — the old check inferred it from
+  `astro.config` and passed two dogfood sites whose sitemaps had zero `lastmod`.
+  Advisory: a crawler tolerates its absence, it just can't tell what changed.
+  → `seo: sitemap:lastmod` (`⏭` with no `dist/`)
 - **Exactly one `<h1>` per content page.** The `<h1>` is the page title; zero
   means no main heading, more than one dilutes the document outline for search
   engines and screen readers. Checked on built `dist/` HTML (pages with a
@@ -234,9 +250,19 @@ thing a version bump leaves behind. Each maps to a documented v7 breaking change
 `src/lib/jsonld.*`, `src/pages/**`, `src/content.config.ts`. Endpoints are matched
 by **pattern**, so single-locale and per-locale naming both pass.*
 
-- **JSON-LD emitted, covering both core shapes.** The SEO component emits
-  `application/ld+json`; the helper builds a per-post `BlogPosting` and a
-  site-wide `WebSite`. → `data: jsonld:emitted`, `data: jsonld:shapes`
+- **JSON-LD emitted, covering both core shapes.** The built pages carry
+  `application/ld+json` with an Article-family type per post and a site-wide
+  `WebSite`. Read from `dist/` and **parsed**, not grepped: the old check required
+  a file at `src/lib/jsonld.ts` containing the literal string `BlogPosting`, so
+  five independently built sites that all emit rich, valid JSON-LD were all told
+  they had none — they named the module differently, inlined it, or chose
+  `Article`. Any of `Article`, `BlogPosting`, `NewsArticle`, `TechArticle`,
+  `ScholarlyArticle`, `LiveBlogPosting`, `Report`, `CreativeWork` counts; all earn
+  the same rich results. `@graph` and top-level arrays are unwrapped.
+  → `data: jsonld:emitted`, `data: jsonld:shapes` (`⏭` with no `dist/`)
+- **The JSON-LD parses.** A block that isn't valid JSON is discarded whole by
+  search engines while looking perfectly fine in the source — worse than emitting
+  none. → `data: jsonld:parses`
 - **`/llms.txt`, content-driven.** Some `llms*.txt` endpoint is built from
   `getCollection()` (a multi-locale root may be a thin index pointing at
   per-locale variants — pass if *any* endpoint is content-driven). →
@@ -244,8 +270,12 @@ by **pattern**, so single-locale and per-locale naming both pass.*
 - **Published-only filter on the content index.** Drafts and preview-only
   entries must be excluded — accepted as inline `!draft && !previewOnly` *or* a
   factored `isPublished()`-style helper. → `data: llms.txt:filter`
-- **RSS feed via `@astrojs/rss` + `getCollection`.** Any `rss*/feed*.xml`
-  endpoint. → `data: rss`
+- **RSS feed with items in it.** Judged on the built `rss*/feed*/atom*.xml`:
+  does it contain `<item>`s? The endpoint file is only how the feed got there, so
+  requiring `getCollection()` *inside* it penalised the better pattern of
+  factoring the collection query into a shared helper. Without a `dist/` the
+  endpoint's existence is reported, and the message says its output is unverified.
+  → `data: rss`
 - **An Orama search-index endpoint.** A `search-index*.json` endpoint built from
   `getCollection()` is the source the client-side Orama search loads. →
   `data: search:index` (pairs with `modules: search:engine`)
@@ -369,8 +399,6 @@ worth it — following *How we add a practice* above. Listed so we don't lose th
   check only inspects pages with a `<link rel="canonical">`; a page that should
   be indexable but lacks canonical is invisible to it (the live check still
   covers home + a post).
-- **`robots.txt` wired.** `astro-robots-txt` is a baseline dep, but nothing
-  asserts it's configured / the route is served.
 - **No-negotiation fallback probe (live).** A second `Accept: */*` image probe
   would surface a large raw-source fallback directly; today the offline
   `transform:format` check catches the same `format=webp` smell more cheaply.

@@ -28,8 +28,9 @@ jobs:
       - name: Install site dependencies
         run: npm ci
 
-      # The images and perf domains inspect built output, so build first.
-      # Drop this step if you only want the source-level checks.
+      # Many checks read dist/ — robots.txt, sitemap lastmod, the emitted
+      # JSON-LD, the built feed, image bytes, alt text. Without a build they
+      # skip, and the audit reports far less than it could.
       - name: Build the site
         run: npm run build
 

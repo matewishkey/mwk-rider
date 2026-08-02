@@ -9,6 +9,7 @@
 import { transformSmells } from '../lib/cf-image.mjs';
 import { headingLevels, headingAudit, attrValue, hasAttr } from '../lib/html.mjs';
 import { imageSize } from '../lib/image-size.mjs';
+import { collectJsonLd, ldTypes, hasArticleType } from '../lib/jsonld.mjs';
 
 // A host that accepts the connection and never answers used to hang the audit
 // indefinitely — in CI, forever.
@@ -136,7 +137,8 @@ async function auditCache(home, head, reporter) {
 
 async function auditSeo(home, postPath, base, get, head, reporter) {
   assertHas(reporter, 'seo', 'home:canonical', home.text, /<link[^>]+rel=["']canonical["']/, 'homepage missing <link rel="canonical">');
-  assertHas(reporter, 'data', 'home:jsonld-website', home.text, /"@type"\s*:\s*"WebSite"/, 'homepage missing WebSite JSON-LD');
+  checkLdTypes(reporter, 'home:jsonld-website', home.text, (t) => t.has('WebSite'),
+    'homepage emits no WebSite JSON-LD', 'emit a site-wide WebSite shape from the head component');
   checkHeadings(reporter, 'home', home.text);
 
   if (!postPath) {
@@ -163,7 +165,9 @@ async function auditSeo(home, postPath, base, get, head, reporter) {
     assertHas(reporter, 'seo', name, h, re, msg);
   }
   checkHeadings(reporter, 'post', h);
-  assertHas(reporter, 'data', 'post:jsonld', h, /"@type"\s*:\s*"BlogPosting"/, 'BlogPosting JSON-LD missing');
+  checkLdTypes(reporter, 'post:jsonld', h, hasArticleType,
+    'content page emits no Article-family JSON-LD (Article/BlogPosting/NewsArticle/TechArticle…)',
+    'emit an Article-family shape per post', { url: postPath });
 
   const ogImg = h.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/)?.[1];
   if (ogImg) {
@@ -348,6 +352,16 @@ function assertHas(reporter, section, name, html, re, failMsg) {
 // `label` is which page was read (home / a content path). It's the location of
 // the finding, not a different rule — so it rides in `url`, and both pages
 // report under one stable id.
+// Parse the JSON-LD rather than substring-matching it: a page emitting Article
+// where we looked for the literal "BlogPosting" was reported as having none, and
+// a @graph-wrapped shape was invisible to the regex either way.
+function checkLdTypes(reporter, name, html, predicate, failMsg, fixMsg, at = {}) {
+  const { objects } = collectJsonLd(html);
+  const types = ldTypes(objects);
+  if (predicate(types)) reporter.pass('data', name, [...types].sort().join(', '), at);
+  else reporter.fix('data', name, `${failMsg}${types.size ? ` — found: ${[...types].sort().join(', ')}` : ''}`, fixMsg, at);
+}
+
 function checkHeadings(reporter, label, html) {
   const a = headingAudit(headingLevels(html));
   const at = { url: label };

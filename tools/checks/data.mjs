@@ -9,6 +9,9 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { readSrcFiles } from '../lib/src-scan.mjs';
+import { eachDistHtml } from '../lib/html.mjs';
+import { distFiles, readDist, countMatches } from '../lib/dist.mjs';
+import { collectJsonLd, ldTypes, hasArticleType } from '../lib/jsonld.mjs';
 
 const SEC = 'data';
 
@@ -30,21 +33,7 @@ export async function run({ project, reporter }) {
     return inline || helper;
   };
 
-  // JSON-LD — emitted anywhere in src/, not just from a file called SEO.astro.
-  const ld = readSrcFiles(project.root).find((f) => /application\/ld\+json/.test(f.text));
-  if (ld) reporter.pass(SEC, 'jsonld:emitted', ld.path);
-  else reporter.fix(SEC, 'jsonld:emitted', 'no <script type="application/ld+json"> anywhere in src/', 'emit JSON-LD structured data from the component that renders <head>');
-
-  // JSON-LD helper covering the two core shapes
-  const jsonldPath = pickFirst(project.root, ['src/lib/jsonld.ts', 'src/lib/jsonld.js']);
-  if (jsonldPath) {
-    const t = read(jsonldPath);
-    const blog = /BlogPosting/.test(t), site = /WebSite/.test(t);
-    if (blog && site) reporter.pass(SEC, 'jsonld:shapes');
-    else reporter.fix(SEC, 'jsonld:shapes', `missing shape(s) — BlogPosting:${blog} WebSite:${site}`, 'build both a BlogPosting (per post) and a WebSite (site-wide) shape');
-  } else {
-    reporter.fix(SEC, 'jsonld:shapes', 'no src/lib/jsonld.ts helper', 'add a jsonld helper building BlogPosting + WebSite');
-  }
+  checkJsonLd(project, reporter);
 
   // /llms.txt — any llms*.txt endpoint; pass if SOME endpoint is content-driven.
   // (Multi-locale: root llms.txt is a thin index, llms-[locale].txt is the content one.)
@@ -59,14 +48,23 @@ export async function run({ project, reporter }) {
     else if (driven.length) reporter.fix(SEC, 'llms.txt:filter', 'no draft/preview filter on the content endpoint', 'exclude drafts/preview-only (!draft && !previewOnly)');
   }
 
-  // RSS — any rss*/feed* .xml endpoint using @astrojs/rss + getCollection
+  // RSS — the built feed is the artifact; the endpoint file is only how it got
+  // there. Requiring getCollection() *in the endpoint* penalised the better
+  // pattern of factoring the query into a shared helper.
   const rss = pages.filter((p) => /(^|\/)(rss|feed)[-.a-z\[\]]*\.xml\.(ts|js)$/i.test(p));
-  if (rss.length === 0) {
-    reporter.fix(SEC, 'rss', 'no rss/feed .xml endpoint', 'add an RSS feed via @astrojs/rss built from getCollection()');
-  } else if (rss.some((p) => /@astrojs\/rss|\brss\s*\(/.test(read(p)) && contentDriven(p))) {
-    reporter.pass(SEC, 'rss', `feed present (${rss.map(short).join(', ')})`);
+  const builtFeeds = project.hasDist ? distFiles(project.root, /(^|\/)(rss|feed|atom)[-.a-z0-9]*\.xml$/i) : [];
+  if (builtFeeds.length) {
+    const items = builtFeeds.reduce((n, f) => n + countMatches(readDist(project.root, f), /<(?:item|entry)\b/gi), 0);
+    if (items > 0) reporter.pass(SEC, 'rss', `${items} item(s) in ${builtFeeds.length} built feed(s) (${builtFeeds.join(', ')})`);
+    else reporter.fix(SEC, 'rss', `feed built but empty (${builtFeeds.join(', ')})`, 'the feed renders no items — check the collection query and the draft/preview filter');
+  } else if (rss.length === 0) {
+    reporter.fix(SEC, 'rss', `no rss/feed .xml endpoint${project.hasDist ? ' and no feed in dist/' : ''}`, 'add an RSS feed via @astrojs/rss built from getCollection()');
+  } else if (project.hasDist) {
+    reporter.fix(SEC, 'rss', `endpoint(s) exist but no feed in dist/ (${rss.map(short).join(', ')})`, 'the endpoint is not producing a feed — check it returns a Response and is not a draft route');
+  } else if (rss.some((p) => /@astrojs\/rss|\brss\s*\(/.test(read(p)))) {
+    reporter.pass(SEC, 'rss', `endpoint present (${rss.map(short).join(', ')}) — no dist/, so its output is unverified`);
   } else {
-    reporter.fix(SEC, 'rss', `endpoint(s) exist but not via @astrojs/rss + getCollection (${rss.map(short).join(', ')})`, 'build the feed with @astrojs/rss from getCollection()');
+    reporter.fix(SEC, 'rss', `endpoint(s) exist but not via @astrojs/rss (${rss.map(short).join(', ')})`, 'build the feed with @astrojs/rss');
   }
 
   // Search — Orama index source. The @orama/orama dep is asserted in `modules`.
@@ -82,6 +80,64 @@ export async function run({ project, reporter }) {
   // Content collection is schema-validated (stable shape for consumers)
   if (project.contentConfig && /z\.object\(/.test(project.contentConfig)) reporter.pass(SEC, 'content:schema', 'collection has a Zod schema');
   else reporter.fix(SEC, 'content:schema', 'content collection has no Zod schema', 'define a Zod schema in src/content.config.ts');
+}
+
+/**
+ * Structured data, judged on what the pages emit.
+ *
+ * The old check required a file at `src/lib/jsonld.ts` containing the literal
+ * strings "BlogPosting" and "WebSite". Sites that emit perfectly good JSON-LD
+ * from a differently-named module, or inline, or using Article instead of
+ * BlogPosting, were all told they had none. Read dist/ and parse it.
+ */
+function checkJsonLd(project, reporter) {
+  if (!project.hasDist) {
+    // No artifact to read: say what could not be checked rather than passing or
+    // failing on a proxy. The source-side signal is still worth reporting.
+    const ld = readSrcFiles(project.root).find((f) => /application\/ld\+json/.test(f.code));
+    if (ld) reporter.pass(SEC, 'jsonld:emitted', `${ld.path} — no dist/, so the emitted shapes are unverified`);
+    else reporter.fix(SEC, 'jsonld:emitted', 'no <script type="application/ld+json"> anywhere in src/', 'emit JSON-LD structured data from the component that renders <head>');
+    reporter.skip(SEC, 'jsonld:shapes', 'no dist/ — build the site to check the JSON-LD it actually emits (Article-family + WebSite)');
+    return;
+  }
+
+  const objects = [], broken = [];
+  let pages = 0, pagesWithLd = 0;
+  eachDistHtml(project.root, (rel, html) => {
+    pages++;
+    const found = collectJsonLd(html);
+    if (found.objects.length) pagesWithLd++;
+    objects.push(...found.objects);
+    for (const b of found.broken) broken.push(`${rel}: ${b}`);
+  });
+
+  if (pages === 0) {
+    reporter.skip(SEC, 'jsonld:emitted', 'dist/ has no HTML — nothing to read');
+    reporter.skip(SEC, 'jsonld:shapes', 'dist/ has no HTML — nothing to read');
+    return;
+  }
+
+  if (pagesWithLd === 0) {
+    reporter.fix(SEC, 'jsonld:emitted', `no JSON-LD on any of the ${pages} built page(s)`, 'emit JSON-LD structured data from the component that renders <head>');
+  } else {
+    reporter.pass(SEC, 'jsonld:emitted', `${pagesWithLd}/${pages} built page(s)`);
+  }
+
+  // Invalid JSON-LD is worse than none: search engines discard the block, but
+  // nothing in the source hints that anything is wrong.
+  if (broken.length) {
+    reporter.fix(SEC, 'jsonld:parses', `${broken.length} JSON-LD block(s) are not valid JSON`, 'serialise with JSON.stringify and set:html — hand-written JSON-LD in a template usually breaks on quoting', { file: broken[0].split(':')[0] });
+  }
+
+  const types = ldTypes(objects);
+  const article = hasArticleType(types);
+  const site = types.has('WebSite');
+  if (article && site) {
+    reporter.pass(SEC, 'jsonld:shapes', `emitted: ${[...types].sort().join(', ')}`);
+  } else {
+    const missing = [!article ? 'an Article-family type (Article/BlogPosting/NewsArticle/TechArticle…)' : null, !site ? 'WebSite' : null].filter(Boolean).join(' and ');
+    reporter.fix(SEC, 'jsonld:shapes', `dist/ emits ${types.size ? [...types].sort().join(', ') : 'no @type at all'} — missing ${missing}`, 'emit an Article-family shape per post and a site-wide WebSite shape');
+  }
 }
 
 function listPages(root) {
@@ -101,11 +157,6 @@ function listPages(root) {
     }
   }
   return out;
-}
-
-function pickFirst(root, rels) {
-  for (const r of rels) if (existsSync(join(root, r))) return r;
-  return null;
 }
 
 function short(rel) { return rel.replace(/^src\/pages\//, ''); }

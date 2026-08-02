@@ -42,7 +42,10 @@ const HOUSE_STYLE = [
   'data:llms.txt:filter',
   'data:rss',
   'data:search:index',
-  'data:jsonld:shapes',         // demands src/lib/jsonld.ts specifically
+  'data:jsonld:shapes',         // *which* shapes we demand (Article + WebSite)
+                                // is our call — a site with no articles has
+                                // neither and isn't wrong. jsonld:emitted and
+                                // jsonld:parses stay universal.
   'seo:brand.*',                // scripts/og.config.mjs brand fields
   'seo:brand:optional',
 

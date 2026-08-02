@@ -4,6 +4,7 @@
 
 import { eachDistHtml, isContentPage, headingLevels, headingAudit } from '../lib/html.mjs';
 import { readSrcFiles, headMetaFiles } from '../lib/src-scan.mjs';
+import { distFiles, readDist, countMatches } from '../lib/dist.mjs';
 
 const SEC = 'seo';
 
@@ -60,15 +61,8 @@ export async function run({ project, reporter }) {
     if (missing.length) reporter.suggest(SEC, 'brand:optional', `missing: ${missing.join(', ')}`, 'set for richer SEO/social cards (optional)');
   }
 
-  // Sitemap lastmod (advisory — @astrojs/sitemap defaults to file mtime)
-  const cfg = project.astroConfig ?? '';
-  if (/serialize\s*:/.test(cfg) && !/lastmod/.test(cfg)) {
-    reporter.suggest(SEC, 'sitemap:lastmod', 'custom sitemap serializer present without lastmod', 'emit entry.data.dateModified ?? entry.data.date from the serializer');
-  } else if (/@astrojs\/sitemap/.test(cfg)) {
-    reporter.pass(SEC, 'sitemap:lastmod', '@astrojs/sitemap defaults applied');
-  } else {
-    reporter.skip(SEC, 'sitemap:lastmod', 'no @astrojs/sitemap in astro.config — nothing to check');
-  }
+  checkRobots(project, reporter);
+  checkSitemap(project, reporter);
 
   // Heading outline on built content pages: exactly one <h1>, no skipped levels.
   // Scoped to pages with a canonical link, so OG-template / preview routes (no
@@ -117,6 +111,65 @@ function checkMetaTags(project, reporter, headSrc) {
     } else {
       reporter.suggest(SEC, `meta:${name}`, `${missing.length}/${content.length} content page(s) omit it — ${sampleOf(missing.map((p) => p.rel))}`, `emit ${name} on every content page, not just some`);
     }
+  }
+}
+
+/**
+ * robots.txt — the file, not the package that might have written it.
+ *
+ * This was `modules:dep:astro-robots-txt`: a required finding for anyone who
+ * hadn't installed one specific integration. All five dogfood sites shipped a
+ * correct robots.txt without it — three as a generated endpoint, which is
+ * *better* than the package and would collide with it. What matters is that the
+ * built site serves one and that it points crawlers at the sitemap.
+ */
+function checkRobots(project, reporter) {
+  if (!project.hasDist) {
+    reporter.skip(SEC, 'robots', 'no dist/ — build the site to check it serves a robots.txt with a Sitemap: line');
+    return;
+  }
+  const text = readDist(project.root, 'robots.txt');
+  if (!text.trim()) {
+    reporter.fix(SEC, 'robots', 'dist/robots.txt is missing or empty', 'ship a robots.txt — a src/pages/robots.txt.ts endpoint, a public/robots.txt, or the astro-robots-txt integration', { file: 'dist/robots.txt' });
+    return;
+  }
+  if (!/^\s*Sitemap:\s*\S+/im.test(text)) {
+    reporter.fix(SEC, 'robots', 'dist/robots.txt has no Sitemap: line — crawlers are not pointed at the sitemap', 'add "Sitemap: https://<site>/sitemap-index.xml"', { file: 'dist/robots.txt' });
+    return;
+  }
+  reporter.pass(SEC, 'robots', 'served with a Sitemap: line', { file: 'dist/robots.txt' });
+}
+
+/**
+ * Sitemap lastmod — read the built XML.
+ *
+ * The old check inferred it from astro.config: "@astrojs/sitemap is configured"
+ * passed. Two dogfood sites shipped sitemaps with zero <lastmod> and passed.
+ * @astrojs/sitemap emits lastmod only when a serialize() supplies it, so the
+ * config's presence proves nothing about the file.
+ */
+function checkSitemap(project, reporter) {
+  if (!project.hasDist) {
+    reporter.skip(SEC, 'sitemap:lastmod', 'no dist/ — build the site to check <lastmod> in the sitemap');
+    return;
+  }
+  // Index files list other sitemaps and legitimately carry no <url>.
+  const maps = distFiles(project.root, /sitemap[-a-z0-9]*\.xml$/i)
+    .filter((f) => countMatches(readDist(project.root, f), /<url>/gi) > 0);
+  if (maps.length === 0) {
+    reporter.fix(SEC, 'sitemap:lastmod', 'no sitemap with <url> entries in dist/', 'add @astrojs/sitemap (or an endpoint that emits one) so search engines get a full URL list');
+    return;
+  }
+  let urls = 0, lastmods = 0;
+  for (const f of maps) {
+    const xml = readDist(project.root, f);
+    urls += countMatches(xml, /<url>/gi);
+    lastmods += countMatches(xml, /<lastmod>/gi);
+  }
+  if (lastmods >= urls) {
+    reporter.pass(SEC, 'sitemap:lastmod', `${lastmods}/${urls} entries carry <lastmod> (${maps.join(', ')})`);
+  } else {
+    reporter.suggest(SEC, 'sitemap:lastmod', `${lastmods}/${urls} sitemap entries carry <lastmod> (${maps.join(', ')})`, 'pass a serialize() to @astrojs/sitemap emitting entry.data.dateModified ?? entry.data.date — without it crawlers cannot tell what changed');
   }
 }
 

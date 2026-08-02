@@ -8,12 +8,15 @@ import { join } from 'node:path';
 const SEC = 'modules';
 
 // Baseline integrations every managed site is expected to carry.
+//
+// astro-robots-txt is deliberately NOT here: what matters is that the build
+// ships a robots.txt pointing at the sitemap, and a generated endpoint does that
+// at least as well (see seo:robots, which reads dist/robots.txt).
 const BASELINE_DEPS = [
   '@astrojs/mdx',
   '@astrojs/sitemap',
   '@astrojs/rss',
   '@astrojs/check',
-  'astro-robots-txt',
   '@orama/orama',
 ];
 
@@ -93,10 +96,17 @@ export async function run({ project, reporter }) {
     else           reporter.fix(SEC, `dep:${dep}`, 'not installed', `npm i ${dep}`, { id: 'modules/dep' });
   }
 
-  // Search is Orama — flag any competing/custom search library
+  // Search is Orama. This used to pass whenever no competitor was installed —
+  // so a site with no search at all was reported as "Orama ✅", a pass for
+  // something that isn't there. Judge what IS present, and skip when nothing is.
   const found = COMPETING_SEARCH.filter((d) => deps[d]);
-  if (found.length === 0) reporter.pass(SEC, 'search:engine', 'Orama (no competing search lib)');
-  else reporter.fix(SEC, 'search:engine', `non-baseline search lib present: ${found.join(', ')}`, 'baseline search is @orama/orama (client-side, fed by a search-index endpoint) — migrate off the custom search lib');
+  if (found.length) {
+    reporter.fix(SEC, 'search:engine', `non-baseline search lib present: ${found.join(', ')}`, 'baseline search is @orama/orama (client-side, fed by a search-index endpoint) — migrate off the custom search lib');
+  } else if (deps['@orama/orama']) {
+    reporter.pass(SEC, 'search:engine', 'Orama');
+  } else {
+    reporter.skip(SEC, 'search:engine', 'no search library installed — nothing to check (data:search:index reports whether an index endpoint exists)');
+  }
 
   // @astrojs/cloudflare adapter is needed for <Image> only under SSR. On a static
   // build, <Image> is optimized at build time by Sharp and emitted to dist/ — no

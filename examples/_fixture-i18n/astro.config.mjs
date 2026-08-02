@@ -4,6 +4,12 @@ import mdx from '@astrojs/mdx';
 import sitemap from '@astrojs/sitemap';
 import robotsTxt from 'astro-robots-txt';
 import icon from 'astro-icon';
+import { postLastmods, lastmodSerializer } from './scripts/sitemap-lastmod.mjs';
+
+// <lastmod> comes from the post's own dateModified/date — @astrojs/sitemap emits
+// none unless serialize() supplies it, and a sitemap without it can't tell a
+// crawler what changed.
+const lastmods = postLastmods(process.cwd(), { defaultLocale: 'en' });
 
 // _fixture-i18n — the wishbusterz-rider multi-locale test bed (contract.
 // Two locales: en (default at root) + hu (at /hu/). Local-only fixture;
@@ -36,6 +42,7 @@ export default defineConfig({
     sitemap({
       //preview routes never enter the sitemap.
       filter: (page) => !page.includes('/preview'),
+      serialize: lastmodSerializer(lastmods),
       //auto-emit hreflang alternates per URL.
       i18n: {
         defaultLocale: 'en',

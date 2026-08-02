@@ -211,6 +211,83 @@ const exp = find(universal, 'astro7:experimental');
 check('default: astro7:experimental stays a fix (universal)',
   exp?.outcome === 'fix' && !exp?.houseStyle, JSON.stringify(exp));
 
+console.log('checks read the built artifact, not a proxy for it:');
+// Six checks used to ask "is the package installed / does a file we named
+// mention the right string". All five dogfood sites hand-wrote correct
+// robots.txt, emitted rich JSON-LD and shipped working feeds — and were told
+// they had none. dist/ is written by hand here: these checks read files, so a
+// real astro build would only make the test slower.
+function mkBuilt(files, { deps = {}, src = {} } = {}) {
+  const dir = tmpProject('wishbusterz-rider-dist-');
+  writeFileSync(join(dir, 'package.json'), JSON.stringify({
+    name: 'fx', type: 'module', engines: { node: '>=22.12.0' },
+    dependencies: { astro: '^7.1.6', ...deps },
+  }));
+  writeFileSync(join(dir, 'astro.config.mjs'), "export default { output: 'static' };\n");
+  for (const [rel, body] of Object.entries({ 'src/pages/index.astro': '<p>hi</p>\n', ...src, ...files })) {
+    const full = join(dir, rel);
+    mkdirSync(dirname(full), { recursive: true });
+    writeFileSync(full, body);
+  }
+  return dir;
+}
+const row = (dir, section, id) => runJson(dir, ['-s', section, '--strict']).json?.results.find(r => r.id === id) ?? null;
+
+const PAGE_LD = (types) => `<html><head><link rel="canonical" href="/"><title>t</title>`
+  + `<script type="application/ld+json">${JSON.stringify(types)}<\/script></head><body><h1>t</h1></body></html>`;
+
+// robots.txt — the file, not astro-robots-txt. A generated endpoint is *better*
+// than the package (and collides with it), so requiring the package was wrong.
+const noRobots = row(mkBuilt({ 'dist/index.html': PAGE_LD({ '@type': 'WebSite' }) }), 'seo', 'seo/robots');
+check('no robots.txt in dist → fix', noRobots?.outcome === 'fix', JSON.stringify(noRobots));
+const bareRobots = row(mkBuilt({ 'dist/index.html': '<p>x</p>', 'dist/robots.txt': 'User-agent: *\nAllow: /\n' }), 'seo', 'seo/robots');
+check('robots.txt with no Sitemap: line → fix', bareRobots?.outcome === 'fix', JSON.stringify(bareRobots));
+const goodRobots = row(mkBuilt({ 'dist/index.html': '<p>x</p>', 'dist/robots.txt': 'User-agent: *\nAllow: /\nSitemap: https://x.test/sitemap-index.xml\n' }), 'seo', 'seo/robots');
+check('  …hand-written robots.txt with one → pass, with no package installed', goodRobots?.outcome === 'pass', JSON.stringify(goodRobots));
+
+// sitemap lastmod — read the XML. "@astrojs/sitemap is configured" proved
+// nothing: two dogfood sites shipped sitemaps with zero <lastmod> and passed.
+const SITEMAP = (lastmod) => `<?xml version="1.0"?><urlset><url><loc>https://x.test/a</loc>${lastmod ? '<lastmod>2026-01-01</lastmod>' : ''}</url></urlset>`;
+const noLastmod = row(mkBuilt({ 'dist/sitemap-0.xml': SITEMAP(false) }, { deps: { '@astrojs/sitemap': '^3.7.3' } }), 'seo', 'seo/sitemap-lastmod');
+check('sitemap with no <lastmod> → suggest, even with @astrojs/sitemap installed',
+  noLastmod?.outcome === 'suggest', JSON.stringify(noLastmod));
+const withLastmod = row(mkBuilt({ 'dist/sitemap-0.xml': SITEMAP(true) }), 'seo', 'seo/sitemap-lastmod');
+check('  …and one that carries it → pass', withLastmod?.outcome === 'pass', JSON.stringify(withLastmod));
+
+// JSON-LD — parse the page. Requiring the literal "BlogPosting" in a file named
+// src/lib/jsonld.ts told all five sites they had none.
+const article = row(mkBuilt({ 'dist/index.html': PAGE_LD([{ '@type': 'WebSite' }, { '@type': 'Article' }]) }), 'data', 'data/jsonld-shapes');
+check('Article (not BlogPosting) + WebSite in dist → pass, with no jsonld.ts helper',
+  article?.outcome === 'pass', JSON.stringify(article));
+const graph = row(mkBuilt({ 'dist/index.html': PAGE_LD({ '@graph': [{ '@type': 'TechArticle' }, { '@type': 'WebSite' }] }) }), 'data', 'data/jsonld-shapes');
+check('  …and a @graph-wrapped pair is found too', graph?.outcome === 'pass', JSON.stringify(graph));
+const siteOnly = row(mkBuilt({ 'dist/index.html': PAGE_LD({ '@type': 'WebSite' }) }), 'data', 'data/jsonld-shapes');
+check('  …while WebSite alone → fix', siteOnly?.outcome === 'fix', JSON.stringify(siteOnly));
+const brokenLd = row(mkBuilt({ 'dist/index.html': '<html><head><script type="application/ld+json">{"@type": "Article",}<\/script></head></html>' }), 'data', 'data/jsonld-parses');
+check('  …and JSON-LD that does not parse is its own finding', brokenLd?.outcome === 'fix', JSON.stringify(brokenLd));
+
+// search — a site with no search at all used to report "Orama ✅".
+const noSearch = row(mkBuilt({}), 'modules', 'modules/search-engine');
+check('no search library → skip, not a pass for Orama', noSearch?.outcome === 'skip', JSON.stringify(noSearch));
+const orama = row(mkBuilt({}, { deps: { '@orama/orama': '^3.1.18' } }), 'modules', 'modules/search-engine');
+check('  …Orama installed → pass', orama?.outcome === 'pass', JSON.stringify(orama));
+const pagefind = row(mkBuilt({}, { deps: { pagefind: '^1.0.0' } }), 'modules', 'modules/search-engine');
+check('  …a competing lib → fix', pagefind?.outcome === 'fix', JSON.stringify(pagefind));
+
+// RSS — the built feed, not getCollection() in the endpoint file. Factoring the
+// query into a shared helper is good practice and used to fail the check.
+const feed = row(mkBuilt({
+  'dist/rss.xml': '<rss><channel><item><title>a</title></item></channel></rss>',
+  'src/pages/rss.xml.ts': "import rss from '@astrojs/rss';\nimport { posts } from '../lib/posts';\nexport const GET = () => rss({ items: posts() });\n",
+}), 'data', 'data/rss');
+check('a built feed with items → pass, though the endpoint calls a helper not getCollection()',
+  feed?.outcome === 'pass', JSON.stringify(feed));
+const emptyFeed = row(mkBuilt({
+  'dist/rss.xml': '<rss><channel></channel></rss>',
+  'src/pages/rss.xml.ts': "export const GET = () => new Response('');\n",
+}), 'data', 'data/rss');
+check('  …and a feed that built empty → fix', emptyFeed?.outcome === 'fix', JSON.stringify(emptyFeed));
+
 console.log('detection accepts correct variants (the false-positive failure mode):');
 // Each of these was a real defect: a compliant site got a required finding, or a
 // real offender passed. They stay tested so the fix can't silently regress.

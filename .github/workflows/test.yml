@@ -1,6 +1,8 @@
 # This repo's own gate. Runs the smoke test and audits the bundled fixture in
-# both severity modes — all offline, no dependencies, no API keys, so it works
-# on forked PRs where secrets are unavailable.
+# both severity modes — all offline and no API keys, so it works on forked PRs
+# where secrets are unavailable. The tool itself has no dependencies; the
+# fixture is a real Astro site and is installed + built so the dist/-reading
+# checks have an artifact to read.
 #
 # (The copy-paste workflow for auditing YOUR Astro site lives in
 # examples/ci/audit.yml — it is deliberately not here, because GitHub would run
@@ -29,6 +31,15 @@ jobs:
       # each one fires on a purpose-built known-bad project.
       - name: Smoke test
         run: node tools/test.mjs
+
+      # Several checks read dist/ — robots.txt, sitemap lastmod, the emitted
+      # JSON-LD, the built feed. Without a build they all ⏭ and the fixture
+      # proves nothing about them, so build it before auditing.
+      - name: Build the fixture
+        working-directory: examples/_fixture-i18n
+        run: |
+          npm ci
+          npm run build
 
       # The fixture is fully compliant, so it must be clean in both modes.
       - name: Audit the fixture (default)
