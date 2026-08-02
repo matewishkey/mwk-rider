@@ -159,18 +159,20 @@ The tool only ever *reads* through this API. It never provisions, never writes.
 ## Layout
 
 ```
-commands/wishbusterz-rider.md       the slash command (orchestration)
+skills/wishbusterz-rider/SKILL.md   how an agent should run and report an audit
+                           (install.sh links it as BOTH the skill and the
+                           /wishbusterz-rider command — one file, no drift)
 tools/
   audit.mjs                  entry: detect project, run domains, report
   test.mjs                   the gate: fixture + known-bad synthetic projects
   checks/{modules,seo,images,perf,data,analytics,live,lighthouse,browser}.mjs
-  lib/{project,reporter,policy,cf-image,html,image-size,src-scan}.mjs
+  lib/{project,reporter,policy,rules,cf-image,html,dist,jsonld,image-size,src-scan,untrusted}.mjs
 examples/_fixture-i18n/      a compliant multi-locale Astro site — the test target
 examples/ci/audit.yml        copy-paste GitHub Actions job for your own site
 BEST-PRACTICES.md            the why behind every check + the practice/check registry
 docs/DEVELOPING.md           testing discipline and design decisions
 .env.example                 the optional API keys
-install.sh                   symlink command + tools into ~/.claude
+install.sh                   symlink the skill, the command and the tools into ~/.claude
 ```
 
 ## Contributing

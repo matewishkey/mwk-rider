@@ -115,11 +115,13 @@ export class Reporter {
 
   finish() {
     if (this.json) {
+      // Unindented: --json is read by machines, and pretty-printing a clean run
+      // tripled its size for no reader's benefit.
       console.log(JSON.stringify({
         results: this.results,
         errors: this.errors,
         summary: this._counts(),
-      }, null, 2));
+      }));
       return;
     }
     const c = this._counts();

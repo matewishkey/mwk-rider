@@ -10,6 +10,11 @@ import { transformSmells } from '../lib/cf-image.mjs';
 import { headingLevels, headingAudit, attrValue, hasAttr } from '../lib/html.mjs';
 import { imageSize } from '../lib/image-size.mjs';
 import { collectJsonLd, ldTypes, hasArticleType } from '../lib/jsonld.mjs';
+import { untrusted, capped, UNTRUSTED_NOTE } from '../lib/untrusted.mjs';
+
+// One image loop can otherwise emit a finding per <img> on a page that has
+// hundreds — or that was built to have hundreds.
+const MAX_IMAGE_FINDINGS = 25;
 
 // A host that accepts the connection and never answers used to hang the audit
 // indefinitely — in CI, forever.
@@ -61,6 +66,7 @@ export async function run({ base, reporter, post }) {
     return;
   }
   reporter.pass('live', 'reachability', `${base}/ → 200`);
+  reporter.skip('live', 'untrusted-input', UNTRUSTED_NOTE);
 
   await auditCache(home, head, reporter);
   const postPath = post ?? (await discoverPost(home, base, get));
@@ -113,12 +119,12 @@ async function auditCache(home, head, reporter) {
       const immutable = /\bimmutable\b/.test(cc);
       const maxAge = Number(cc.match(/max-age=(\d+)/)?.[1] ?? 0);
       if (immutable && maxAge >= 86400) {
-        reporter.pass('perf', 'cache:_astro', `${cc || '(none)'}`);
+        reporter.pass('perf', 'cache:_astro', untrusted(cc || '(none)', 80));
       } else {
         reporter.fix(
           'perf',
           'cache:_astro',
-          `Cache-Control "${cc || '(none)'}" — hashed asset not immutable (repeat visits re-validate)`,
+          `Cache-Control ${untrusted(cc || '(none)', 80)} — hashed asset not immutable (repeat visits re-validate)`,
           'ship public/_headers marking /_astro/* "public, max-age=31536000, immutable". NB: neither `astro dev` nor `astro preview` applies _headers — both serve /_astro/* as no-cache regardless (measured), so this fires against them even when the file is correct and the offline perf:_headers check passes on the same tree. Run against `wrangler dev` of dist/ or the deployed site to judge it',
         );
       }
@@ -127,9 +133,9 @@ async function auditCache(home, head, reporter) {
 
   const htmlCC = (home.headers.get('cache-control') || '').toLowerCase();
   if (/\bimmutable\b/.test(htmlCC)) {
-    reporter.fix('perf', 'cache:html', `homepage Cache-Control "${htmlCC}" is immutable — deploys won't show until cache expires`, 'do not list HTML routes in _headers; let them revalidate');
+    reporter.fix('perf', 'cache:html', `homepage Cache-Control ${untrusted(htmlCC, 80)} is immutable — deploys won't show until cache expires`, 'do not list HTML routes in _headers; let them revalidate');
   } else {
-    reporter.pass('perf', 'cache:html', `homepage revalidates (${htmlCC || 'default'})`);
+    reporter.pass('perf', 'cache:html', `homepage revalidates (${untrusted(htmlCC || 'default', 80)})`);
   }
 }
 
@@ -185,9 +191,9 @@ async function auditSeo(home, postPath, base, get, head, reporter) {
     const r = await head(ogImg);
     const ct = r.headers?.get?.('content-type') || '';
     if (!(r.ok && r.status === 200 && /image\//.test(ct))) {
-      reporter.fix('seo', 'og:image-resolves', `og:image ${ogImg} → ${r.status ?? r.error} (${ct || 'no content-type'})`, 'the og:image URL must resolve to a real image', { url: ogImg });
+      reporter.fix('seo', 'og:image-resolves', `og:image → ${r.status ?? r.error} (${untrusted(ct || 'no content-type', 60)})`, 'the og:image URL must resolve to a real image', { url: ogImg });
     } else {
-      reporter.pass('seo', 'og:image-resolves', `${ct}`, { url: ogImg });
+      reporter.pass('seo', 'og:image-resolves', untrusted(ct, 60), { url: ogImg });
       // 200 + image/* is necessary but not sufficient: a screenshot of a 404
       // page is *also* a valid 200 image/png (the bug behind wishbusterz-rider#5).
       // Verify the served bytes are a real card by their intrinsic dimensions.
@@ -294,7 +300,11 @@ async function auditImages(home, postPath, base, get, head, reporter) {
   let routedOk = 0, sizedOk = 0;
   const noQuality = [];
   const noAlt = [];
-  for (const img of imgs) {
+  const { shown: inspected, dropped } = capped(imgs, MAX_IMAGE_FINDINGS);
+  if (dropped) {
+    reporter.skip('images', 'delivery', `${imgs.length} content images found; inspecting the first ${MAX_IMAGE_FINDINGS}. ${dropped} not measured`);
+  }
+  for (const img of inspected) {
     // hasAttr, not a local regex: it accepts the bare `alt` that Astro emits for
     // alt="" (see html.mjs), so a decorative image isn't reported as missing alt.
     // Dedup by src so a templated image shared across pages counts once, matching
@@ -330,11 +340,11 @@ async function auditImages(home, postPath, base, get, head, reporter) {
       reporter.fix('images', 'bytes', `${(len / 1024).toFixed(0)} KB served — over 300 KB budget`, 'lower the transform width=/use format=auto + quality=80; a hero should be 50–250 KB', { url: img.src });
     }
   }
-  if (routedOk === imgs.length) reporter.pass('images', 'routed', `${routedOk}/${imgs.length} through an image transform`);
-  if (sizedOk === imgs.length)  reporter.pass('images', 'cls', `${sizedOk}/${imgs.length} have width+height`);
-  if (noAlt.length === 0) reporter.pass('images', 'alt', `${imgs.length}/${imgs.length} carry an alt attribute`);
-  else reporter.fix('images', 'alt', `${noAlt.length} content <img> have no alt attribute (e.g. ${truncate(noAlt[0], 70)})`, 'add alt text (alt="" only if decorative)');
-  if (noQuality.length) reporter.suggest('images', 'transform:quality', `${noQuality.length} transform URL(s) set no quality= (Cloudflare defaults to 85) (e.g. ${truncate(noQuality[0], 70)})`, 'add an explicit quality (e.g. quality=80) to cap output size on photographic content');
+  if (routedOk === inspected.length) reporter.pass('images', 'routed', `${routedOk}/${inspected.length} through an image transform`);
+  if (sizedOk === inspected.length)  reporter.pass('images', 'cls', `${sizedOk}/${inspected.length} have width+height`);
+  if (noAlt.length === 0) reporter.pass('images', 'alt', `${inspected.length}/${inspected.length} carry an alt attribute`);
+  else reporter.fix('images', 'alt', `${noAlt.length} content <img> have no alt attribute`, 'add alt text (alt="" only if decorative)', { url: noAlt[0] });
+  if (noQuality.length) reporter.suggest('images', 'transform:quality', `${noQuality.length} transform URL(s) set no quality= (Cloudflare defaults to 85)`, 'add an explicit quality (e.g. quality=80) to cap output size on photographic content', { url: noQuality[0] });
 }
 
 // Data — machine-readable endpoints ------------------------------------------
@@ -395,8 +405,9 @@ function assertHas(reporter, section, name, html, re, failMsg) {
 function checkLdTypes(reporter, name, html, predicate, failMsg, fixMsg, at = {}) {
   const { objects } = collectJsonLd(html);
   const types = ldTypes(objects);
-  if (predicate(types)) reporter.pass('data', name, [...types].sort().join(', '), at);
-  else reporter.fix('data', name, `${failMsg}${types.size ? ` — found: ${[...types].sort().join(', ')}` : ''}`, fixMsg, at);
+  const shown = untrusted([...types].sort().join(', '), 160);
+  if (predicate(types)) reporter.pass('data', name, shown, at);
+  else reporter.fix('data', name, `${failMsg}${types.size ? ` — found: ${shown}` : ''}`, fixMsg, at);
 }
 
 // `label` is which page was read (home / a content path). It's the location of

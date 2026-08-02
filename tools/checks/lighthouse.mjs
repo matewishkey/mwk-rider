@@ -51,11 +51,57 @@ export async function run({ reporter, url, strategy = 'mobile' }) {
     else reporter.suggest(SEC, `${label} (${strategy})`, `${shown} (target ≤ ${good}${unit})`, 'see the Performance opportunities in the PSI report');
   }
 
+  reportA11yAudits(lr, reporter);
+
   const le = data.loadingExperience;
   if (le?.metrics && Object.keys(le.metrics).length) {
     reporter.pass(SEC, 'crux:field-data', `real-user data present (overall ${le.overall_category ?? 'n/a'})`);
   } else {
     reporter.skip(SEC, 'crux:field-data', 'no real-user (CrUX) field data — lab only (site lacks enough traffic)');
+  }
+}
+
+// Cap the instances so one badly-themed site can't bury the rest of the audit.
+const MAX_A11Y_FINDINGS = 10;
+
+/**
+ * The individual accessibility rules PSI failed.
+ *
+ * We were already requesting `category=accessibility` and keeping only the
+ * score — 76 auditRefs came back on a real site and every failing rule was
+ * thrown away. Colour contrast is the most common accessibility failure on the
+ * web and the one thing a static checker genuinely cannot compute; PSI hands us
+ * the answer for free.
+ *
+ * Severity uses Lighthouse's own weighting rather than ours: a weight-7 rule
+ * (color-contrast) is a defect, a weight-1 rule is advice.
+ */
+function reportA11yAudits(lr, reporter) {
+  const refs = lr.categories?.accessibility?.auditRefs ?? [];
+  if (!refs.length) return;
+
+  const failing = [];
+  for (const ref of refs) {
+    const a = lr.audits?.[ref.id];
+    // score null = "not applicable" / informative, not a failure.
+    if (!a || a.score == null || a.score >= 1) continue;
+    failing.push({ id: ref.id, weight: ref.weight ?? 0, title: a.title, count: a.details?.items?.length ?? 0 });
+  }
+
+  if (failing.length === 0) {
+    reporter.pass(SEC, 'a11y:audits', `all ${refs.length} PSI accessibility rules pass`, { id: 'lighthouse/a11y-audit' });
+    return;
+  }
+
+  failing.sort((a, b) => b.weight - a.weight);
+  for (const f of failing.slice(0, MAX_A11Y_FINDINGS)) {
+    const where = f.count ? ` (${f.count} element${f.count === 1 ? '' : 's'})` : '';
+    const at = { id: 'lighthouse/a11y-audit' };
+    if (f.weight >= 3) reporter.fix(SEC, `a11y:${f.id}`, `${f.title}${where} — a failing rule behind the accessibility score above, which can still read ≥90 overall`, `open the PSI accessibility report for the failing elements (rule: ${f.id})`, at);
+    else reporter.suggest(SEC, `a11y:${f.id}`, `${f.title}${where}`, `rule: ${f.id}`, at);
+  }
+  if (failing.length > MAX_A11Y_FINDINGS) {
+    reporter.suggest(SEC, 'a11y:audits', `${failing.length - MAX_A11Y_FINDINGS} further accessibility rule(s) also fail — showing the ${MAX_A11Y_FINDINGS} heaviest`, 'see the full PSI accessibility report', { id: 'lighthouse/a11y-audit' });
   }
 }
 

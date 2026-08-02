@@ -14,6 +14,8 @@ import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import { join } from 'node:path';
 
+import { untrusted, UNTRUSTED_NOTE } from '../lib/untrusted.mjs';
+
 const SEC = 'browser';
 
 function loadFromCwd() {
@@ -84,6 +86,7 @@ export async function run({ reporter, url, post }) {
       return;
     }
     reporter.pass(SEC, 'load', `${target} — HTTP ${nav.status()}`);
+    reporter.skip(SEC, 'untrusted-input', UNTRUSTED_NOTE);
 
     // --- JavaScript that threw ------------------------------------------------
     // An uncaught exception can leave the page half-interactive while the HTML
@@ -91,13 +94,13 @@ export async function run({ reporter, url, post }) {
     if (pageErrors.length === 0) {
       reporter.pass(SEC, 'js:errors', 'no uncaught exceptions');
     } else {
-      reporter.fix(SEC, 'js:errors', `${pageErrors.length} uncaught exception(s): ${trunc(pageErrors[0], 120)}`, 'open the page with devtools and fix the throwing script — it may be leaving UI non-interactive');
+      reporter.fix(SEC, 'js:errors', `${pageErrors.length} uncaught exception(s), first: ${trunc(pageErrors[0], 120)}`, 'open the page with devtools and fix the throwing script — it may be leaving UI non-interactive');
     }
 
     if (consoleErrors.length === 0) {
       reporter.pass(SEC, 'console', 'no console errors');
     } else {
-      reporter.suggest(SEC, 'console', `${consoleErrors.length} console error(s): ${trunc(consoleErrors[0], 120)}`, 'not always fatal, but each one is something the page tried to do and could not');
+      reporter.suggest(SEC, 'console', `${consoleErrors.length} console error(s), first: ${trunc(consoleErrors[0], 120)}`, 'not always fatal, but each one is something the page tried to do and could not');
     }
 
     // --- Requests the browser made and could not complete ---------------------
@@ -110,7 +113,7 @@ export async function run({ reporter, url, post }) {
       // network this audit ran on (a blocker, a firewall, offline DNS). Say so
       // rather than blaming the site for something it may not control.
       const onlyConnection = notFound.length === 0;
-      reporter.fix(SEC, 'requests', `${all.length} failed request(s): ${trunc(all[0], 120)}`,
+      reporter.fix(SEC, 'requests', `${all.length} failed request(s), first: ${trunc(all[0], 120)}`,
         onlyConnection
           ? 'if these are connection errors rather than 404s, re-check from another network before treating it as a site bug — an ad blocker or DNS filter here can cause them'
           : 'a referenced asset is missing or blocked — static checks cannot see this because the HTML is fine');
@@ -132,7 +135,7 @@ export async function run({ reporter, url, post }) {
       reporter.pass(SEC, 'images:rendered-size', 'no image served far larger than it is displayed');
     } else {
       const o = oversized[0];
-      reporter.suggest(SEC, 'images:rendered-size', `${oversized.length} image(s) served well over their displayed size, e.g. ${trunc(o.src, 70)} (${o.natural}px served, ${o.rendered}px shown)`, 'set width/sizes so the transform serves the size actually rendered');
+      reporter.suggest(SEC, 'images:rendered-size', `${oversized.length} image(s) served well over their displayed size, e.g. ${o.natural}px served for a ${o.rendered}px box`, 'set width/sizes so the transform serves the size actually rendered');
     }
 
     // --- Layout shift, measured rather than inferred --------------------------
@@ -182,7 +185,9 @@ export async function run({ reporter, url, post }) {
   }
 }
 
-function trunc(s, n) { s = String(s).replace(/\s+/g, ' '); return s.length > n ? s.slice(0, n - 1) + '…' : s; }
+// Console text, exception messages and asset URLs are all written by the page
+// being audited, and they land in whatever reads this output. Fence them.
+const trunc = (s, n) => untrusted(s, n);
 
 // Registrable domain, approximately: the last two labels, with a third kept for
 // the common two-part public suffixes (co.uk, com.au). Good enough to tell your

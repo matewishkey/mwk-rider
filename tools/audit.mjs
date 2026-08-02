@@ -47,6 +47,8 @@ try {
       strict:   { type: 'boolean' },
       json:     { type: 'boolean' },
       quiet:    { type: 'boolean' },
+      verbose:  { type: 'boolean' },
+      rules:    { type: 'boolean' },
       help:     { type: 'boolean', short: 'h' },
     },
     allowPositionals: true,
@@ -70,6 +72,8 @@ Usage:
   wishbusterz-rider --strict              Treat house-style baseline checks as required too
   wishbusterz-rider --json                Machine-readable output
   wishbusterz-rider --quiet               Hide the ✅ lines (findings, 💡 and ⏭ still print)
+  wishbusterz-rider --verbose             Show them even when output is piped or $CI is set
+  wishbusterz-rider --rules --json        List every rule id, severity and rationale; run nothing
 
 Offline domains: ${Object.keys(OFFLINE).join(', ')}
 With --url:      live, lighthouse, browser
@@ -90,6 +94,21 @@ Outcomes:
 
 Exit 0 if clean (💡 suggestions don't count); 1 if any 🔧 or 🛑; 2 on tooling error.
 `);
+  process.exit(0);
+}
+
+// --rules answers "what does this tool check, and which of it binds me?" from
+// the tool itself rather than from docs that can drift. It runs nothing, so it
+// works anywhere — no Astro project, no network.
+if (values.rules) {
+  const { ruleCatalogue } = await import('./lib/rules.mjs');
+  const catalogue = ruleCatalogue();
+  if (values.json) {
+    console.log(JSON.stringify({ rules: catalogue }));
+  } else {
+    for (const r of catalogue) console.log(`${r.severity === 'house' ? '[baseline]' : '[universal]'} ${r.id} — ${r.why}`);
+    console.log(`\n${catalogue.length} rules. [universal] is required by default; [baseline] reports 💡 unless --strict.`);
+  }
   process.exit(0);
 }
 
@@ -122,7 +141,14 @@ if (!project && !values.url) {
   process.exit(2);
 }
 
-const reporter = new Reporter({ json: values.json, quiet: values.quiet, strict: values.strict });
+// A clean run spends thousands of characters saying nothing is wrong. That's
+// fine for a human reading a terminal and pure cost for an agent, so passes are
+// hidden by default whenever nobody is watching a TTY. --verbose brings them
+// back; --quiet forces them off even on a terminal.
+const machineReader = !process.stdout.isTTY || !!process.env.CI || !!process.env.CLAUDECODE;
+const quiet = values.verbose ? false : (values.quiet || machineReader);
+
+const reporter = new Reporter({ json: values.json, quiet, strict: values.strict });
 const wanted = values.section?.length ? new Set(values.section) : null;
 
 // Cheap edit-distance-free "did you mean": same first letter, or one is a prefix.

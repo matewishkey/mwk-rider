@@ -29,10 +29,15 @@ function check(name, cond, detail = '') {
   else { console.log(`  FAIL ${name}${detail ? ' — ' + detail : ''}`); failures++; }
 }
 
+// Every id any run in this file emits, so the rule catalogue can be checked for
+// drift at the end: a new check must not ship uncatalogued.
+const seenRuleIds = new Set();
+
 function runJson(cwd, args = []) {
   const r = spawnSync('node', [AUDIT, '--json', ...args], { cwd, encoding: 'utf8' });
   let parsed = null;
   try { parsed = JSON.parse(r.stdout); } catch {}
+  for (const row of parsed?.results ?? []) if (row.id) seenRuleIds.add(row.id);
   return { code: r.status, json: parsed, stderr: r.stderr };
 }
 
@@ -519,6 +524,20 @@ const fontRow = runJson(fontDir, ['-s', 'modules', '--strict']).json?.results.fi
 check('font-CDN usage is flagged under --strict', fontRow?.outcome === 'fix', JSON.stringify(fontRow));
 const fontLoose = runJson(fontDir, ['-s', 'modules']).json?.results.find(r => r.name === 'fonts');
 check('  …and is advisory by default', fontLoose?.outcome === 'suggest');
+
+console.log('--rules is the catalogue, and it does not drift:');
+// The catalogue is what an agent reads to learn what this tool checks. If a
+// check can fire with an id the catalogue doesn't list, the catalogue is a lie.
+const { ruleCatalogue, knownRuleIds } = await import('./lib/rules.mjs');
+const catalogue = ruleCatalogue();
+check('--rules --json lists rules with id, severity and a reason',
+  catalogue.length > 50 && catalogue.every(r => r.id && r.why && ['universal', 'house'].includes(r.severity)));
+const rulesRun = spawnSync('node', [AUDIT, '--rules', '--json'], { cwd: tmpdir(), encoding: 'utf8' });
+check('  …and it runs outside an Astro project', rulesRun.status === 0, `exit ${rulesRun.status}`);
+const known = knownRuleIds();
+const uncatalogued = [...seenRuleIds].filter(id => !known.has(id)).sort();
+check(`every rule id emitted by this suite is catalogued (${seenRuleIds.size} seen)`,
+  uncatalogued.length === 0, uncatalogued.join(', '));
 
 console.log('');
 if (failures === 0) { console.log('PASS — all assertions ok'); process.exit(0); }
