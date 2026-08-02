@@ -5,8 +5,8 @@
 // The service-account key is resolved in order:
 //   1. $GOOGLE_SERVICE_ACCOUNT_JSON    raw JSON (or base64 of it), single value
 //   2. $GOOGLE_APPLICATION_CREDENTIALS path to the JSON key file (Google's own convention)
-//   3. sops-decrypted from $WISHBUSTERZ_RIDER_SA_SOPS_FILE, key GOOGLE_SERVICE_ACCOUNT_JSON
-//      (override the file with $WISHBUSTERZ_RIDER_SA_SOPS_FILE) — same pattern as the PSI key.
+//   3. sops-decrypted from the file at $WISHBUSTERZ_RIDER_SA_SOPS_FILE, key
+//      GOOGLE_SERVICE_ACCOUNT_JSON — opt-in, same pattern as the PSI key.
 //
 // Without a key it returns { skip: <reason> } so callers degrade gracefully.
 // One-time operator setup (not in this repo): a GCloud project with the Search
