@@ -120,9 +120,9 @@ Outcomes: `✅` pass · `🔧` fixable (required) · `🛑` needs a decision · 
 
 Both live-API domains skip gracefully when their key is absent; everything else still runs.
 
-**PageSpeed Insights** (`lighthouse`) — a [free PSI key](https://developers.google.com/speed/docs/insights/v5/get-started), resolved from `$PAGESPEED_API_KEY`, or sops-decrypted from `$WISHBUSTERZ_RIDER_PSI_SOPS_FILE`. Note that a single Lighthouse run is **noisy** (lab scores swing run-to-run) and the API needs a **publicly reachable** URL.
+**PageSpeed Insights** (`lighthouse`) — set `$PAGESPEED_API_KEY` to a [free PSI key](https://developers.google.com/speed/docs/insights/v5/get-started). Note that a single Lighthouse run is **noisy** (lab scores swing run-to-run) and the API needs a **publicly reachable** URL.
 
-**Google service account** (`google`) — resolved from `$GOOGLE_SERVICE_ACCOUNT_JSON` (the key JSON, raw or base64), `$GOOGLE_APPLICATION_CREDENTIALS` (path to the key file), or `$WISHBUSTERZ_RIDER_SA_SOPS_FILE`. One-time setup: a Google Cloud project with the **Search Console**, **Site Verification**, and **Analytics Admin** APIs enabled, and a service account granted read access to your GA account. The Zaraz leg additionally uses `$CLOUDFLARE_API_TOKEN` (Zaraz read + zone read) and skips independently.
+**Google service account** (`google`) — set `$GOOGLE_SERVICE_ACCOUNT_JSON` (the key JSON, raw or base64) or `$GOOGLE_APPLICATION_CREDENTIALS` (a path to the key file). One-time setup: a Google Cloud project with the **Search Console**, **Site Verification**, and **Analytics Admin** APIs enabled, and a service account granted read access to your GA account. The Zaraz leg additionally uses `$CLOUDFLARE_API_TOKEN` (Zaraz read + zone read) and skips independently.
 
 The tool only ever *reads* through these APIs. It never provisions, never writes.
 

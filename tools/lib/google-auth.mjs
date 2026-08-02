@@ -5,8 +5,6 @@
 // The service-account key is resolved in order:
 //   1. $GOOGLE_SERVICE_ACCOUNT_JSON    raw JSON (or base64 of it), single value
 //   2. $GOOGLE_APPLICATION_CREDENTIALS path to the JSON key file (Google's own convention)
-//   3. sops-decrypted from the file at $WISHBUSTERZ_RIDER_SA_SOPS_FILE, key
-//      GOOGLE_SERVICE_ACCOUNT_JSON — opt-in, same pattern as the PSI key.
 //
 // Without a key it returns { skip: <reason> } so callers degrade gracefully.
 // One-time operator setup (not in this repo): a GCloud project with the Search
@@ -14,10 +12,7 @@
 // granted read access to the operator's GA account, its key stored as above.
 
 import crypto from 'node:crypto';
-import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { join } from 'node:path';
 
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 
@@ -25,7 +20,7 @@ const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 export async function getAccessToken(scopes) {
   const raw = resolveCreds();
   if (!raw) {
-    return { skip: 'no Google service-account key — set $GOOGLE_SERVICE_ACCOUNT_JSON, $GOOGLE_APPLICATION_CREDENTIALS, or point $WISHBUSTERZ_RIDER_SA_SOPS_FILE at a sops-encrypted env file' };
+    return { skip: 'no Google service-account key — set $GOOGLE_SERVICE_ACCOUNT_JSON (the key JSON, raw or base64) or $GOOGLE_APPLICATION_CREDENTIALS (path to the key file)' };
   }
   let sa;
   try { sa = parseSA(raw); }
@@ -85,23 +80,7 @@ function resolveCreds() {
 
   const path = process.env.GOOGLE_APPLICATION_CREDENTIALS?.trim();
   if (path && existsSync(path)) {
-    try { return readFileSync(path, 'utf8'); } catch { /* fall through to sops */ }
+    try { return readFileSync(path, 'utf8'); } catch { return null; }
   }
-
-  // Opt-in only: no default path. Point $WISHBUSTERZ_RIDER_SA_SOPS_FILE at a sops-encrypted
-  // env file holding GOOGLE_SERVICE_ACCOUNT_JSON, or leave it unset and this leg skips.
-  const file = process.env.WISHBUSTERZ_RIDER_SA_SOPS_FILE;
-  if (!file || !existsSync(file) || !hasSops()) return null;
-  const env = { ...process.env };
-  if (!env.SOPS_AGE_KEY_FILE) {
-    const k = join(homedir(), '.config', 'sops', 'age', 'keys.txt');
-    if (existsSync(k)) env.SOPS_AGE_KEY_FILE = k;
-  }
-  const r = spawnSync('sops', ['-d', '--extract', '["GOOGLE_SERVICE_ACCOUNT_JSON"]', file], { encoding: 'utf8', env });
-  return r.status === 0 && r.stdout?.trim() ? r.stdout.trim() : null;
-}
-
-function hasSops() {
-  const r = spawnSync('sops', ['--version'], { encoding: 'utf8' });
-  return r.status === 0 || (r.stdout || '').length > 0;
+  return null;
 }

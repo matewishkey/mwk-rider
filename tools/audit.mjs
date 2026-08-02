@@ -60,7 +60,8 @@ Usage:
 
 Offline domains: ${Object.keys(OFFLINE).join(', ')}
 With --url:      live, lighthouse, google
-                 (lighthouse needs a PSI key; google needs a Google service-account key — both $PAGESPEED_API_KEY/$GOOGLE_SERVICE_ACCOUNT_JSON, or the $WISHBUSTERZ_RIDER_*_SOPS_FILE files)
+                 (lighthouse needs $PAGESPEED_API_KEY; google needs $GOOGLE_SERVICE_ACCOUNT_JSON
+                  or $GOOGLE_APPLICATION_CREDENTIALS — each skips without its key)
 
 Note: --url works from any directory — offline domains need an Astro project in cwd,
 but a live/lighthouse run only needs the URL.

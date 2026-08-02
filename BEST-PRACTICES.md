@@ -373,7 +373,7 @@ key and Zaraz config itself, **the tool verifies this; it never provisions it.**
 > **Search Console API**, **Site Verification API**, and **Analytics Admin API**
 > enabled; a **service account** whose key is read like the PSI key
 > (`$GOOGLE_SERVICE_ACCOUNT_JSON`, or `$GOOGLE_APPLICATION_CREDENTIALS` path, or
-> `GOOGLE_SERVICE_ACCOUNT_JSON`, or a sops file via `$WISHBUSTERZ_RIDER_SA_SOPS_FILE`); that SA granted
+> `GOOGLE_SERVICE_ACCOUNT_JSON` or `GOOGLE_APPLICATION_CREDENTIALS`); that SA granted
 > read access to the operator's GA account and (for the verify/add provisioning steps)
 > ownership it gains by running verification. The Zaraz leg reuses the existing
 > `$CLOUDFLARE_API_TOKEN` (with Zaraz read + zone read). Treat it exactly like the

@@ -33,17 +33,15 @@ It **assumes the baseline stack is in place** and validates compliance — it do
 ## Lighthouse key resolution
 
 The `lighthouse` domain calls the PageSpeed Insights API and needs a free key, resolved in order:
-1. `$PAGESPEED_API_KEY`
-2. sops-decrypt `PAGESPEED_API_KEY` from `$WISHBUSTERZ_RIDER_PSI_SOPS_FILE` (opt-in; unset = skip) — uses `sops` + your age key; `SOPS_AGE_KEY_FILE` defaults to `~/.config/sops/age/keys.txt` if unset
+Set `$PAGESPEED_API_KEY`.
 
-No key, no `sops`, or decrypt failure → the domain `⏭ skips` (everything else still runs). Score → outcome: `≥90 ✅`, `50–89 💡`, `<50 🔧`. Transient PSI `500`s are retried (up to 3×).
+No key → the domain `⏭ skips` (everything else still runs). Score → outcome: `≥90 ✅`, `50–89 💡`, `<50 🔧`. Transient PSI `500`s are retried (up to 3×).
 
 ## Google (Search Console + Analytics) key resolution
 
 The `google` domain mints a service-account access token (zero-dep RS256 JWT via built-in `crypto`) for the Search Console + GA Admin APIs. The key is resolved in order:
 1. `$GOOGLE_SERVICE_ACCOUNT_JSON` — the downloaded key file's JSON, raw or base64
 2. `$GOOGLE_APPLICATION_CREDENTIALS` — path to the JSON key file (Google's own convention)
-3. sops-decrypt `GOOGLE_SERVICE_ACCOUNT_JSON` from `$WISHBUSTERZ_RIDER_SA_SOPS_FILE` (opt-in; unset = skip)
 
 No key → the Search Console + GA legs `⏭ skip`. The Zaraz leg is independent: it needs `$CLOUDFLARE_API_TOKEN` (Zaraz read + zone read) and resolves the zone from the domain; without it that one leg skips. One-time operator setup: a GCloud project with the Search Console / Site Verification / Analytics Admin APIs enabled and the SA granted read access to your GA account.
 

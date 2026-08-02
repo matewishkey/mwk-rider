@@ -4,15 +4,8 @@
 // static checks confirm "is it wired right?", this answers "what's the real
 // score?" — Performance/SEO/Accessibility/Best-Practices + Core Web Vitals.
 //
-// Needs a free PSI API key, resolved in order:
-//   1. $PAGESPEED_API_KEY
-//   2. sops-decrypted from $WISHBUSTERZ_RIDER_PSI_SOPS_FILE (key PAGESPEED_API_KEY)
-// Without a key it skips gracefully (the tool still works for everything else).
-
-import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { join } from 'node:path';
+// Needs a free PSI API key in $PAGESPEED_API_KEY. Without one it skips
+// gracefully (the tool still works for everything else).
 
 const SEC = 'lighthouse';
 
@@ -27,7 +20,7 @@ const CWV = [
 export async function run({ reporter, url, strategy = 'mobile' }) {
   const key = resolveKey();
   if (!key) {
-    reporter.skip(SEC, 'psi', 'no PageSpeed Insights key — set $PAGESPEED_API_KEY or point $WISHBUSTERZ_RIDER_PSI_SOPS_FILE at a sops-encrypted env file. Skipping real-metric audit.');
+    reporter.skip(SEC, 'psi', 'no PageSpeed Insights key — set $PAGESPEED_API_KEY (free: developers.google.com/speed/docs/insights/v5/get-started). Skipping real-metric audit.');
     return;
   }
 
@@ -93,23 +86,7 @@ async function fetchPSI(url, strategy, key, reporter) {
 }
 
 function resolveKey() {
-  if (process.env.PAGESPEED_API_KEY?.trim()) return process.env.PAGESPEED_API_KEY.trim();
-  // Opt-in only: no default path. Point $WISHBUSTERZ_RIDER_PSI_SOPS_FILE at a sops-encrypted
-  // env file holding PAGESPEED_API_KEY, or leave it unset and this domain skips.
-  const file = process.env.WISHBUSTERZ_RIDER_PSI_SOPS_FILE;
-  if (!file || !existsSync(file) || !hasSops()) return null;
-  const env = { ...process.env };
-  if (!env.SOPS_AGE_KEY_FILE) {
-    const k = join(homedir(), '.config', 'sops', 'age', 'keys.txt');
-    if (existsSync(k)) env.SOPS_AGE_KEY_FILE = k;
-  }
-  const r = spawnSync('sops', ['-d', '--extract', '["PAGESPEED_API_KEY"]', file], { encoding: 'utf8', env });
-  return r.status === 0 && r.stdout?.trim() ? r.stdout.trim() : null;
-}
-
-function hasSops() {
-  const r = spawnSync('sops', ['--version'], { encoding: 'utf8' });
-  return r.status === 0 || (r.stdout || '').length > 0;
+  return process.env.PAGESPEED_API_KEY?.trim() || null;
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
