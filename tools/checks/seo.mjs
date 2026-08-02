@@ -5,38 +5,42 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { eachDistHtml, isContentPage, headingLevels, headingAudit } from '../lib/html.mjs';
+import { readSrcFiles, headMetaFiles } from '../lib/src-scan.mjs';
 
 const SEC = 'seo';
 
 export async function run({ project, reporter }) {
-  // A canonical SEO component
-  const seoPath = pickFirst([
-    join(project.root, 'src/components/SEO.astro'),
-    join(project.root, 'src/components/Seo.astro'),
-  ]);
-  if (!seoPath) {
-    reporter.fix(SEC, 'SEO component', 'no src/components/SEO.astro', 'add a single SEO component that every page renders in <head>');
+  // The head-meta surface, found by behaviour rather than filename. A site may
+  // put this in SEO.astro, BaseHead.astro, or straight into a layout — all are
+  // correct, so search every source file and report against the union.
+  const srcFiles = readSrcFiles(project.root);
+  const headFiles = headMetaFiles(srcFiles);
+  const head = headFiles.map((f) => f.text).join('\n');
+
+  if (headFiles.length === 0) {
+    reporter.fix(SEC, 'SEO component', 'no source file emits head metadata (canonical, OG tags or <title>)', 'add an SEO/head component that every page renders in <head>');
   } else {
-    const seo = readFileSync(seoPath, 'utf8');
-    const required = [
-      ['og:image',        /og:image/],
-      ['og:image:width',  /og:image:width/],
-      ['og:image:height', /og:image:height/],
-      ['og:type',         /og:type/],
-      ['og:url',          /og:url/],
-      ['canonical',       /rel=["']canonical["']/],
-    ];
-    for (const [name, re] of required) {
-      if (re.test(seo)) reporter.pass(SEC, `meta:${name}`);
-      else              reporter.fix(SEC, `meta:${name}`, 'tag not emitted by the SEO component', `emit a ${name} tag`);
-    }
-    // Anti-pattern: <meta name="keywords"> (ignored by search engines, signals spam)
-    if (/name=["']keywords["']/.test(seo)) {
-      reporter.fix(SEC, 'no-keywords', '<meta name="keywords"> present (anti-pattern)', 'remove the keywords meta');
-    } else {
-      reporter.pass(SEC, 'no-keywords');
-    }
+    reporter.pass(SEC, 'SEO component', headFiles.map((f) => f.path).join(', '));
   }
+
+  // Individual tags run whether or not a dedicated component exists — an absent
+  // component must not silently skip them.
+  const required = [
+    ['og:image',        /og:image/],
+    ['og:image:width',  /og:image:width/],
+    ['og:image:height', /og:image:height/],
+    ['og:type',         /og:type/],
+    ['og:url',          /og:url/],
+    ['canonical',       /rel=["']canonical["']/],
+  ];
+  for (const [name, re] of required) {
+    if (re.test(head)) reporter.pass(SEC, `meta:${name}`);
+    else               reporter.fix(SEC, `meta:${name}`, 'tag not emitted anywhere in src/', `emit a ${name} tag from the component that renders <head>`);
+  }
+  // Anti-pattern: <meta name="keywords"> (ignored by search engines, signals spam)
+  const kw = srcFiles.find((f) => /name=["']keywords["']/.test(f.text));
+  if (kw) reporter.fix(SEC, 'no-keywords', `<meta name="keywords"> in ${kw.path} (anti-pattern)`, 'remove the keywords meta');
+  else    reporter.pass(SEC, 'no-keywords');
 
   // Brand fields (only checkable when scripts/og.config.mjs declares them)
   const brand = project.ogConfig?.brand ?? project.ogConfig;

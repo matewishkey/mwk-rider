@@ -7,7 +7,7 @@ import { chromium } from 'playwright';
 import { mkdir } from 'fs/promises';
 import { join } from 'path';
 
-const base = process.argv[2] || 'http://localhost:23004';
+const base = process.argv[2] || 'http://localhost:4321';
 const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
 const outDir = join(process.cwd(), 'screenshots', stamp);
 await mkdir(outDir, { recursive: true });

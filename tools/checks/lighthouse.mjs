@@ -8,6 +8,9 @@
 // gracefully (the tool still works for everything else).
 
 const SEC = 'lighthouse';
+// No timeout meant a host that accepts the connection and never answers hung the
+// whole audit — in CI, forever.
+const NET_TIMEOUT_MS = 60_000;
 
 const CATEGORIES = ['performance', 'seo', 'accessibility', 'best-practices'];
 // Lab Core Web Vital proxies → [audit id, label, "good" threshold (numericValue)]
@@ -71,7 +74,7 @@ async function fetchPSI(url, strategy, key, reporter) {
   const api = `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(url)}&strategy=${strategy}&${cats}&key=${key}`;
   for (let attempt = 1; attempt <= 3; attempt++) {
     let res;
-    try { res = await fetch(api); }
+    try { res = await fetch(api, { signal: AbortSignal.timeout(NET_TIMEOUT_MS) }); }
     catch (e) { reporter.skip(SEC, 'psi', `network error reaching PSI: ${e.message}`); return null; }
     if (res.ok) {
       try { return await res.json(); }
@@ -80,9 +83,10 @@ async function fetchPSI(url, strategy, key, reporter) {
     if (res.status === 500 && attempt < 3) { await sleep(5000); continue; } // transient lighthouseError
     if (res.status === 429) { reporter.skip(SEC, 'psi', 'PSI quota exceeded (429) — retry later or check the key quota'); return null; }
     if (res.status === 403) { reporter.skip(SEC, 'psi', 'PSI rejected the key (403) — verify the key + that the PageSpeed Insights API is enabled'); return null; }
+    if (res.status === 400) { reporter.skip(SEC, 'psi', 'PSI rejected the request (400) — usually an invalid $PAGESPEED_API_KEY, or a URL it cannot reach'); return null; }
     reporter.skip(SEC, 'psi', `PSI HTTP ${res.status}${attempt >= 3 ? ' (after retries)' : ''}`); return null;
   }
-  reporter.skip(SEC, 'psi', 'PSI failed after 3 attempts (transient lighthouseError) — try again'); return null;
+  return null;   // unreachable: every branch above returns
 }
 
 function resolveKey() {

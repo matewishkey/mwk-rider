@@ -1,5 +1,8 @@
 // image-size — intrinsic pixel dimensions from raw image bytes, no deps.
 //
+// Written from the PNG (RFC 2083 IHDR) and JPEG (ITU-T T.81 SOF) format specs,
+// not derived from any existing library — byte offsets are facts, not code.
+//
 // Used by the live check to verify a served og:image is a real card and not,
 // say, a screenshot of a 404 page (wishbusterz-rider#5): status + content-type can't tell
 // those apart, but the pixel size can. PNG and JPEG cover every OG card the

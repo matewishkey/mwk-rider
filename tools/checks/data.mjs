@@ -8,6 +8,7 @@
 
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, relative } from 'node:path';
+import { readSrcFiles } from '../lib/src-scan.mjs';
 
 const SEC = 'data';
 
@@ -27,10 +28,10 @@ export async function run({ project, reporter }) {
     return inline || helper;
   };
 
-  // JSON-LD emitted by the SEO component
-  const seoPath = pickFirst(project.root, ['src/components/SEO.astro', 'src/components/Seo.astro']);
-  if (seoPath && /application\/ld\+json/.test(read(seoPath))) reporter.pass(SEC, 'jsonld:emitted');
-  else reporter.fix(SEC, 'jsonld:emitted', 'no <script type="application/ld+json"> in the SEO component', 'emit JSON-LD structured data from the SEO component');
+  // JSON-LD — emitted anywhere in src/, not just from a file called SEO.astro.
+  const ld = readSrcFiles(project.root).find((f) => /application\/ld\+json/.test(f.text));
+  if (ld) reporter.pass(SEC, 'jsonld:emitted', ld.path);
+  else reporter.fix(SEC, 'jsonld:emitted', 'no <script type="application/ld+json"> anywhere in src/', 'emit JSON-LD structured data from the component that renders <head>');
 
   // JSON-LD helper covering the two core shapes
   const jsonldPath = pickFirst(project.root, ['src/lib/jsonld.ts', 'src/lib/jsonld.js']);

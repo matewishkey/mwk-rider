@@ -7,6 +7,8 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, extname, relative } from 'node:path';
 
+import { attrValue, hasAttr } from '../lib/html.mjs';
+
 const SEC = 'perf';
 
 const SCAN_EXTS = new Set(['.astro', '.tsx', '.jsx', '.html', '.md', '.mdx']);
@@ -30,7 +32,10 @@ function checkHeaders(project, reporter) {
     return;
   }
 
-  const blocks = parseHeaders(readFileSync(path, 'utf8'));
+  let headersRaw;
+  try { headersRaw = readFileSync(path, 'utf8'); }
+  catch { return null; }
+  const blocks = parseHeaders(headersRaw);
   const astroBlock = blocks.find((b) => b.path === '/_astro/*');
   if (!astroBlock) {
     reporter.fix(SEC, '_headers:/_astro/*', 'no /_astro/* rule — content-hashed bundles not marked immutable', 'add a /_astro/* block to public/_headers');
@@ -74,14 +79,16 @@ function checkCls(project, reporter) {
   const offenders = [];
   walkSource(project.root, (relPath) => {
     if (!SCAN_EXTS.has(extname(relPath).toLowerCase())) return;
-    const text = readFileSync(join(project.root, relPath), 'utf8');
+    let text;
+    try { text = readFileSync(join(project.root, relPath), 'utf8'); }
+    catch { return; }   // unreadable file — skip it, never lose the domain
     const re = /<img\b([^>]*)>/gi;
     let m;
     while ((m = re.exec(text)) !== null) {
       const attrs = m[1];
-      const src = attrs.match(/\bsrc=(["'`])([^"'`]+)\1/)?.[2] ?? '';
+      const src = attrValue(attrs, 'src') ?? '';
       if (!isContentImageRef(src)) continue;
-      if (!/\bwidth=/.test(attrs) || !/\bheight=/.test(attrs)) {
+      if (!hasAttr(attrs, 'width') || !hasAttr(attrs, 'height')) {
         offenders.push({ file: relPath, line: lineOf(text, m.index), src });
       }
     }

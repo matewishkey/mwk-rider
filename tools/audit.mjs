@@ -12,8 +12,6 @@
 // Pass --url <base> to also run, against a running/deployed site:
 //   live        real headers, served image bytes, rendered HTML
 //   lighthouse  real PageSpeed Insights scores + Core Web Vitals (needs a PSI key)
-//   google      Search Console (verified + sitemap) + GA4 property + Zaraz wiring
-//               (needs a Google service-account key; Zaraz leg needs $CLOUDFLARE_API_TOKEN)
 //
 // Usage: node audit.mjs --help
 
@@ -29,20 +27,32 @@ const OFFLINE = {
   data:    () => import('./checks/data.mjs'),
   analytics: () => import('./checks/analytics.mjs'),
 };
+const URL_ONLY = ['live', 'lighthouse'];
+const ALL_DOMAINS = [...Object.keys(OFFLINE), ...URL_ONLY];
+const STRATEGIES = ['mobile', 'desktop'];
 
-const { values } = parseArgs({
-  options: {
-    section:  { type: 'string', short: 's', multiple: true },
-    url:      { type: 'string' },
-    post:     { type: 'string' },
-    strategy: { type: 'string' },
-    strict:   { type: 'boolean' },
-    json:     { type: 'boolean' },
-    quiet:    { type: 'boolean' },
-    help:     { type: 'boolean', short: 'h' },
-  },
-  allowPositionals: true,
-});
+// parseArgs throws a raw ERR_PARSE_ARGS_* on a bad flag; its stack trace and its
+// hint about positional arguments are noise to someone who just made a typo.
+let values;
+try {
+  ({ values } = parseArgs({
+    options: {
+      section:  { type: 'string', short: 's', multiple: true },
+      url:      { type: 'string' },
+      post:     { type: 'string' },
+      strategy: { type: 'string' },
+      strict:   { type: 'boolean' },
+      json:     { type: 'boolean' },
+      quiet:    { type: 'boolean' },
+      help:     { type: 'boolean', short: 'h' },
+    },
+    allowPositionals: true,
+  }));
+} catch (err) {
+  console.error(`error: ${err.message.split('.')[0]}`);
+  console.error('run with --help to see the available options.');
+  process.exit(2);
+}
 
 if (values.help) {
   console.log(`wishbusterz-rider — check an Astro site against baseline best practices
@@ -59,9 +69,8 @@ Usage:
   wishbusterz-rider --quiet               Print only findings (skip ✅ lines)
 
 Offline domains: ${Object.keys(OFFLINE).join(', ')}
-With --url:      live, lighthouse, google
-                 (lighthouse needs $PAGESPEED_API_KEY; google needs $GOOGLE_SERVICE_ACCOUNT_JSON
-                  or $GOOGLE_APPLICATION_CREDENTIALS — each skips without its key)
+With --url:      live, lighthouse
+                 (lighthouse needs a free $PAGESPEED_API_KEY; it skips without one)
 
 Note: --url works from any directory — offline domains need an Astro project in cwd,
 but a live/lighthouse run only needs the URL.
@@ -80,15 +89,43 @@ Exit 0 if clean (💡 suggestions don't count); 1 if any 🔧 or 🛑; 2 on tool
   process.exit(0);
 }
 
+// Validate -s before running anything. An unrecognised domain used to match no
+// check and report "audit clean — exit 0", so a typo (or the natural guess
+// `-s seo,images`) silently audited nothing and went green in CI forever.
+const badDomains = (values.section ?? []).filter((s) => !ALL_DOMAINS.includes(s));
+if (badDomains.length) {
+  for (const bad of badDomains) {
+    const hint = bad.includes(',')
+      ? ` — pass one -s per domain: ${bad.split(',').filter(Boolean).map((d) => `-s ${d.trim()}`).join(' ')}`
+      : nearest(bad) ? ` — did you mean '${nearest(bad)}'?` : '';
+    console.error(`error: unknown domain '${bad}'${hint}`);
+  }
+  console.error(`valid domains: ${ALL_DOMAINS.join(', ')}`);
+  process.exit(2);
+}
+
+if (values.strategy && !STRATEGIES.includes(values.strategy)) {
+  console.error(`error: unknown --strategy '${values.strategy}' — valid: ${STRATEGIES.join(', ')}`);
+  process.exit(2);
+}
+
 const project = await detectProject(process.cwd());
 // Offline domains need an Astro project in cwd; a live/lighthouse run only needs --url.
 if (!project && !values.url) {
-  console.error(`error: ${process.cwd()} is not an Astro project (no astro.config.* and no "astro" dependency). Pass --url <site> to audit a served site from anywhere.`);
+  const offlineWanted = !values.section?.length || values.section.some((s) => s in OFFLINE);
+  console.error(`error: ${process.cwd()} is not an Astro project (no astro.config.* and no "astro" dependency).`);
+  if (offlineWanted) console.error('cd to the project root (the directory holding astro.config.*), or pass --url <site> to audit a served site from anywhere.');
   process.exit(2);
 }
 
 const reporter = new Reporter({ json: values.json, quiet: values.quiet, strict: values.strict });
 const wanted = values.section?.length ? new Set(values.section) : null;
+
+// Cheap edit-distance-free "did you mean": same first letter, or one is a prefix.
+function nearest(input) {
+  const s = input.toLowerCase();
+  return ALL_DOMAINS.find((d) => d.startsWith(s) || s.startsWith(d) || d[0] === s[0]) ?? null;
+}
 
 // Offline domains (skip if cwd isn't an Astro project but a --url run was requested)
 if (project) {
@@ -126,16 +163,8 @@ if (values.url) {
       reporter.error(`lighthouse check crashed: ${err.message}`);
     }
   }
-  if (!wanted || wanted.has('google')) {
-    try {
-      const mod = await import('./checks/google.mjs');
-      await mod.run({ reporter, url: base });
-    } catch (err) {
-      reporter.error(`google check crashed: ${err.message}`);
-    }
-  }
-} else if (wanted && (wanted.has('live') || wanted.has('lighthouse') || wanted.has('google'))) {
-  reporter.error('live/lighthouse/google checks need --url <base>');
+} else if (wanted && URL_ONLY.some((d) => wanted.has(d))) {
+  reporter.error(`${URL_ONLY.join('/')} checks need --url <base>`);
 }
 
 reporter.finish();

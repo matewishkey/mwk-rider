@@ -7,9 +7,8 @@ This is the *why* behind every check the audit runs. The governing rule:
 > at the bottom) — not a best practice yet.
 
 So this doc and `tools/checks/*` move together: you don't add a practice without
-baking a test, and you don't add a test without writing down why. The reporter
-repos (the real sites that file issues) are the source of new practices — each
-problem worth preventing everywhere becomes a permanent check.
+baking a test, and you don't add a test without writing down why. Real sites being audited are the source of new practices — each problem worth
+preventing everywhere becomes a permanent check.
 
 **Baseline assumed.** The baseline Astro stack: Astro 7+, `output: 'static'`,
 Cloudflare delivery (Image Transformations for R2 content, immutable hashed
@@ -36,7 +35,7 @@ starts failing strangers' builds.
 
 ## How we add a practice
 
-When a reporter repo hits a problem worth preventing everywhere:
+When an audited site hits a problem worth preventing everywhere:
 
 1. **Understand the requirement.** Read the underlying integration/service docs
    via `context7` (Astro, Cloudflare, the relevant plugin) — encode the real
@@ -52,7 +51,7 @@ When a reporter repo hits a problem worth preventing everywhere:
 4. **Verify.** `node tools/audit.mjs` in `examples/_fixture-i18n/` must stay
    `0 🔧` (in both default and `--strict`), and run it against at least one real site (drift there is expected and
    informational — it's how we confirm the check fires on the wild case).
-5. **Ship + close** the reporting issue. The check is now permanent.
+5. **Ship it.** The check is now permanent.
 
 Detection should accept *correct variants*, not just one spelling. The two
 worst things a check can do are miss a real violation and flag a compliant site;
@@ -148,7 +147,7 @@ thing a version bump leaves behind. Each maps to a documented v7 breaking change
 - **The og:image is a real card, not just a 200.** A resolvable image URL
   (status + `image/*` content-type) is necessary but not sufficient: a generator
   that screenshots an *error* page uploads a perfectly valid PNG. That's the
-  wishbusterz-rider#5 incident — a site on `trailingSlash:'always'` had its generator
+  an incident on a real site incident — a site on `trailingSlash:'always'` had its generator
   request the no-trailing-slash `/preview/og/<slug>` → 404 → it screenshotted
   and shipped Astro's 404 page as the post's OG card, and status+content-type
   alone never caught it. The live check fetches the served bytes and verifies the
@@ -311,7 +310,7 @@ the `analytics` checks in `tools/checks/live.mjs` (served HTML, `--url`).*
 *Why Zaraz over the old `cloudflareinsights` beacon / Partytown+GA escape-hatch:
 Zaraz unifies GA + Cloudflare analytics under one edge loader and one consent
 gate, which is what "promote Zaraz + GA + cookie banner" asks for. The CF Web
-Analytics beacon stays valid (and can itself run via Zaraz); see `FEEDBACK.md`.*
+Analytics beacon stays valid (and can itself run via Zaraz); see the Cloudflare Zaraz docs.*
 
 ## live (`--url`) — what only exists at serve time
 
@@ -333,53 +332,6 @@ PageSpeed Insights Performance/SEO/Accessibility/Best-Practices + lab Core Web
 Vitals (LCP/TBT/CLS), plus CrUX field data when the site has enough traffic.
 Lab scores are noisy — treat one run as a sample, not a verdict.
 
-## google (`--url`) — registered & measured in Google's properties
-
-*Check files: `tools/checks/google.mjs` + `tools/lib/google-auth.mjs`. Needs a
-Google service-account key; the Zaraz leg needs `$CLOUDFLARE_API_TOKEN`.* Where the
-`seo`/`analytics` domains check what the **site** declares, this checks what
-**Google** (and the edge) actually hold for the domain — the operator-provisioned
-state no source file reveals. Each leg skips independently when its credential or
-API access is missing, so a partial setup still reports what it can. Like the PSI
-key and Zaraz config itself, **the tool verifies this; it never provisions it.**
-
-- **The domain is a verified Search Console property.** A site Google doesn't know
-  about is invisible to Search. The check is `sites.get` for `sc-domain:<domain>`
-  (the domain property — one entry covers every subdomain + scheme); 404 = not
-  added, `siteUnverifiedUser` = added but not verified. Verification is automatable
-  because the DNS is on Cloudflare: the Site Verification API issues a
-  `google-site-verification=…` TXT token, the Cloudflare DNS API places it, then
-  `webResource.insert` confirms it. → `google: gsc:verified`
-- **A sitemap is submitted to Search Console.** Discovery is faster and completer
-  when Google has the sitemap, not just crawl links. `sitemaps.list` must return at
-  least one entry (errors on it downgrade to advisory, not a hard fail). → `google: gsc:sitemap`
-- **A GA4 property + web data stream exists for the domain.** Measurement starts at
-  a property whose web stream points at this site. `accountSummaries.list` →
-  `properties.dataStreams.list`, matched by `webStreamData.defaultUri` host →
-  yields the `measurementId` (`G-…`). Per the GA-account decision (2026-05-31): one
-  operator's GA account, **a property per client** — fully API-creatable
-  (`properties.create` → `dataStreams.create`); a GA *account* can't be (ToS is
-  interactive). → `google: ga:property`
-- **That measurement ID is wired into Zaraz.** The baseline delivers GA through
-  Zaraz behind the consent CMP (see `analytics`), so the measured property must be
-  the one Zaraz loads. The check reads the zone's Zaraz config
-  (`GET /zones/{zone}/settings/zaraz/config`, zone resolved from the domain via the
-  Cloudflare API) and confirms the GA4 measurement ID appears in its `tools` — a
-  key-name-agnostic match, robust to Zaraz's internal field names. With no GA leg to
-  cross-check against, it falls back to confirming *some* GA tag is present
-  (advisory). → `google: zaraz:ga`
-
-> **Operator setup (the keys, not in the repo).** A one-time GCloud project with the
-> **Search Console API**, **Site Verification API**, and **Analytics Admin API**
-> enabled; a **service account** whose key is read like the PSI key
-> (`$GOOGLE_SERVICE_ACCOUNT_JSON`, or `$GOOGLE_APPLICATION_CREDENTIALS` path, or
-> `GOOGLE_SERVICE_ACCOUNT_JSON` or `GOOGLE_APPLICATION_CREDENTIALS`); that SA granted
-> read access to the operator's GA account and (for the verify/add provisioning steps)
-> ownership it gains by running verification. The Zaraz leg reuses the existing
-> `$CLOUDFLARE_API_TOKEN` (with Zaraz read + zone read). Treat it exactly like the
-> PSI key: an operator secret the tool *checks against*, never one it owns.
-
----
 
 ## Gaps / candidate practices (not yet enforced)
 

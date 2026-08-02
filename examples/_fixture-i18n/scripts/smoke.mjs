@@ -12,7 +12,7 @@
  */
 import { chromium } from 'playwright';
 
-const base = process.argv[2] || 'http://localhost:23004';
+const base = process.argv[2] || 'http://localhost:4321';
 const results = [];
 
 function record(name, pass, detail = '') {

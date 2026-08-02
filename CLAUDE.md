@@ -2,13 +2,12 @@
 
 This repo is **wishbusterz-rider**: a single on-demand slash command (`/wishbusterz-rider`) that checks an Astro site against baseline best practices. It is *not* a framework — it installs nothing into the sites it audits and never touches their `CLAUDE.md`. You run it when you want a compliance check; it prints findings and suggests fixes.
 
-> Note: wishbusterz-rider used to be a content-ops *framework* (an always-on contract + skills + migrate commands). It was repurposed into this compliance tool on 2026-05-28 — same name, new purpose.
 
 ## What it is
 
 - **One command:** `commands/wishbusterz-rider.md` — orchestrates a run: load the project's details, run the tool, walk the findings.
-- **One tool:** `tools/audit.mjs` — the entry. Detects an Astro project, runs the offline domain checks, and (with `--url`) the live ones. Reports `✅ / 🔧 / 🛑 / ⏭` and exits non-zero on findings.
-- **Six offline domains + three `--url` domains**, one module each under `tools/checks/`:
+- **One tool:** `tools/audit.mjs` — the entry. Detects an Astro project, runs the offline domain checks, and (with `--url`) the live ones. Reports `✅ / 🔧 / 🛑 / 💡 / ⏭` and exits non-zero on findings.
+- **Six offline domains + two `--url` domains**, one module each under `tools/checks/`:
   - `modules` — baseline stack present + wired (version, integrations, `output: 'static'`, strict TS, adapter-iff-`<Image>`); search is Orama (flags competing search libs).
   - `seo` — canonical SEO component (canonical URL, OG meta), no `keywords`, sitemap lastmod, one `<h1>` per content page (skipped levels = advisory).
   - `images` — content images routed through an image transform + not oversized (`src/assets/` and `dist/`); on built `dist/` HTML, flags Cloudflare transform params (`format=auto` not explicit; explicit `quality=`) + content `<img>` missing `alt`.
@@ -17,8 +16,7 @@ This repo is **wishbusterz-rider**: a single on-demand slash command (`/wishbust
   - `analytics` — flags a hardcoded Google Analytics / GTM snippet in `src/`+`dist/` (`gtag.js`/`gtm.js`/`analytics.js`/`gtag(`/`GTM-…`/`UA-…`); the baseline delivers analytics via Cloudflare Zaraz behind its consent CMP). The `/cdn-cgi/zaraz/` loader is edge-injected, so the positive check is live-only — see `live.mjs`.
   - `live` (only with `--url`) — real headers, served bytes (browser-realistic `Accept`) + transform-param flags, rendered HTML — `tools/checks/live.mjs`.
   - `lighthouse` (only with `--url`) — measured PSI scores + Core Web Vitals — `tools/checks/lighthouse.mjs`. Needs a free PSI key in `$PAGESPEED_API_KEY`. Skips gracefully without one.
-  - `google` (only with `--url`) — the operator-provisioned Google state no source file shows: Search Console verified-property + sitemap, a GA4 property/web-stream for the domain, and that measurement ID wired into Zaraz — `tools/checks/google.mjs` (+ `tools/lib/google-auth.mjs`, which mints a service-account token zero-dep via built-in `crypto`). Needs a Google service-account key (`$GOOGLE_SERVICE_ACCOUNT_JSON` / `$GOOGLE_APPLICATION_CREDENTIALS`); the Zaraz leg reuses `$CLOUDFLARE_API_TOKEN`. Each leg skips independently; verifies, never provisions.
-- **Shared:** `tools/lib/project.mjs` (detect + load), `tools/lib/reporter.mjs` (outcomes + exit code; `💡 suggest` is advisory and never fails the run), `tools/lib/google-auth.mjs` (service-account → access token). PSI + Google SA are the only places the tool talks to an external API + an operator secret.
+- **Shared:** `tools/lib/project.mjs` (detect + load), `tools/lib/reporter.mjs` (outcomes + exit code; `💡 suggest` is advisory and never fails the run). PSI + Google SA are the only places the tool talks to an external API + an operator secret.
 
 ## Working rules
 
@@ -31,5 +29,5 @@ This repo is **wishbusterz-rider**: a single on-demand slash command (`/wishbust
 
 ## Install
 
-`./install.sh` symlinks the command → `~/.claude/commands/wishbusterz-rider.md` and the tools → `~/.claude/wishbusterz-rider-tools`. Idempotent; prunes the old wishbusterz-rider symlinks. Re-run after `git pull`.
+`./install.sh` symlinks the command → `~/.claude/commands/wishbusterz-rider.md` and the tools → `~/.claude/wishbusterz-rider-tools`. Idempotent. Re-run after `git pull`.
 

@@ -12,7 +12,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, extname, relative } from 'node:path';
 import { transformSmells } from '../lib/cf-image.mjs';
-import { eachDistHtml, imgsMissingAlt } from '../lib/html.mjs';
+import { eachDistHtml, imgsMissingAlt, attrValue } from '../lib/html.mjs';
 
 const SEC = 'images';
 
@@ -40,7 +40,9 @@ export async function run({ project, reporter }) {
   walkDir(join(project.root, 'src'), (relPath) => {
     const ext = extname(relPath).toLowerCase();
     if (!SCAN_EXTS.has(ext)) return;
-    const text = readFileSync(join(project.root, relPath), 'utf8');
+    let text;
+    try { text = readFileSync(join(project.root, relPath), 'utf8'); }
+    catch { return; }   // unreadable file — skip it, never lose the domain
     scanImgTags(text, relPath, findings);
     scanBackgroundImages(text, relPath, project.root, findings);
   }, project.root);
@@ -75,7 +77,15 @@ export async function run({ project, reporter }) {
   } else {
     for (const f of findings.oversizedAssets) {
       const refLabel = f.references.length === 0 ? 'unused' : `referenced by: ${f.references.slice(0, 3).join(', ')}${f.references.length > 3 ? ` (+${f.references.length - 3} more)` : ''}`;
-      reporter.fix(SEC, `assets:size (${f.assetPath})`, `${humanSize(f.sizeBytes)} — ${refLabel}`, f.references.length === 0 ? 'delete (unused large raster in src/assets/)' : 'move to your media host and reference via a transform URL, or ensure every reference routes through one');
+      if (f.imported) {
+        // Imported through astro:assets → optimized at build time. Flagging this
+        // as a defect contradicts the `routed` pass in the same run.
+        reporter.suggest(SEC, `assets:size (${f.assetPath})`, `${humanSize(f.sizeBytes)} source — ${refLabel}; imported via astro:assets, so Astro ships an optimized derivative, not this file`, 'fine to leave; shrink the source only to keep the repo light');
+      } else if (f.references.length === 0) {
+        reporter.fix(SEC, `assets:size (${f.assetPath})`, `${humanSize(f.sizeBytes)} — unused`, 'delete (unused large raster in src/assets/)');
+      } else {
+        reporter.fix(SEC, `assets:size (${f.assetPath})`, `${humanSize(f.sizeBytes)} — ${refLabel}, referenced without an astro:assets import`, 'import it so <Image> optimizes it at build time, or serve it through an image transform');
+      }
     }
   }
 
@@ -119,10 +129,14 @@ export async function run({ project, reporter }) {
 // Scanners -------------------------------------------------------------------
 
 function scanImgTags(text, relPath, findings) {
-  const re = /<img\b[^>]*\bsrc=(["'`])([^"'`]+)\1[^>]*>/g;
+  // Match the tag, then read `src` off its attributes with the shared helper —
+  // an inline `\bsrc=` pattern also matches `data-src=`, inventing a finding for
+  // a lazy-loaded image and quoting a src attribute the tag never had.
+  const re = /<img\b([^>]*)>/g;
   let m;
   while ((m = re.exec(text)) !== null) {
-    const src = m[2];
+    const src = attrValue(m[1], 'src');
+    if (!src) continue;
     if (!isContentImageRef(src)) continue;
     if (IT_PREFIX_RE.test(src)) continue;
     if (src.startsWith('data:') || src.startsWith('blob:')) continue;
@@ -165,11 +179,19 @@ function scanOversizedAssets(projectRoot, findings) {
 
   for (const c of candidates) {
     const baseName = c.rel.split('/').pop();
-    const references = sourceFiles.filter((srcRel) => {
-      try { return readFileSync(join(projectRoot, srcRel), 'utf8').includes(baseName); }
-      catch { return false; }
-    });
-    findings.oversizedAssets.push({ assetPath: c.rel, sizeBytes: c.sz, references });
+    const references = [];
+    let imported = false;
+    for (const srcRel of sourceFiles) {
+      let txt;
+      try { txt = readFileSync(join(projectRoot, srcRel), 'utf8'); } catch { continue; }
+      if (!txt.includes(baseName)) continue;
+      references.push(srcRel);
+      // An ESM import routes the asset through astro:assets, so Astro (via Sharp)
+      // emits optimized derivatives at build time and the raw file never ships.
+      // Size is then repo weight, not a delivery defect.
+      if (new RegExp(`(?:import\\s[^;]*?from\\s*|import\\s*\\()\\s*["'][^"']*${escapeRe(baseName)}["']`).test(txt)) imported = true;
+    }
+    findings.oversizedAssets.push({ assetPath: c.rel, sizeBytes: c.sz, references, imported });
   }
 }
 
@@ -262,3 +284,5 @@ function humanSize(bytes) {
 function truncate(s, n) {
   return s.length > n ? s.slice(0, n - 1) + '…' : s;
 }
+
+function escapeRe(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }

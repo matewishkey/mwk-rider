@@ -1,12 +1,12 @@
 # wishbusterz-rider
 
-An on-demand best-practices auditor for **Astro** sites. One slash command (`/wishbusterz-rider`), one zero-dependency script, nine domains (six offline + three live). No framework, no contract, nothing installed into the sites it audits — it reports, you decide.
+An on-demand best-practices auditor for **Astro** sites. One slash command (`/wishbusterz-rider`), one zero-dependency script, eight domains (six offline + two live). No framework, no contract, nothing installed into the sites it audits — it reports, you decide.
 
 ```
 ✅ modules: astro:version — ^7.1.6
 🔧 seo: meta:canonical — no <link rel="canonical"> in the SEO component
      fix: emit <link rel="canonical" href={canonicalURL}> from src/components/SEO.astro
-💡 seo: heading:outline — /about skips from <h1> to <h3>
+💡 seo: headings:order — 1/4 content page(s) skip a heading level
 
 38 ✅   1 🔧   0 🛑   1 💡   0 ⏭
 audit complete — 1 finding to address (exit 1).
@@ -74,9 +74,8 @@ Use `--strict` when you've adopted the baseline deliberately and want it enforce
 | **analytics** | No hardcoded Google Analytics / GTM snippet in `src/` or `dist/` — the baseline delivers analytics via Cloudflare Zaraz, which loads GA at the edge behind its consent banner (CMP). The Zaraz loader (`/cdn-cgi/zaraz/`) is edge-injected, so the positive "Zaraz present" check runs under `--url`. |
 | **live** | With `--url`: real Cache-Control headers, served image bytes (measured with a browser-realistic `Accept`) + transform-param flags, rendered SEO + JSON-LD, `/llms.txt` — against a running or deployed site. |
 | **lighthouse** | With `--url`: real **measured** scores via the PageSpeed Insights API — Performance/SEO/Accessibility/Best-Practices + Core Web Vitals (LCP/TBT/CLS). Needs a free PSI key (below); skips gracefully without one. |
-| **google** | With `--url`: the operator-provisioned Google state no source file shows — the domain is a verified **Search Console** property with a sitemap submitted, a **GA4** property + web data stream exists for it (→ measurement ID), and that ID is wired into the zone's **Zaraz** config. Needs a Google service-account key (below). Verifies, never provisions. |
 
-The static domains answer *"is it wired right?"*; `lighthouse` answers *"what's the real score?"*; `google` answers *"is it registered and measured?"* — complementary layers.
+The static domains answer *"is it wired right?"*; `lighthouse` answers *"what's the real score?"* — complementary layers.
 
 **This tool assumes a specific baseline** (Astro 7+, static output, Cloudflare delivery, Orama search) and validates compliance against it. It does not set anything up or migrate. If your stack differs, the checks are small and readable — fork and adjust.
 
@@ -122,9 +121,7 @@ Both live-API domains skip gracefully when their key is absent; everything else 
 
 **PageSpeed Insights** (`lighthouse`) — set `$PAGESPEED_API_KEY` to a [free PSI key](https://developers.google.com/speed/docs/insights/v5/get-started). Note that a single Lighthouse run is **noisy** (lab scores swing run-to-run) and the API needs a **publicly reachable** URL.
 
-**Google service account** (`google`) — set `$GOOGLE_SERVICE_ACCOUNT_JSON` (the key JSON, raw or base64) or `$GOOGLE_APPLICATION_CREDENTIALS` (a path to the key file). One-time setup: a Google Cloud project with the **Search Console**, **Site Verification**, and **Analytics Admin** APIs enabled, and a service account granted read access to your GA account. The Zaraz leg additionally uses `$CLOUDFLARE_API_TOKEN` (Zaraz read + zone read) and skips independently.
-
-The tool only ever *reads* through these APIs. It never provisions, never writes.
+The tool only ever *reads* through this API. It never provisions, never writes.
 
 ## Layout
 
@@ -133,18 +130,30 @@ commands/wishbusterz-rider.md       the slash command (orchestration)
 tools/
   audit.mjs                  entry: detect project, run domains, report
   test.mjs                   the gate: fixture + known-bad synthetic projects
-  checks/{modules,seo,images,perf,data,analytics,live,lighthouse,google}.mjs
-  lib/{project,reporter,cf-image,html,image-size,google-auth}.mjs
+  checks/{modules,seo,images,perf,data,analytics,live,lighthouse}.mjs
+  lib/{project,reporter,policy,cf-image,html,image-size,src-scan}.mjs
 examples/_fixture-i18n/      a compliant multi-locale Astro site — the test target
+examples/ci/audit.yml        copy-paste GitHub Actions job for your own site
+BEST-PRACTICES.md            the why behind every check + the practice/check registry
+docs/DEVELOPING.md           testing discipline and design decisions
+.env.example                 the optional API keys
 install.sh                   symlink command + tools into ~/.claude
 ```
 
 ## Contributing
 
-Adding a check is a five-step contract, documented in [`BEST-PRACTICES.md`](BEST-PRACTICES.md#how-we-add-a-practice): understand the requirement from the real docs → write down *why* → bake the check → verify it stays quiet on the compliant fixture **and** fires on a known-bad project → ship.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md). The short version: `node tools/test.mjs` is the gate, a new check needs both test halves (stays quiet on the compliant fixture **and** fires on a known-bad project), and it must be classified in [`tools/lib/policy.mjs`](tools/lib/policy.mjs) or it will start failing strangers' builds.
 
-`node tools/test.mjs` is the gate — run it before any commit touching `tools/**`. See [`docs/DEVELOPING.md`](docs/DEVELOPING.md).
+Security issues: please use [private reporting](SECURITY.md), not a public issue.
+
+## Safety
+
+The tool is meant to be pointed at projects you don't control, so it **never executes the audited project's code** — config is read as text and parsed, never `import()`ed. It never writes to the project, and makes no network requests unless you pass `--url`. Details in [`SECURITY.md`](SECURITY.md).
 
 ## Licence
 
-[MIT](LICENSE).
+[MIT](LICENSE) — © 2026 Mergodon Limited. Use it, fork it, sell it; just keep the notice.
+
+The auditor itself has **zero dependencies**, so nothing third-party is redistributed here. The example fixture installs its own dependencies from npm under their respective licences (predominantly MIT, with Apache-2.0, ISC, MPL-2.0 and LGPL-3.0 transitives) — those are fetched at install time, not vendored into this repo.
+
+Not affiliated with or endorsed by Google, Cloudflare, or the Astro project. Product names are used only to identify what is being checked.

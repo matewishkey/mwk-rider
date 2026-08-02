@@ -47,7 +47,11 @@ const REMOVED_TRANSITION_APIS = [
 export async function run({ project, reporter }) {
   const pkg = project.packageJson;
   if (!pkg) {
-    reporter.block(SEC, 'package.json', 'missing at project root', 'create package.json');
+    if (project.packageJsonMalformed) {
+      reporter.block(SEC, 'package.json', 'present but not valid JSON — every dependency check is skipped', 'fix the JSON syntax (a trailing comma or comment will do it)');
+    } else {
+      reporter.block(SEC, 'package.json', 'missing at project root', 'create package.json');
+    }
     return;
   }
 
@@ -247,6 +251,10 @@ function majorOf(range) {
 // Text-level, like every other assertion here — the tool never imports a
 // project's config (it may reference deps that aren't installed).
 function extractBlock(src, key) {
+  // Strip comments first: `// experimental: { rustCompiler: true }` left behind
+  // after a migration is a note to self, not live config, and flagging it makes
+  // the tool wrong exactly when someone is doing the upgrade it asks for.
+  src = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
   const open = src.search(new RegExp(`\\b${key}\\s*:\\s*\\{`));
   if (open === -1) return null;
   const start = src.indexOf('{', open);

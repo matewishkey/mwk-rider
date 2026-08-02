@@ -35,6 +35,7 @@ export function isContentPage(html) {
 
 // Heading levels in document order, e.g. "<h1>…<h2>…<h2>…<h3>" → [1, 2, 2, 3].
 export function headingLevels(html) {
+  html = html.replace(/<!--[\s\S]*?-->/g, '').replace(/<template\b[\s\S]*?<\/template>/gi, '');
   return [...html.matchAll(/<h([1-6])\b/gi)].map((m) => Number(m[1]));
 }
 
@@ -57,6 +58,19 @@ export function headingAudit(levels) {
   return { h1, skip };
 }
 
+// Attribute helpers. Anchor on an attribute-name boundary (start or whitespace),
+// never \b — \b matches inside `data-src`/`data-width`/`data-alt`, which both
+// invents findings for tags that lack the real attribute and lets a genuine
+// offender pass because its `data-` twin satisfied the test.
+export function attrValue(attrs, name) {
+  return attrs.match(new RegExp(`(?:^|\\s)${name}\\s*=\\s*(["'\`])([^"'\`]*)\\1`, 'i'))?.[2]
+      ?? attrs.match(new RegExp(`(?:^|\\s)${name}\\s*=\\s*([^\\s>"'\`]+)`, 'i'))?.[1]
+      ?? null;
+}
+export function hasAttr(attrs, name) {
+  return new RegExp(`(?:^|\\s)${name}\\s*=`, 'i').test(attrs);
+}
+
 // Content <img> tags with no alt attribute at all. `alt=""` is intentional
 // (decorative) and passes; a missing attribute is the WCAG 1.1.1 violation.
 export function imgsMissingAlt(html) {
@@ -65,8 +79,11 @@ export function imgsMissingAlt(html) {
     const attrs = m[1];
     // Anchor on an attribute-name boundary (start or whitespace), NOT \b — \b
     // matches inside `data-alt`/`data-src`, which would mask a real missing alt.
-    if (/(?:^|\s)alt\s*=/.test(attrs)) continue;
-    const src = attrs.match(/(?:^|\s)src=(["'`])([^"'`]+)\1/)?.[2] ?? '';
+    if (hasAttr(attrs, 'alt')) continue;
+    // srcset-only images are still content images; fall back to its first URL.
+    const src = attrValue(attrs, 'src')
+             ?? (attrValue(attrs, 'srcset') ?? '').split(',')[0]?.trim().split(/\s+/)[0]
+             ?? '';
     if (!src || /\.(svg|ico)(\?|#|$)|\bfavicon\b/i.test(src)) continue;
     if (src.startsWith('data:') || src.startsWith('blob:')) continue;
     out.push(src);

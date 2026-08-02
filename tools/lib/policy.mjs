@@ -44,6 +44,20 @@ const HOUSE_STYLE = [
   'data:jsonld:shapes',         // demands src/lib/jsonld.ts specifically
   'seo:brand.*',                // scripts/og.config.mjs brand fields
   'seo:brand:optional',
+
+  // --- the --url domain's twins of the above -----------------------------------
+  // These mirror offline checks that are already house style. Left unclassified
+  // they were *required* under --url, so a Netlify site got a hard failure for
+  // missing Cloudflare `_headers` semantics that the same tool demotes to 💡 when
+  // run offline — the exact cries-wolf failure this file exists to prevent.
+  'perf:cache:_astro',
+  'perf:cache:html',
+  'analytics:zaraz',            // Zaraz specifically, not analytics in general
+  'analytics:ga:raw',
+  'data:llms.txt:served',
+  'data:llms.txt:structure',
+  'images:delivery',            // /cdn-cgi/image delivery shape
+  'images:transform:*',
 ];
 
 function toRegExp(pattern) {

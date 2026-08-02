@@ -206,7 +206,7 @@ async function checkOgCard(ogImg, html, reporter) {
 // doesn't bot-score the probe. Returns an ArrayBuffer, or null on any failure.
 async function fetchBytes(url) {
   try {
-    const res = await fetch(url, { headers: { ...BROWSER_BASE, Accept: 'image/*,*/*;q=0.8' }, redirect: 'follow' });
+    const res = await fetch(url, { signal: AbortSignal.timeout(NET_TIMEOUT_MS), headers: { ...BROWSER_BASE, Accept: 'image/*,*/*;q=0.8' }, redirect: 'follow' });
     if (!res.ok) return null;
     return await res.arrayBuffer();
   } catch { return null; }
@@ -302,7 +302,7 @@ function mkGet(base) {
   return async function get(path, { headers } = {}) {
     const url = path.startsWith('http') ? path : base + path;
     try {
-      const res = await fetch(url, { headers: { ...NAV_HEADERS, ...headers }, redirect: 'follow' });
+      const res = await fetch(url, { signal: AbortSignal.timeout(NET_TIMEOUT_MS), headers: { ...NAV_HEADERS, ...headers }, redirect: 'follow' });
       const text = await res.text();
       return { ok: true, status: res.status, headers: res.headers, text, url };
     } catch (err) {
@@ -316,9 +316,9 @@ function mkHead(base) {
     const url = path.startsWith('http') ? path : base + path;
     const h = { ...BROWSER_BASE, ...headers };
     try {
-      let res = await fetch(url, { method: 'HEAD', headers: h, redirect: 'follow' });
+      let res = await fetch(url, { signal: AbortSignal.timeout(NET_TIMEOUT_MS), method: 'HEAD', headers: h, redirect: 'follow' });
       if (res.status === 405 || res.status === 501) {
-        res = await fetch(url, { headers: { ...h, Range: 'bytes=0-0' }, redirect: 'follow' });
+        res = await fetch(url, { signal: AbortSignal.timeout(NET_TIMEOUT_MS), headers: { ...h, Range: 'bytes=0-0' }, redirect: 'follow' });
       }
       return { ok: true, status: res.status, headers: res.headers, url };
     } catch (err) {

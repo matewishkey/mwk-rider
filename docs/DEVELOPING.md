@@ -6,16 +6,18 @@ live in `CLAUDE.md`; the *why* behind each individual check lives in
 
 ## Key decisions
 
-- **Verify, never provision.** The `google` domain checks operator-provisioned Google
-  state (Search Console, GA4, Zaraz wiring) — the *verify* half only. This tool never
-  provisions anything, and never writes to an audited project.
+- **Verify, never provision — and never execute.** The tool reports; it never writes to
+  an audited project, and it never runs that project's code. Config is read as text and
+  parsed, never `import()`ed: auditing a repo must never be equivalent to running it.
 - **Command-driven, never passive.** No contract `@import`, no auto-loading, nothing
   written into audited projects. If you find yourself wanting an always-on hook, stop —
   that's deliberately not what this is.
-- **The version baseline is a hard floor, not a nudge.** Moving it to Astro 7 turns
-  sites still on 6.x red, and that red *is* the deliverable. A `💡` advisory reads as
-  optional and gets ignored. When the next major lands, move the floor the same way.
-  The floor and its date live in `BEST-PRACTICES.md` § modules.
+- **The version baseline is a floor for the baseline stack, not for every Astro site.**
+  `--strict` treats being behind the floor as a required finding, because a site that
+  opted into this baseline should track it. In the default mode `modules:astro:version`
+  is house style (`tools/lib/policy.mjs`) — a stranger's site being a major behind is
+  worth telling them, not worth failing their build over. The floor and its date live
+  in `BEST-PRACTICES.md` § modules.
 - **Version claims get re-verified, never recalled.** Every number in the baseline was
   read live (`npm view <pkg> version peerDependencies engines`) before being written
   down — that's how the TypeScript trap surfaced: `typescript@latest` is 7.x, but
@@ -60,10 +62,9 @@ baseline means upgrading the fixture in the same commit.
   the served site. Cache-header checks need a prod-like server (`wrangler dev` of `dist/`,
   or a deployed site); a plain `astro dev` doesn't apply `_headers`.
 
-- **Lighthouse / Google:** need network, a key, and a public URL — deliberately **not** in
+- **Lighthouse:** need network, a key, and a public URL — deliberately **not** in
   the offline gate. Without a key each leg `⏭ skips` and the run still exits 0. Lighthouse
-  lab scores are noisy; re-run before trusting a number. The `google` happy path only
-  passes against a domain actually registered in Search Console and GA.
+  lab scores are noisy; re-run before trusting a number.
 
 - **Runtime smoke (fixture-specific):** `node examples/_fixture-i18n/scripts/smoke.mjs` —
   Playwright against a live dev server (routes, SEO, search, locale boundaries).

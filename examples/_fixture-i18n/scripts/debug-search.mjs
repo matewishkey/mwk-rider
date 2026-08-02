@@ -15,7 +15,7 @@
  */
 import { chromium } from 'playwright';
 
-const base = process.argv[2] || 'http://localhost:23002';
+const base = process.argv[2] || 'http://localhost:4321';
 
 function header(s) { console.log('\n' + '='.repeat(60) + '\n' + s + '\n' + '='.repeat(60)); }
 

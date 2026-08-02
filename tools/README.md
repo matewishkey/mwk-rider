@@ -23,10 +23,10 @@ node ~/.claude/wishbusterz-rider-tools/audit.mjs --help
 | `seo` | SEO component emits canonical + OG meta; no `keywords` anti-pattern; sitemap lastmod; brand fields (if og.config present) |
 | `images` | `<img>` + CSS `background-image` routed through an image transform; no oversized raster in `src/assets/`; no oversized built image in `dist/` |
 | `perf` | `public/_headers` marks `/_astro/*` immutable; content `<img>` carry width/height (CLS) |
+| `analytics` | Flags a hardcoded Google Analytics / GTM snippet in `src/` + `dist/`; the positive "Zaraz loader present" check is live-only |
 | `data` | JSON-LD emitted + a BlogPosting/WebSite helper; `/llms.txt` from `getCollection()` with a draft/preview filter; RSS; Zod-validated content schema |
 | `live` | Only with `--url`: real Cache-Control, served image bytes, rendered SEO + JSON-LD, `/llms.txt` |
 | `lighthouse` | Only with `--url`: measured PageSpeed Insights scores (perf/seo/a11y/best-practices) + Core Web Vitals. Needs a PSI key (see below); skips without one |
-| `google` | Only with `--url`: Search Console verified-property + sitemap, a GA4 property/web-stream for the domain, and that measurement ID wired into Zaraz. Needs a Google service-account key (see below); Zaraz leg uses `$CLOUDFLARE_API_TOKEN`; each leg skips independently |
 
 It **assumes the baseline stack is in place** and validates compliance — it does not set anything up.
 
@@ -35,15 +35,8 @@ It **assumes the baseline stack is in place** and validates compliance — it do
 The `lighthouse` domain calls the PageSpeed Insights API and needs a free key, resolved in order:
 Set `$PAGESPEED_API_KEY`.
 
-No key → the domain `⏭ skips` (everything else still runs). Score → outcome: `≥90 ✅`, `50–89 💡`, `<50 🔧`. Transient PSI `500`s are retried (up to 3×).
+No key → the domain `⏭ skips` (everything else still runs). Score → outcome: `≥90 ✅`, `50–89 💡`, `<50 🔧`. Transient PSI `500`s get up to 3 attempts (2 retries).
 
-## Google (Search Console + Analytics) key resolution
-
-The `google` domain mints a service-account access token (zero-dep RS256 JWT via built-in `crypto`) for the Search Console + GA Admin APIs. The key is resolved in order:
-1. `$GOOGLE_SERVICE_ACCOUNT_JSON` — the downloaded key file's JSON, raw or base64
-2. `$GOOGLE_APPLICATION_CREDENTIALS` — path to the JSON key file (Google's own convention)
-
-No key → the Search Console + GA legs `⏭ skip`. The Zaraz leg is independent: it needs `$CLOUDFLARE_API_TOKEN` (Zaraz read + zone read) and resolves the zone from the domain; without it that one leg skips. One-time operator setup: a GCloud project with the Search Console / Site Verification / Analytics Admin APIs enabled and the SA granted read access to your GA account.
 
 ## Outcomes
 
@@ -64,10 +57,12 @@ tools/
   audit.mjs              entry — arg parsing, project detection, domain dispatch
   lib/
     project.mjs          cwd → Astro-project detection + config/source loading
+    policy.mjs           universal vs house-style classification (drives --strict)
+    image-size.mjs       PNG/JPEG intrinsic dimensions from raw bytes
+    src-scan.mjs         read src/ once; find head-meta by behaviour, not filename
     reporter.mjs         outcome collection, human/JSON output, exit code
     cf-image.mjs         Cloudflare transform-URL param parsing (shared offline + live)
     html.mjs             dist/served HTML scanning — headings, alt text, content-page gate
-    google-auth.mjs      service-account → OAuth access token (zero-dep RS256 JWT)
   checks/
     modules.mjs          baseline stack
     seo.mjs              discoverability meta
@@ -77,5 +72,4 @@ tools/
     analytics.mjs        no hardcoded GA/GTM snippet (delivered via Zaraz)
     live.mjs             HTTP checks against a served site (--url)
     lighthouse.mjs       measured PSI scores + Core Web Vitals (--url + key)
-    google.mjs           Search Console + GA4 + Zaraz-wiring verification (--url + SA key)
 ```

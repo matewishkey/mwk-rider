@@ -1,0 +1,47 @@
+# This repo's own gate. Runs the smoke test and audits the bundled fixture in
+# both severity modes — all offline, no dependencies, no API keys, so it works
+# on forked PRs where secrets are unavailable.
+#
+# (The copy-paste workflow for auditing YOUR Astro site lives in
+# examples/ci/audit.yml — it is deliberately not here, because GitHub would run
+# it against this repo, which has no package.json and is not an Astro site.)
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Asserts both halves: checks stay quiet on the compliant fixture, and
+      # each one fires on a purpose-built known-bad project.
+      - name: Smoke test
+        run: node tools/test.mjs
+
+      # The fixture is fully compliant, so it must be clean in both modes.
+      - name: Audit the fixture (default)
+        working-directory: examples/_fixture-i18n
+        run: node ../../tools/audit.mjs
+
+      - name: Audit the fixture (--strict)
+        working-directory: examples/_fixture-i18n
+        run: node ../../tools/audit.mjs --strict
+
+      # A non-Astro directory must be rejected with exit 2, not audited.
+      - name: Reject a non-Astro directory
+        run: |
+          if node tools/audit.mjs -s modules; then
+            echo "expected exit 2 in a non-Astro directory, got 0"; exit 1
+          fi

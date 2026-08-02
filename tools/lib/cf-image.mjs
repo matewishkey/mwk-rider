@@ -8,9 +8,6 @@
 //     usually a large win on photographic content
 // Aliases per Cloudflare docs: format|f, quality|q. (Verified via context7.)
 
-export function isTransformUrl(src) {
-  return /\/cdn-cgi\/image\//.test(src);
-}
 
 // The options segment between /cdn-cgi/image/ and the source path, or null.
 export function transformOptions(src) {
