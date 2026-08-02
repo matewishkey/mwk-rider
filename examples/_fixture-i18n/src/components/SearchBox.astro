@@ -1,0 +1,488 @@
+---
+/**
+ * Per-locale faceted search box (Orama v3 native).
+ *
+ * Wire format: /search-index-<locale>.json — plain JSON (Orama save())
+ * loaded via Orama load(). No @orama/plugin-data-persistence (its dpack
+ * transitive dep has Node-only code and breaks in the browser).
+ *
+ * Faceting model:
+ *   - Always-on facets (type + tags), counts reflect current filter state
+ *   - Multi-select within a facet = OR semantics (Orama `in` / `containsAny`)
+ *   - Across facets = AND semantics (Orama merges where clauses)
+ *   - Filter state syncs to the URL hash → bookmarkable + back-button-friendly
+ *   - Stemmed search term + raw-value filters: filters match the stored
+ *     value (not the stemmed token), so `type: 'thoughts'` matches exactly
+ *
+ * GOTCHAS (verified in browser):
+ *   1. Empty `term: ''` in Orama returns nothing — omit `term` entirely
+ *      to fetch all docs filtered by `where` (used when user has no query
+ *      but selected a facet).
+ *   2. String[] filtering needs `containsAny` (OR) or `containsAll` (AND).
+ *      Bare equality silently returns zero results.
+ *   3. Facet counts are POST-filter — they show what WOULD still match if
+ *      you AND'd that value in. Disjunctive faceting (counts unaffected by
+ *      same-facet selections) needs an extra search per facet; we skip
+ *      that complexity here since incremental-narrowing is fine for blogs.
+ *   4. ClientRouter view transitions don't re-execute module scripts;
+ *      reattach via `astro:page-load`. The `__searchInit` flag prevents
+ *      double-binding on the same element.
+ *   5. `tolerance: 1` is permissive — accepts up to 1 character edit. For
+ *      Hungarian (long compound words) this widens recall meaningfully;
+ *      for very short queries it may over-match. Tune per site.
+ */
+import { Icon } from 'astro-icon/components';
+
+interface Props {
+  placeholder: string;
+}
+const { placeholder } = Astro.props;
+---
+<div class="search-box" data-search-root>
+  <div class="search-input-wrap">
+    <Icon name="lucide:search" class="search-icon" size={18} />
+    <input
+      type="search"
+      id="search-input"
+      placeholder={placeholder}
+      autocomplete="off"
+      aria-label="Search"
+      aria-controls="search-results"
+    />
+  </div>
+  <div class="status" id="search-status" role="status" aria-live="polite">ready</div>
+
+  <div class="active-filters" id="search-active-filters" aria-label="Active filters"></div>
+
+  <div class="facets" id="search-facets" aria-label="Filter by"></div>
+
+  <div class="results" id="search-results" role="region" aria-label="Search results"></div>
+</div>
+
+<style is:global>
+  /*
+   * is:global is REQUIRED here. Astro scopes <style> blocks via data-astro-cid-*
+   * attributes. The facet chips, pills, and result hits are injected via
+   * innerHTML at runtime — they never receive the scoping attribute, so
+   * scoped selectors silently fail to match them.
+   *
+   * Every selector is namespaced under .search-box (which is in the static
+   * template) to prevent global-style leakage to unrelated components.
+   */
+
+  /* ---- Input ---- */
+  .search-box .search-input-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+  .search-box .search-input-wrap .search-icon {
+    position: absolute;
+    left: 14px;
+    width: 18px;
+    height: 18px;
+    color: var(--muted);
+    pointer-events: none;
+    transition: color 150ms ease;
+  }
+  .search-box .search-input-wrap:focus-within .search-icon { color: var(--accent); }
+  .search-box #search-input {
+    width: 100%;
+    padding: 12px 16px 12px 44px;
+    background: #111;
+    color: var(--fg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 16px;
+    font-family: inherit;
+    transition: border-color 150ms ease, box-shadow 150ms ease;
+  }
+  .search-box #search-input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(51, 255, 51, 0.12);
+  }
+  .search-box #search-input::placeholder { color: var(--muted); }
+
+  /* ---- Status line ---- */
+  .search-box .status {
+    margin-top: 10px;
+    font-size: 0.82em;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.01em;
+  }
+
+  /* ---- Active filter pills (above results) ---- */
+  .search-box .active-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 14px;
+  }
+  .search-box .active-filters:empty { display: none; }
+  .search-box .active-filters .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px 6px 14px;
+    border-radius: 999px;
+    background: rgba(51, 255, 51, 0.12);
+    color: var(--accent);
+    border: 1px solid rgba(51, 255, 51, 0.4);
+    font-size: 0.82em;
+    font-weight: 500;
+    cursor: pointer;
+    font-family: inherit;
+    line-height: 1.4;
+    transition: background 150ms ease, border-color 150ms ease;
+  }
+  .search-box .active-filters .pill .key {
+    color: var(--muted);
+    font-weight: 400;
+    font-size: 0.92em;
+  }
+  .search-box .active-filters .pill .x {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: rgba(51, 255, 51, 0.18);
+    font-size: 13px;
+    line-height: 1;
+    font-weight: 600;
+  }
+  .search-box .active-filters .pill:hover {
+    background: rgba(51, 255, 51, 0.2);
+    border-color: var(--accent);
+  }
+  .search-box .active-filters .pill.reset {
+    background: transparent;
+    color: var(--muted);
+    border-color: var(--border);
+    padding-right: 14px;
+  }
+  .search-box .active-filters .pill.reset:hover {
+    color: var(--fg);
+    border-color: var(--muted);
+    background: rgba(255, 255, 255, 0.03);
+  }
+  .search-box .active-filters .pill.reset .x {
+    background: var(--border);
+    color: var(--muted);
+  }
+
+  /* ---- Facet groups ---- */
+  .search-box .facets {
+    margin-top: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .search-box .facets:empty { display: none; }
+  .search-box .facets .group {
+    display: grid;
+    grid-template-columns: 70px 1fr;
+    gap: 12px;
+    align-items: start;
+  }
+  @media (max-width: 520px) {
+    .search-box .facets .group {
+      grid-template-columns: 1fr;
+      gap: 6px;
+    }
+  }
+  .search-box .facets .group-label {
+    font-size: 0.7em;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-weight: 600;
+    padding-top: 7px;
+  }
+  .search-box .facets .group-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .search-box .facets .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 6px 12px;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--fg);
+    border: 1px solid var(--border);
+    font-size: 0.84em;
+    font-family: inherit;
+    font-weight: 500;
+    cursor: pointer;
+    line-height: 1.4;
+    transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
+  }
+  .search-box .facets .chip:hover {
+    border-color: var(--muted);
+    background: rgba(255, 255, 255, 0.03);
+  }
+  .search-box .facets .chip:focus-visible {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(51, 255, 51, 0.25);
+  }
+  .search-box .facets .chip.active {
+    background: var(--accent);
+    color: var(--bg);
+    border-color: var(--accent);
+  }
+  .search-box .facets .chip.active:hover {
+    background: #2be62b;
+    border-color: #2be62b;
+  }
+  .search-box .facets .chip .count {
+    font-size: 0.82em;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+    font-weight: 400;
+  }
+  .search-box .facets .chip.active .count {
+    color: rgba(10, 10, 10, 0.7);
+    font-weight: 500;
+  }
+
+  /* ---- Results ---- */
+  .search-box .results { margin-top: 18px; }
+  .search-box .results:empty { display: none; }
+  .search-box .results .hit {
+    padding: 14px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .search-box .results .hit:last-child { border-bottom: none; }
+  .search-box .results .hit a { color: var(--fg); font-weight: 600; }
+  .search-box .results .hit a:hover { color: var(--accent); }
+  .search-box .results .hit .meta {
+    margin: 4px 0 6px;
+    color: var(--muted);
+    font-size: 0.82em;
+    font-variant-numeric: tabular-nums;
+  }
+</style>
+
+<script>
+  import { create, load, search } from '@orama/orama';
+  import { SEARCH_SCHEMA, tokenizerFor } from '../lib/search-schema';
+
+  type Filters = { type: string[]; tags: string[] };
+
+  function readHash(): Filters & { q: string } {
+    const params = new URLSearchParams(location.hash.replace(/^#/, ''));
+    return {
+      q: params.get('q') ?? '',
+      type: (params.get('type') ?? '').split(',').filter(Boolean),
+      tags: (params.get('tags') ?? '').split(',').filter(Boolean),
+    };
+  }
+
+  function writeHash(q: string, filters: Filters) {
+    const params = new URLSearchParams();
+    if (q) params.set('q', q);
+    if (filters.type.length) params.set('type', filters.type.join(','));
+    if (filters.tags.length) params.set('tags', filters.tags.join(','));
+    const hash = params.toString();
+    const next = hash ? `#${hash}` : location.pathname + location.search;
+    // Avoid scroll jumps from history changes
+    history.replaceState(null, '', next);
+  }
+
+  async function initSearch() {
+    const input = document.querySelector<HTMLInputElement>('#search-input');
+    const results = document.querySelector<HTMLDivElement>('#search-results');
+    const status = document.querySelector<HTMLDivElement>('#search-status');
+    const facetsEl = document.querySelector<HTMLDivElement>('#search-facets');
+    const activeEl = document.querySelector<HTMLDivElement>('#search-active-filters');
+    if (!input || !results || !status || !facetsEl || !activeEl) return;
+    if ((input as any).__searchInit) return;
+    (input as any).__searchInit = true;
+
+    const locale = document.documentElement.lang.split('-')[0] || 'en';
+    const prefix = locale === 'en' ? '' : `/${locale}`;
+
+    let db: any = null;
+    let dbLoading = false;
+    let filters: Filters = { type: [], tags: [] };
+
+    // Hydrate from URL hash so deep-links and back-button work.
+    const initial = readHash();
+    input.value = initial.q;
+    filters = { type: initial.type, tags: initial.tags };
+
+    status.textContent = `search ready (locale=${locale})`;
+
+    async function ensureDb() {
+      if (db) return db;
+      if (dbLoading) return null;
+      dbLoading = true;
+      status!.textContent = `fetching /search-index-${locale}.json …`;
+      try {
+        const res = await fetch(`/search-index-${locale}.json`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const text = await res.text();
+        status!.textContent = `parsing index (${text.length} bytes) …`;
+        const data = JSON.parse(text);
+        const fresh = create({
+          schema: SEARCH_SCHEMA,
+          components: { tokenizer: tokenizerFor(locale) },
+        });
+        await load(fresh, data);
+        db = fresh;
+        status!.textContent = `db ready`;
+        return db;
+      } catch (e) {
+        status!.textContent = `❌ load failed: ${(e as Error).message}`;
+        console.error('[search] load error:', e);
+        return null;
+      } finally {
+        dbLoading = false;
+      }
+    }
+
+    function buildWhere(): any | undefined {
+      const w: any = {};
+      if (filters.type.length) w.type = { in: filters.type };
+      if (filters.tags.length) w.tags = { containsAny: filters.tags };
+      return Object.keys(w).length ? w : undefined;
+    }
+
+    function renderActiveFilters() {
+      const chips: string[] = [];
+      for (const t of filters.type) {
+        chips.push(`<button class="pill" data-remove-type="${t}" aria-label="Remove filter: type=${t}"><span class="key">type</span>${t}<span class="x" aria-hidden="true">×</span></button>`);
+      }
+      for (const tag of filters.tags) {
+        chips.push(`<button class="pill" data-remove-tag="${tag}" aria-label="Remove filter: tag=${tag}"><span class="key">tag</span>${tag}<span class="x" aria-hidden="true">×</span></button>`);
+      }
+      if (chips.length) {
+        chips.push(`<button class="pill reset" data-clear-all aria-label="Clear all filters">Clear all<span class="x" aria-hidden="true">×</span></button>`);
+      }
+      activeEl!.innerHTML = chips.join('');
+    }
+
+    function renderFacets(res: any) {
+      const facets = res.facets ?? {};
+      const blocks: string[] = [];
+
+      function group(field: 'type' | 'tags', label: string) {
+        const values = facets[field]?.values ?? {};
+        const entries = Object.entries(values).sort((a, b) => (b[1] as number) - (a[1] as number));
+        if (!entries.length) return;
+        const chips = entries.map(([value, count]) => {
+          const active = filters[field].includes(value);
+          return `<button class="chip ${active ? 'active' : ''}" data-toggle-facet data-field="${field}" data-value="${value}" aria-pressed="${active}">${value}<span class="count">${count}</span></button>`;
+        }).join('');
+        blocks.push(`<div class="group"><span class="group-label">${label}</span><div class="group-chips">${chips}</div></div>`);
+      }
+
+      group('type', 'Type');
+      group('tags', 'Tags');
+      facetsEl!.innerHTML = blocks.join('');
+    }
+
+    async function refresh() {
+      const term = input!.value.trim();
+      writeHash(term, filters);
+
+      const dbi = await ensureDb();
+      if (!dbi) return;
+
+      const where = buildWhere();
+      const baseParams: any = {
+        facets: { type: { sort: 'ASC' }, tags: { sort: 'ASC', limit: 20 } },
+        limit: 50,
+      };
+      if (term) baseParams.term = term;
+      if (where) baseParams.where = where;
+
+      try {
+        const res: any = await search(dbi, baseParams);
+        const count = res.count ?? res.hits?.length ?? 0;
+        const filterDesc = (filters.type.length || filters.tags.length) ? ' (filtered)' : '';
+        const queryDesc = term ? ` for "${term}"` : '';
+        status!.textContent = `${count} result${count === 1 ? '' : 's'}${queryDesc}${filterDesc}`;
+
+        results!.innerHTML = (res.hits ?? []).slice(0, 10).map((h: any) => `
+          <div class="hit">
+            <strong><a href="${prefix}/blog/${h.document.slug}">${h.document.title}</a></strong>
+            <div class="meta">${h.document.type} · ${(h.document.tags ?? []).join(', ')}</div>
+            <div>${h.document.excerpt}</div>
+          </div>
+        `).join('');
+
+        renderActiveFilters();
+        renderFacets(res);
+      } catch (e) {
+        status!.textContent = `❌ search failed: ${(e as Error).message}`;
+        console.error('[search] search error:', e);
+      }
+    }
+
+    // Debounced input
+    let debounce: ReturnType<typeof setTimeout>;
+    input.addEventListener('input', () => {
+      clearTimeout(debounce);
+      debounce = setTimeout(refresh, 200);
+    });
+
+    // Delegated click handling — chips and pills are re-rendered on every
+    // refresh, so binding per-element handlers would leak. Delegation
+    // also makes the UI hot-reloadable in dev without re-binding.
+    document.addEventListener('click', (e) => {
+      const t = e.target as HTMLElement;
+      const toggle = t.closest<HTMLElement>('[data-toggle-facet]');
+      if (toggle) {
+        const field = toggle.dataset.field as 'type' | 'tags';
+        const value = toggle.dataset.value!;
+        const idx = filters[field].indexOf(value);
+        if (idx >= 0) filters[field].splice(idx, 1);
+        else filters[field].push(value);
+        refresh();
+        return;
+      }
+      const rmType = t.closest<HTMLElement>('[data-remove-type]');
+      if (rmType) {
+        filters.type = filters.type.filter((x) => x !== rmType.dataset.removeType);
+        refresh();
+        return;
+      }
+      const rmTag = t.closest<HTMLElement>('[data-remove-tag]');
+      if (rmTag) {
+        filters.tags = filters.tags.filter((x) => x !== rmTag.dataset.removeTag);
+        refresh();
+        return;
+      }
+      if (t.closest('[data-clear-all]')) {
+        filters = { type: [], tags: [] };
+        refresh();
+        return;
+      }
+    });
+
+    // Back/forward navigation should restore filters from URL.
+    window.addEventListener('hashchange', () => {
+      const next = readHash();
+      if (next.q !== input.value || next.type.join() !== filters.type.join() || next.tags.join() !== filters.tags.join()) {
+        input.value = next.q;
+        filters = { type: next.type, tags: next.tags };
+        refresh();
+      }
+    });
+
+    // Initial paint — show facets right away so users see browse options
+    // before they type anything.
+    refresh();
+  }
+
+  initSearch();
+  document.addEventListener('astro:page-load', initSearch);
+</script>

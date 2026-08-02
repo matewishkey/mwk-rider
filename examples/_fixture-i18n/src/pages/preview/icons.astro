@@ -1,0 +1,244 @@
+---
+import PreviewLayout from '../../layouts/PreviewLayout.astro';
+import { Icon } from 'astro-icon/components';
+import { config as ogConfig } from '../../../scripts/og.config.mjs';
+
+// Catalog of every Lucide icon used in the fixture, grouped by purpose.
+// One source of truth — managed sites picking a different iconFamily
+// (Phosphor, Heroicons, Tabler) override this list with their family's
+// equivalents per §11 brand identity.
+const groups = [
+  {
+    label: 'Navigation',
+    icons: [
+      { name: 'terminal',         usage: 'Brand mark (header)' },
+      { name: 'notebook-text',    usage: 'Blog link' },
+      { name: 'layout-template',  usage: 'Preview link / card' },
+      { name: 'languages',        usage: 'Locale switch · translation link' },
+    ],
+  },
+  {
+    label: 'Actions',
+    icons: [
+      { name: 'search',           usage: 'Search input affordance' },
+      { name: 'eye',              usage: 'Preview-mode badge' },
+      { name: 'x',                usage: 'Remove filter chip' },
+    ],
+  },
+  {
+    label: 'Post metadata',
+    icons: [
+      { name: 'calendar',         usage: 'Publication date' },
+      { name: 'folder',           usage: 'Post type' },
+      { name: 'tag',              usage: 'Post tags' },
+    ],
+  },
+  {
+    label: 'Content',
+    icons: [
+      { name: 'list',             usage: 'Section heading' },
+      { name: 'image',            usage: 'OG card / image content' },
+    ],
+  },
+  {
+    label: 'Discovery / footer',
+    icons: [
+      { name: 'rss',              usage: 'RSS feed' },
+      { name: 'file-text',        usage: 'llms.txt / docs' },
+      { name: 'map',              usage: 'Sitemap' },
+    ],
+  },
+];
+
+const family = ogConfig.brand.iconFamily ?? 'lucide';
+const flat = groups.flatMap((g) => g.icons.map((i) => ({ ...i, group: g.label })));
+---
+<PreviewLayout title="Icon gallery">
+  <h1><Icon name="lucide:palette" size={28} />Icon gallery</h1>
+  <p class="lede">
+    Every <code>{family}:</code> icon used in this fixture, grouped by purpose.
+    Each row shows the same icon at three sizes (12 · 18 · 24px) and in three
+    contexts (muted · default · accent) so visual choice is review-able at a
+    glance. Managed sites pick a single icon family in
+    <code>scripts/og.config.mjs</code> &middot; <code>brand.iconFamily</code>.
+  </p>
+
+  <div class="filter-row">
+    <input type="search" id="icon-filter" placeholder="Filter by name…" autocomplete="off" />
+    <span id="icon-count" class="count">{flat.length} icons</span>
+  </div>
+
+  {groups.map((g) => (
+    <section class="group" data-group={g.label}>
+      <h2>{g.label}</h2>
+      <div class="grid">
+        {g.icons.map((i) => (
+          <article class="icon-card" data-icon-name={i.name}>
+            <header>
+              <Icon name={`${family}:${i.name}`} size={28} class="hero" />
+              <div>
+                <h3>{i.name}</h3>
+                <p class="usage">{i.usage}</p>
+              </div>
+            </header>
+            <div class="sizes">
+              <span class="row-label">size</span>
+              <Icon name={`${family}:${i.name}`} size={12} />
+              <Icon name={`${family}:${i.name}`} size={18} />
+              <Icon name={`${family}:${i.name}`} size={24} />
+            </div>
+            <div class="contexts">
+              <span class="row-label">color</span>
+              <Icon name={`${family}:${i.name}`} size={18} class="ctx muted" />
+              <Icon name={`${family}:${i.name}`} size={18} class="ctx default" />
+              <Icon name={`${family}:${i.name}`} size={18} class="ctx accent" />
+              <Icon name={`${family}:${i.name}`} size={18} class="ctx secondary" />
+            </div>
+            <code class="snippet">{`<Icon name="${family}:${i.name}" />`}</code>
+          </article>
+        ))}
+      </div>
+    </section>
+  ))}
+
+  <style>
+    .lede { color: var(--muted); max-width: 60ch; }
+
+    .filter-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin: 24px 0;
+    }
+    .filter-row input {
+      flex: 1;
+      padding: 10px 14px;
+      background: #111;
+      color: var(--fg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 14px;
+      font-family: inherit;
+    }
+    .filter-row input:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(51, 255, 51, 0.12);
+    }
+    .filter-row .count {
+      color: var(--muted);
+      font-size: 0.85em;
+      font-variant-numeric: tabular-nums;
+    }
+
+    section.group {
+      margin-top: 36px;
+      border-top: 1px solid var(--border);
+      padding-top: 24px;
+    }
+    section.group h2 {
+      font-size: 0.75em;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      font-weight: 700;
+      margin: 0 0 16px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 14px;
+    }
+
+    .icon-card {
+      padding: 16px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.015);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      transition: border-color 150ms ease, background 150ms ease;
+    }
+    .icon-card:hover {
+      border-color: rgba(51, 255, 51, 0.4);
+      background: rgba(51, 255, 51, 0.03);
+    }
+    .icon-card.hidden { display: none; }
+
+    .icon-card header {
+      display: flex;
+      gap: 14px;
+      align-items: center;
+    }
+    .icon-card header .hero {
+      color: var(--accent);
+      flex-shrink: 0;
+    }
+    .icon-card header h3 {
+      margin: 0;
+      font-size: 1em;
+      font-family: ui-monospace, SF Mono, monospace;
+      color: var(--fg);
+    }
+    .icon-card header .usage {
+      margin: 2px 0 0;
+      font-size: 0.82em;
+      color: var(--muted);
+    }
+
+    .icon-card .sizes,
+    .icon-card .contexts {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 6px 0;
+      border-top: 1px solid var(--border);
+    }
+    .icon-card .row-label {
+      font-size: 0.7em;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      font-weight: 600;
+      min-width: 42px;
+    }
+
+    .icon-card .ctx.muted { color: var(--muted); }
+    .icon-card .ctx.default { color: var(--fg); }
+    .icon-card .ctx.accent { color: var(--accent); }
+    .icon-card .ctx.secondary { color: var(--secondary); }
+
+    .icon-card .snippet {
+      background: #111;
+      padding: 6px 10px;
+      border-radius: 4px;
+      font-size: 0.78em;
+      color: var(--muted);
+      border: 1px solid var(--border);
+      font-family: ui-monospace, SF Mono, monospace;
+      overflow-x: auto;
+      white-space: nowrap;
+    }
+  </style>
+
+  <script>
+    const input = document.querySelector<HTMLInputElement>('#icon-filter');
+    const count = document.querySelector<HTMLSpanElement>('#icon-count');
+    const cards = Array.from(document.querySelectorAll<HTMLElement>('.icon-card'));
+    if (input && count) {
+      input.addEventListener('input', () => {
+        const q = input.value.trim().toLowerCase();
+        let visible = 0;
+        for (const c of cards) {
+          const name = (c.dataset.iconName ?? '').toLowerCase();
+          const matches = !q || name.includes(q);
+          c.classList.toggle('hidden', !matches);
+          if (matches) visible++;
+        }
+        count.textContent = `${visible} icon${visible === 1 ? '' : 's'}`;
+      });
+    }
+  </script>
+</PreviewLayout>

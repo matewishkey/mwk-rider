@@ -1,0 +1,6 @@
+# Minimal wrangler.toml — this fixture is never deployed (local-only).
+# Present so the contract's §12 "wrangler.toml at project root" ⚖ check passes
+# when the migrate command is dogfooded against this fixture.
+
+name = "td-rider-fixture-i18n"
+compatibility_date = "2026-05-27"

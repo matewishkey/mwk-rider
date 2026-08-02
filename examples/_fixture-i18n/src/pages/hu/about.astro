@@ -1,0 +1,32 @@
+---
+import RootLayout from '../../layouts/RootLayout.astro';
+---
+<RootLayout title="Rólunk" description="Mi ez a teszt-oldal és miért létezik.">
+  <h1>Rólunk</h1>
+  <p>
+    Ez az oldal egy <strong>többnyelvű teszt-oldal</strong> a td-rider
+    framework-höz — egy munkamegegyezés Astro 6 + Cloudflare oldalakon
+    tartalom írásához. Csak azért létezik, hogy a minták működését
+    végpontról végpontra bizonyítsa, mielőtt valódi éles oldalakra
+    (<a href="https://example.com">example.com</a>,
+    <a href="https://example.com">example.com</a>) kerülnének.
+  </p>
+
+  <h2>Mi van ezen az oldalon</h2>
+  <ul>
+    <li>Két nyelv (angol + magyar) párosított fordításokkal és csak-egy-nyelvű posztokkal</li>
+    <li>Faszettes keresés Orama-val, nyelvenkénti indexekkel és magyar szótövezéssel</li>
+    <li>Teljes Schema.org SEO réteg — BlogPosting, BreadcrumbList, WebSite, hreflang</li>
+    <li>Előnézet-polc a layout-regresszióhoz és az OG sablon iterációhoz</li>
+    <li>RSS feedek és llms.txt nyelvenként</li>
+    <li>Egységes ikonkészlet Lucide / astro-icon segítségével</li>
+  </ul>
+
+  <h2>Ami nem</h2>
+  <p>
+    Nem telepített oldal. Nem termék. Egy <em>teszt-oldal</em> — egy kicsi,
+    átvilágítható oldal, ami bemutatja a contract mintáit. Kattintgass,
+    nézd a forrást, futtasd a <code>scripts/smoke.mjs</code> tesztet, csinálj
+    képernyőfotót a <code>scripts/screenshot.mjs</code>-szel.
+  </p>
+</RootLayout>

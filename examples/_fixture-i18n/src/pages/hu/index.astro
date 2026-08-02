@@ -1,0 +1,40 @@
+---
+import RootLayout from '../../layouts/RootLayout.astro';
+import SearchBox from '../../components/SearchBox.astro';
+import { Icon } from 'astro-icon/components';
+import { getCollection } from 'astro:content';
+import { urlSlug } from '../../lib/slug';
+
+const posts = (await getCollection('blog'))
+  .filter((p) => !p.data.draft && !p.data.previewOnly && p.data.locale === 'hu')
+  .sort((a, b) => b.data.date.getTime() - a.data.date.getTime());
+---
+<RootLayout>
+  <h1>td-rider · i18n teszt-oldal (HU)</h1>
+  <p>Többnyelvű (angol + magyar) próbaoldal a td-rider contracthez.
+    Váltás <a href="/">angolra</a>.</p>
+
+  <SearchBox placeholder="Keresés a magyar posztok között…" />
+
+  <h2><Icon name="lucide:list" size={22} />Bejegyzések</h2>
+  <ul class="post-list">
+    {posts.map((p) => (
+      <li>
+        <div class="title">
+          <a href={`/hu/blog/${urlSlug(p.id)}`}>{p.data.title}</a>
+          {p.data.translationKey && (
+            <span class="locale-badge" title="Vannak fordítások">
+              <Icon name="lucide:languages" size={11} />fordítva
+            </span>
+          )}
+        </div>
+        <div class="excerpt">{p.data.excerpt}</div>
+        <div class="meta">
+          <span><Icon name="lucide:calendar" size={12} />{p.data.date.toISOString().slice(0,10)}</span>
+          <span><Icon name="lucide:folder" size={12} />{p.data.type}</span>
+          <span><Icon name="lucide:tag" size={12} />{p.data.tags.join(', ')}</span>
+        </div>
+      </li>
+    ))}
+  </ul>
+</RootLayout>

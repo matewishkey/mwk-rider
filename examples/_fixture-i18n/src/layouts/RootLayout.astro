@@ -1,0 +1,171 @@
+---
+import SEO from '../components/SEO.astro';
+import SiteHeader from '../components/SiteHeader.astro';
+import { ClientRouter } from 'astro:transitions';
+import { Icon } from 'astro-icon/components';
+import type { CollectionEntry } from 'astro:content';
+import { config as ogConfig } from '../../scripts/og.config.mjs';
+
+interface Props {
+  entry?: CollectionEntry<'blog'>;
+  title?: string;
+  description?: string;
+}
+
+const { entry, title, description } = Astro.props;
+const lang = (Astro.currentLocale as string) ?? entry?.data.locale ?? 'en';
+// ogConfig used below by the analytics beacon block in <head>.
+---
+<!doctype html>
+<html lang={lang}>
+  <head>
+    <SEO entry={entry} title={title} description={description} />
+
+    {/* Cloudflare Web Analytics beacon (per §21).
+        Disabled when token is null (fixture / localhost). On managed sites
+        the token comes from og.config.mjs → brand.cloudflareAnalyticsToken
+        and renders once; no consent banner needed (zero PII, anonymized at
+        edge). Auto-install on the CF dashboard does NOT work for Workers
+        Builds — this manual <script> is mandatory. */}
+    {ogConfig.brand.cloudflareAnalyticsToken && (
+      <script
+        defer
+        src="https://static.cloudflareinsights.com/beacon.min.js"
+        data-cf-beacon={`{"token": "${ogConfig.brand.cloudflareAnalyticsToken}"}`}
+      />
+    )}
+
+    <!-- Favicon + theme color -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/favicon.svg" />
+    <meta name="theme-color" content="#0a0a0a" />
+
+    <!-- Feed + LLM discovery (per-locale + root) -->
+    <link rel="alternate" type="application/rss+xml" title="RSS · English" href="/rss-en.xml" />
+    <link rel="alternate" type="application/rss+xml" title="RSS · Magyar" href="/rss-hu.xml" />
+    <link rel="alternate" type="text/plain" title="llms.txt · English" href="/llms-en.txt" />
+    <link rel="alternate" type="text/plain" title="llms.txt · Magyar" href="/llms-hu.txt" />
+    <link rel="alternate" type="text/plain" title="llms.txt" href="/llms.txt" />
+
+    <ClientRouter />
+    <style is:global>
+      :root {
+        --bg: #0a0a0a;
+        --fg: #e7e7e7;
+        --muted: #8a8a8a;
+        --accent: #33FF33;
+        --secondary: #FFB000;
+        --border: #1f1f1f;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+        line-height: 1.6;
+        font-size: 16px;
+      }
+      a { color: var(--accent); text-decoration: none; }
+      a:hover { text-decoration: underline; }
+      code { background: #1a1a1a; padding: 2px 6px; border-radius: 3px; font-size: 0.92em; color: var(--secondary); }
+      pre { background: #111; padding: 16px; border-radius: 4px; overflow-x: auto; }
+      pre code { background: transparent; padding: 0; color: var(--fg); }
+      blockquote { border-left: 3px solid var(--accent); padding-left: 16px; color: var(--muted); margin-left: 0; }
+      h1, h2, h3 { color: var(--fg); line-height: 1.2; }
+      h1 { font-size: 2em; }
+      h2 { font-size: 1.5em; margin-top: 2em; }
+      h3 { font-size: 1.2em; }
+      footer.site a {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+      }
+      footer.site a [data-icon] {
+        color: var(--muted);
+        transition: color 150ms ease;
+      }
+      footer.site a:hover [data-icon] { color: var(--accent); }
+      main { max-width: 760px; margin: 0 auto; padding: 32px 24px 80px; }
+      footer.site {
+        border-top: 1px solid var(--border);
+        padding: 24px;
+        text-align: center;
+        font-size: 0.85em;
+        color: var(--muted);
+      }
+      .search-box {
+        margin: 32px 0;
+        padding: 20px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+      }
+      .search-box input[type="search"] {
+        width: 100%;
+        padding: 10px 14px;
+        background: #111;
+        color: var(--fg);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        font-size: 16px;
+        font-family: inherit;
+      }
+      .search-box input:focus { outline: 1px solid var(--accent); }
+      .search-box .results { margin-top: 16px; }
+      .search-box .results .hit {
+        padding: 10px 0;
+        border-bottom: 1px solid var(--border);
+      }
+      .search-box .results .hit:last-child { border-bottom: none; }
+      .search-box .results .hit .meta {
+        color: var(--muted);
+        font-size: 0.85em;
+      }
+      .search-box .status {
+        color: var(--muted);
+        font-size: 0.9em;
+        margin-top: 8px;
+      }
+      .post-list { list-style: none; padding: 0; }
+      .post-list li { margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid var(--border); }
+      .post-list .title { font-size: 1.15em; font-weight: 600; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+      .post-list .excerpt { color: var(--muted); margin-top: 4px; }
+      .post-list .meta {
+        color: var(--muted);
+        font-size: 0.85em;
+        margin-top: 8px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px;
+      }
+      .post-list .meta span { display: inline-flex; align-items: center; gap: 5px; }
+      .post-list .meta [data-icon] { opacity: 0.7; }
+      .locale-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 2px 7px;
+        background: var(--border);
+        color: var(--muted);
+        font-size: 0.72em;
+        border-radius: 3px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        font-weight: 600;
+      }
+      h2 { display: flex; align-items: center; gap: 10px; }
+      h2 [data-icon] { color: var(--accent); }
+    </style>
+  </head>
+  <body>
+    <SiteHeader />
+    <main>
+      <slot />
+    </main>
+    <footer class="site">
+      td-rider i18n fixture · localhost-only ·
+      <a href={`/rss-${lang}.xml`}><Icon name="lucide:rss" size={14} />RSS ({lang})</a> ·
+      <a href={`/llms-${lang}.txt`}><Icon name="lucide:file-text" size={14} />llms-{lang}.txt</a> ·
+      <a href="/llms.txt"><Icon name="lucide:file-text" size={14} />llms.txt</a> ·
+      <a href="/sitemap-index.xml"><Icon name="lucide:map" size={14} />sitemap</a>
+    </footer>
+  </body>
+</html>

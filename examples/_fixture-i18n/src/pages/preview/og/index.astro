@@ -1,0 +1,51 @@
+---
+import PreviewLayout from '../../../layouts/PreviewLayout.astro';
+import { getCollection } from 'astro:content';
+import { config as ogConfig } from '../../../../scripts/og.config.mjs';
+import { urlSlug } from '../../../lib/slug';
+
+const posts = await getCollection('blog');
+const { mediaDomain, brand } = ogConfig;
+const siteUrl = brand.siteUrl ?? '';
+
+function resolveOg(post: typeof posts[number]): string {
+  if (post.data.ogImage) return post.data.ogImage;
+  const slug = urlSlug(post.id);
+  const localePart = `${post.data.locale}/`;
+  return mediaDomain
+    ? `https://${mediaDomain}/og/${localePart}${slug}.png`
+    : `${siteUrl}/og/${localePart}${slug}.png`;
+}
+
+const rows = posts.map((p) => ({
+  slug: urlSlug(p.id),
+  locale: p.data.locale,
+  title: p.data.title,
+  resolvedOg: resolveOg(p),
+  source: p.data.ogImage ? 'custom' : 'default',
+  previewLink: `/preview/og/${p.data.locale}/${urlSlug(p.id)}`,
+}));
+
+const byLocale = new Map<string, typeof rows>();
+for (const row of rows) {
+  if (!byLocale.has(row.locale)) byLocale.set(row.locale, []);
+  byLocale.get(row.locale)!.push(row);
+}
+---
+<PreviewLayout title="OG previews">
+  <h1>OG previews</h1>
+  <p>One card per (locale, post). Click a slug to see the live template at <code>/preview/og/&lt;locale&gt;/&lt;slug&gt;</code>.</p>
+
+  {Array.from(byLocale.entries()).map(([locale, items]) => (
+    <section>
+      <h2><span class="locale-badge">{locale}</span> · {items.length} post{items.length === 1 ? '' : 's'}</h2>
+      {items.map((r) => (
+        <div class="preview-card">
+          <strong>{r.title}</strong> [{r.source}]<br/>
+          <a href={r.previewLink}>→ Open live OG template page</a><br/>
+          <small>resolved og:image → <code>{r.resolvedOg}</code></small>
+        </div>
+      ))}
+    </section>
+  ))}
+</PreviewLayout>

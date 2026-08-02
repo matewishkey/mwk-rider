@@ -1,0 +1,80 @@
+---
+import RootLayout from '../../../../../layouts/RootLayout.astro';
+import Pagination from '../../../../../components/Pagination.astro';
+import { Icon } from 'astro-icon/components';
+import { getCollection } from 'astro:content';
+import { urlSlug } from '../../../../../lib/slug';
+import type { GetStaticPaths, Page } from 'astro';
+import type { CollectionEntry } from 'astro:content';
+
+export const getStaticPaths: GetStaticPaths = async ({ paginate }) => {
+  const all = await getCollection('blog');
+  const hu = all.filter((p) => !p.data.draft && !p.data.previewOnly && p.data.locale === 'hu');
+  const tags = new Set<string>();
+  for (const p of hu) for (const t of p.data.tags) tags.add(t);
+
+  return [...tags].flatMap((tag) => {
+    const posts = hu
+      .filter((p) => p.data.tags.includes(tag))
+      .sort((a, b) => b.data.date.getTime() - a.data.date.getTime());
+    return paginate(posts, { pageSize: 3, params: { tag } });
+  });
+};
+
+interface Props {
+  page: Page<CollectionEntry<'blog'>>;
+}
+const { page } = Astro.props;
+const { tag } = Astro.params;
+const title = page.currentPage === 1
+  ? `Címke: ${tag}`
+  : `Címke: ${tag} · Oldal ${page.currentPage}`;
+---
+<RootLayout title={title}>
+  <p class="breadcrumb"><a href="/hu/blog">← Blog</a></p>
+  <h1><Icon name="lucide:tag" size={26} />{tag}</h1>
+  <p class="page-meta">
+    {page.total} bejegyzés <code>{tag}</code> címkével ·
+    {page.currentPage}. oldal / {page.lastPage}
+    &nbsp;·&nbsp;
+    <a href="/hu/blog">Szűrő törlése</a>
+  </p>
+  <ul class="post-list">
+    {page.data.map((p) => (
+      <li>
+        <div class="title">
+          <a href={`/hu/blog/${urlSlug(p.id)}`}>{p.data.title}</a>
+          {p.data.translationKey && (
+            <span class="locale-badge"><Icon name="lucide:languages" size={11} />fordítva</span>
+          )}
+        </div>
+        <div class="excerpt">{p.data.excerpt}</div>
+        <div class="meta">
+          <span><Icon name="lucide:calendar" size={12} />{p.data.date.toISOString().slice(0,10)}</span>
+          <a href={`/hu/blog/type/${p.data.type}`}><Icon name="lucide:folder" size={12} />{p.data.type}</a>
+          {p.data.tags.map((t) => (
+            <a href={`/hu/blog/tag/${t}`} class={t === tag ? 'active' : ''}><Icon name="lucide:tag" size={12} />{t}</a>
+          ))}
+        </div>
+      </li>
+    ))}
+  </ul>
+  <Pagination page={page} basePath={`/hu/blog/tag/${tag}`} />
+  <style>
+    h1 { display: flex; align-items: center; gap: 10px; }
+    h1 [data-icon] { color: var(--accent); }
+    .breadcrumb { color: var(--muted); font-size: 0.9em; margin-bottom: 8px; }
+    .breadcrumb a { color: var(--muted); }
+    .breadcrumb a:hover { color: var(--accent); }
+    .page-meta { color: var(--muted); font-size: 0.88em; }
+    .page-meta code { background: #1a1a1a; padding: 2px 8px; border-radius: 3px; color: var(--secondary); }
+    .page-meta a { color: var(--accent); }
+    .post-list .meta a {
+      display: inline-flex; align-items: center; gap: 5px;
+      color: var(--muted); padding: 1px 6px; border-radius: 3px;
+      transition: color 150ms ease, background 150ms ease;
+    }
+    .post-list .meta a:hover { color: var(--accent); background: rgba(51, 255, 51, 0.06); text-decoration: none; }
+    .post-list .meta a.active { color: var(--accent); background: rgba(51, 255, 51, 0.08); }
+  </style>
+</RootLayout>

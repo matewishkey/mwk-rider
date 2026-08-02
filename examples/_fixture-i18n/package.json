@@ -1,0 +1,38 @@
+{
+  "name": "td-rider-fixture-i18n",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Multi-locale Astro 7 fixture (en + hu) that exercises every td-rider contract template plus §18 multi-locale patterns. Local-only — never deployed.",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "check": "astro check",
+    "sync": "astro sync",
+    "og": "node scripts/og.mjs",
+    "td-rider:check": "node ~/.claude/td-rider-tools/check.mjs",
+    "td-rider:audit": "node ~/.claude/td-rider-tools/audit.mjs http://localhost:23004",
+    "smoke": "node scripts/smoke.mjs"
+  },
+  "dependencies": {
+    "@astrojs/check": "^0.9.10",
+    "@astrojs/markdown-satteri": "^0.3.5",
+    "@astrojs/mdx": "^7.0.5",
+    "@astrojs/rss": "^4.0.19",
+    "@astrojs/sitemap": "^3.7.3",
+    "@iconify-json/lucide": "^1.2.121",
+    "@orama/orama": "^3.1.18",
+    "@orama/stemmers": "^3.1.18",
+    "astro": "^7.1.6",
+    "astro-icon": "^1.1.5",
+    "astro-robots-txt": "^1.0.0",
+    "typescript": "^6.0.3"
+  },
+  "devDependencies": {
+    "playwright": "^1.62.1"
+  }
+}
