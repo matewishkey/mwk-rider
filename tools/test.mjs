@@ -390,6 +390,9 @@ console.log('live domain runs against a served site (it had no coverage at all):
 // process's event loop, so an in-process http server could never answer.
 const srvDir = tmpProject('wishbusterz-rider-srv-');
 const srvFile = join(srvDir, 'server.mjs');
+// A small site whose content lives at /wiki/, NOT /blog/. Discovery used to
+// match `href=".../blog/..."` and nothing else, so on all five dogfood sites the
+// whole post-only block silently never ran and the audit reported "clean".
 writeFileSync(srvFile, `
 import { createServer } from 'node:http';
 const png = Buffer.concat([
@@ -397,17 +400,36 @@ const png = Buffer.concat([
   Buffer.from([0,0,0,13]), Buffer.from('IHDR'),
   Buffer.from([0,0,0x04,0xb0,0,0,0x02,0x76,8,6,0,0,0]),
 ]);
-const page = '<!doctype html><html><head><link rel="canonical" href="/"><title>t</title>'
+const head = (canonical, ld) => '<link rel="canonical" href="' + canonical + '"><title>t</title>'
+  + '<meta name="description" content="d">'
+  + '<meta property="og:title" content="t"><meta property="og:url" content="' + canonical + '">'
   + '<meta property="og:image" content="/og/card.png">'
   + '<meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">'
-  + '<script type="application/ld+json">{"@type":"WebSite"}<\\/script>'
-  + '</head><body><h1>Home</h1></body></html>';
-createServer((req, res) => {
-  const png_ = req.url.startsWith('/og/');
-  const body = png_ ? png : Buffer.from(page);
-  res.writeHead(200, { 'content-type': png_ ? 'image/png' : 'text/html', 'content-length': String(body.length) });
-  res.end(req.method === 'HEAD' ? undefined : body);
-}).listen(0, '127.0.0.1', function () { console.log(this.address().port); });
+  + '<script type="application/ld+json">' + ld + '<\\/script>';
+const home = '<!doctype html><html><head>' + head('/', '{"@type":"WebSite"}')
+  + '</head><body><h1>Home</h1><a href="/wiki">Wiki</a><a href="/wiki/kettle-clock">An entry</a></body></html>';
+const entry = '<!doctype html><html><head>' + head('/wiki/kettle-clock', '{"@type":"TechArticle"}')
+  + '</head><body><h1>Kettle clock</h1></body></html>';
+const sitemapIndex = '<?xml version="1.0"?><sitemapindex><sitemap><loc>http://HOST/sitemap-0.xml</loc></sitemap></sitemapindex>';
+const sitemap = '<?xml version="1.0"?><urlset><url><loc>http://HOST/</loc></url>'
+  + '<url><loc>http://HOST/wiki</loc></url><url><loc>http://HOST/wiki/kettle-clock</loc></url></urlset>';
+const srv = createServer((req, res) => {
+  const host = req.headers.host;
+  const send = (body, type) => {
+    const buf = Buffer.isBuffer(body) ? body : Buffer.from(body);
+    res.writeHead(200, { 'content-type': type, 'content-length': String(buf.length) });
+    res.end(req.method === 'HEAD' ? undefined : buf);
+  };
+  const url = req.url.replace(/\\/$/, '') || '/';
+  if (url.startsWith('/og/')) return send(png, 'image/png');
+  if (url === '/sitemap-index.xml') return send(sitemapIndex.split('HOST').join(host), 'application/xml');
+  if (url === '/sitemap-0.xml') return send(sitemap.split('HOST').join(host), 'application/xml');
+  if (url === '/wiki/kettle-clock') return send(entry, 'text/html');
+  if (url === '/') return send(home, 'text/html');
+  res.writeHead(404, { 'content-type': 'text/html', 'content-length': '3' });
+  res.end(req.method === 'HEAD' ? undefined : '404');
+});
+srv.listen(0, '127.0.0.1', function () { console.log(this.address().port); });
 `);
 const srv = spawn('node', [srvFile], { stdio: ['ignore', 'pipe', 'ignore'] });
 const port = await new Promise((resolve, reject) => {
@@ -415,7 +437,6 @@ const port = await new Promise((resolve, reject) => {
   srv.stdout.once('data', (d) => { clearTimeout(timer); resolve(String(d).trim()); });
 });
 const live = runJson(tmpdir(), ['-s', 'live', '--url', `http://127.0.0.1:${port}`]);
-srv.kill();
 const liveRows = live.json?.results ?? [];
 check('live run completes without a tooling error', (live.json?.errors ?? ['?']).length === 0,
   JSON.stringify(live.json?.errors));
@@ -428,6 +449,27 @@ const fromLive = liveRows.filter(r => r.section !== 'project');
 check('live rows are tagged source=live so --json keys do not collide',
   fromLive.length > 0 && fromLive.every(r => r.source === 'live'),
   JSON.stringify(fromLive.filter(r => r.source !== 'live').slice(0, 2)));
+
+// The point of the /wiki/ shape: the post-only checks must actually run.
+check('a content page outside /blog/ is discovered',
+  liveRows.find(r => r.id === 'seo/post')?.outcome !== 'skip',
+  JSON.stringify(liveRows.find(r => r.id === 'seo/post')));
+check('  …so the post-only checks run on it',
+  ['seo/title', 'seo/description', 'seo/og-title', 'data/post-jsonld']
+    .every(id => liveRows.some(r => r.id === id)),
+  JSON.stringify(liveRows.map(r => r.id)));
+check('  …and TechArticle satisfies the Article-family shape',
+  liveRows.find(r => r.id === 'data/post-jsonld')?.outcome === 'pass',
+  JSON.stringify(liveRows.find(r => r.id === 'data/post-jsonld')));
+
+// When discovery genuinely fails, the ⏭ must name what did not run — "clean"
+// and "didn't check" have to be distinguishable in the output.
+const noPost = runJson(tmpdir(), ['-s', 'live', '--url', `http://127.0.0.1:${port}/wiki/kettle-clock`]);
+srv.kill();
+const skipRow = noPost.json?.results.find(r => r.id === 'seo/post' && r.outcome === 'skip');
+check('an undiscoverable content page names the skipped checks',
+  skipRow != null && /seo\/title/.test(skipRow.message) && /data\/post-jsonld/.test(skipRow.message),
+  JSON.stringify(skipRow));
 
 console.log('optional browser domain degrades cleanly and the fonts check fires:');
 // The browser domain must never become a hard requirement: without playwright

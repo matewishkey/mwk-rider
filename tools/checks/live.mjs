@@ -135,6 +135,14 @@ async function auditCache(home, head, reporter) {
 
 // SEO — real HTML on home + a content page -----------------------------------
 
+// What is lost when no content page can be found. Listing them is the whole
+// point: "clean" must never be indistinguishable from "didn't run".
+const POST_ONLY_CHECKS = [
+  'seo/title', 'seo/description', 'seo/canonical', 'seo/og-title', 'seo/og-image',
+  'seo/og-image-width', 'seo/og-image-height', 'seo/og-url', 'seo/og-image-resolves',
+  'seo/og-image-card', 'seo/headings-h1', 'seo/headings-order', 'data/post-jsonld',
+];
+
 async function auditSeo(home, postPath, base, get, head, reporter) {
   assertHas(reporter, 'seo', 'home:canonical', home.text, /<link[^>]+rel=["']canonical["']/, 'homepage missing <link rel="canonical">');
   checkLdTypes(reporter, 'home:jsonld-website', home.text, (t) => t.has('WebSite'),
@@ -142,7 +150,9 @@ async function auditSeo(home, postPath, base, get, head, reporter) {
   checkHeadings(reporter, 'home', home.text);
 
   if (!postPath) {
-    reporter.skip('seo', 'post', 'no content page discovered to audit (pass --post <path>)');
+    // Name what didn't run. Two dogfood runs printed "audit clean — exit 0"
+    // having skipped this whole block: silence read exactly like a pass.
+    reporter.skip('seo', 'post', `no content page found in the sitemap, homepage links or /llms.txt — these did NOT run: ${POST_ONLY_CHECKS.join(', ')}. Pass --post <path> to audit a specific page`);
     return;
   }
   const postRes = await get(postPath);
@@ -349,9 +359,6 @@ function assertHas(reporter, section, name, html, re, failMsg) {
   else               reporter.fix(section, name, failMsg, 'emit it in the rendered HTML');
 }
 
-// `label` is which page was read (home / a content path). It's the location of
-// the finding, not a different rule — so it rides in `url`, and both pages
-// report under one stable id.
 // Parse the JSON-LD rather than substring-matching it: a page emitting Article
 // where we looked for the literal "BlogPosting" was reported as having none, and
 // a @graph-wrapped shape was invisible to the regex either way.
@@ -362,6 +369,9 @@ function checkLdTypes(reporter, name, html, predicate, failMsg, fixMsg, at = {})
   else reporter.fix('data', name, `${failMsg}${types.size ? ` — found: ${[...types].sort().join(', ')}` : ''}`, fixMsg, at);
 }
 
+// `label` is which page was read (home / a content path). It's the location of
+// the finding, not a different rule — so it rides in `url`, and both pages
+// report under one stable id.
 function checkHeadings(reporter, label, html) {
   const a = headingAudit(headingLevels(html));
   const at = { url: label };
@@ -376,13 +386,97 @@ function firstHashedAsset(html) {
   return m ? m[1] : null;
 }
 
+// Routes that exist on nearly every site and are not the content page we want
+// to audit. Matched on the whole path, lowercased.
+const INDEX_ROUTES = new Set([
+  '/', '/about', '/contact', '/blog', '/posts', '/articles', '/notes', '/writing',
+  '/projects', '/work', '/wiki', '/docs', '/search', '/tags', '/categories',
+  '/archive', '/now', '/uses', '/privacy', '/terms', '/imprint', '/legal',
+  '/404', '/rss', '/feed', '/sitemap',
+]);
+const NON_PAGE_EXT = /\.(xml|json|txt|rss|atom|png|jpe?g|webp|avif|gif|svg|ico|pdf|css|js|mjs|zip)$/i;
+// /blog/2, /page/3 — pagination, same template as its index.
+const PAGINATION = /\/(?:page\/)?\d+\/?$/;
+
+/**
+ * Find a content page to audit.
+ *
+ * This used to match `href="…/blog/…"` and nothing else. Every one of five
+ * dogfood sites used /projects/ and /wiki/ instead, so around ten live checks
+ * silently never ran and two runs printed "audit clean, exit 0" having checked
+ * almost nothing. Forcing --post turned one of them into four findings.
+ *
+ * Order matters: the sitemap is the site's own declaration of its content URLs,
+ * so it beats guessing from markup. Homepage links are the fallback, /llms.txt
+ * the last resort.
+ */
 async function discoverPost(home, base, get) {
-  const m = home.text.match(/href=["']([^"']*\/blog\/[^"'/]+\/?)["']/);
-  if (m) return new URL(m[1], base).pathname;
+  const fromSitemap = await sitemapCandidates(base, get);
+  const best = pickContentPath(fromSitemap, base);
+  if (best) return best;
+
+  // Anchors only. A bare href= scan also picks up <link rel="canonical">, so a
+  // page pointing at itself "discovered" itself and the audit read one page twice.
+  const links = [...home.text.matchAll(/<a\b[^>]*?\shref=["']([^"'#]+)["']/gi)].map((m) => m[1]);
+  const fromLinks = pickContentPath(links, base);
+  if (fromLinks) return fromLinks;
+
   const r = await get('/llms.txt');
   if (!r.ok) return null;
-  const mm = r.text.match(/\]\((https?:\/\/[^)]*\/blog\/[^)]+)\)/);
-  return mm ? new URL(mm[1]).pathname : null;
+  return pickContentPath([...r.text.matchAll(/\]\((\S+?)\)/g)].map((m) => m[1]), base);
+}
+
+async function sitemapCandidates(base, get) {
+  const out = [];
+  for (const entry of ['/sitemap-index.xml', '/sitemap.xml', '/sitemap-0.xml']) {
+    const r = await get(entry);
+    if (!r.ok || r.status !== 200 || !/<(?:urlset|sitemapindex)/i.test(r.text)) continue;
+    const locs = [...r.text.matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/gi)].map((m) => m[1]);
+    // An index lists other sitemaps; follow a bounded number of them.
+    if (/<sitemapindex/i.test(r.text)) {
+      for (const child of locs.slice(0, 3)) {
+        const c = await get(child);
+        if (c.ok && c.status === 200) out.push(...[...c.text.matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/gi)].map((m) => m[1]));
+      }
+    } else {
+      out.push(...locs);
+    }
+    if (out.length) break;
+  }
+  return out;
+}
+
+/**
+ * The most content-shaped path in a list of URLs. Deeper paths win: /blog/x or
+ * /wiki/y is a leaf, /blog is its index. Same-origin only — an outbound link is
+ * not this site's content.
+ */
+function pickContentPath(urls, base) {
+  const origin = new URL(base).origin;
+  const paths = [];
+  for (const u of urls) {
+    let path;
+    try {
+      const abs = new URL(u, base);
+      if (abs.origin !== origin) continue;
+      path = abs.pathname.replace(/\/+$/, '') || '/';
+    } catch { continue; }
+    if (NON_PAGE_EXT.test(path)) continue;
+    if (INDEX_ROUTES.has(path.toLowerCase())) continue;
+    if (PAGINATION.test(path)) continue;
+    // A single leading segment that is itself an index route ("/blog/tag/x")
+    // still counts as content; a bare "/tag/x" listing does not.
+    if (/^\/(?:tags?|categor(?:y|ies)|author)\//i.test(path)) continue;
+    if (!paths.includes(path)) paths.push(path);
+  }
+  if (!paths.length) return null;
+  // Deepest first, then shortest — a leaf article over a section landing page.
+  paths.sort((a, b) => depth(b) - depth(a) || a.length - b.length);
+  return paths[0];
+}
+
+function depth(path) {
+  return path.split('/').filter(Boolean).length;
 }
 
 function isExempt(src) {

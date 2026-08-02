@@ -361,6 +361,17 @@ injection — behaves as it does for a real visitor (see `analytics`). Point `--
 at `wrangler dev` of `dist/` or the deployed site — a plain `astro dev` won't have
 the cache headers.
 
+- **The content page is discovered, not assumed to be under `/blog/`.** Order:
+  the sitemap (the site's own declaration of its URLs) → same-origin `<a>` links
+  on the homepage → `/llms.txt`. Index routes, pagination, tag/category listings
+  and non-page extensions are excluded, and the deepest remaining path wins — a
+  leaf article over a section landing page. The old check matched `/blog/` only,
+  so five sites using `/projects/` and `/wiki/` had ~10 live checks silently not
+  run, and two runs printed "audit clean — exit 0" having checked almost nothing.
+- **A skip names what it skipped.** When no content page can be found, the `⏭`
+  lists the rule ids that did not run. Silence must never be indistinguishable
+  from a pass. → `seo: post`
+
 ## lighthouse (`--url`) — the measured score
 
 *Check file: `tools/checks/lighthouse.mjs`. Needs a PSI key.* Where the static
