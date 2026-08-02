@@ -2,14 +2,14 @@
 title: Üdv az i18n teszt-oldalon
 date: 2026-05-27
 tags: [meta, teszt]
-excerpt: Ez az oldal a td-rider contract többnyelvű mintáit gyakoroltatja. Két nyelv, párosított fordítások, csak-egy-nyelvű posztok. Helyi futtatásra való.
+excerpt: Ez az oldal a wishbusterz-rider contract többnyelvű mintáit gyakoroltatja. Két nyelv, párosított fordítások, csak-egy-nyelvű posztok. Helyi futtatásra való.
 draft: false
 type: thoughts
 locale: hu
 translationKey: welcome
 ---
 
-Ez a teszt-oldal a td-rider contract §18 többnyelvű mintáinak gyakorlóterepe. Csak helyileg fut — nincs igazi telepítés, nincs igazi R2-bucket. A célja, hogy a lektor kattintható oldalt kapjon a telefonján mielőtt bármelyik többnyelvű minta éles weboldalra (például a example.com-ra) kerülne.
+Ez a teszt-oldal a wishbusterz-rider contract §18 többnyelvű mintáinak gyakorlóterepe. Csak helyileg fut — nincs igazi telepítés, nincs igazi R2-bucket. A célja, hogy a lektor kattintható oldalt kapjon a telefonján mielőtt bármelyik többnyelvű minta éles weboldalra (például a example.com-ra) kerülne.
 
 Két nyelv: az **angol** (alapértelmezett, a `/`, `/blog` és hasonló útvonalakon) és a **magyar** (a `/hu/` alatt). Az Astro i18n konfiguráció `prefixDefaultLocale: false` beállítással fut, így az angol URL-ek tiszták maradnak.
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Smoke test for the td-rider audit tool.
+// Smoke test for the wishbusterz-rider audit tool.
 //
 // Runs audit.mjs against the compliant fixture (examples/_fixture-i18n) and a
 // non-Astro dir, and asserts the engine behaves. The fixture is compliant by
@@ -80,7 +80,7 @@ console.log('adapter:cloudflare is gated on SSR, not <Image> presence:');
 // needed. The Cloudflare image service only matters under output:'server', where
 // Sharp can't run on Workers. Build throwaway projects and read just that result.
 function mkProject({ output, withImage, withAdapter }) {
-  const dir = mkdtempSync(join(tmpdir(), 'td-rider-mod-'));
+  const dir = mkdtempSync(join(tmpdir(), 'wishbusterz-rider-mod-'));
   const deps = { astro: '^7.1.6' };
   if (withAdapter) deps['@astrojs/cloudflare'] = '^14.1.7';
   writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'fx', type: 'module', dependencies: deps }));
@@ -107,7 +107,7 @@ console.log('Astro 7 migration checks fire on a v6-shaped project:');
 // The fixture is compliant by construction, so it only proves these checks stay
 // quiet. Build the known-bad counterpart and prove each one actually fires.
 function mkLegacyProject({ deps = {}, config = '', src = '' } = {}) {
-  const dir = mkdtempSync(join(tmpdir(), 'td-rider-v7-'));
+  const dir = mkdtempSync(join(tmpdir(), 'wishbusterz-rider-v7-'));
   writeFileSync(join(dir, 'package.json'), JSON.stringify({
     name: 'fx', type: 'module', engines: { node: '>=22' },
     dependencies: { astro: '^6.4.2', ...deps },

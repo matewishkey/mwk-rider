@@ -5,8 +5,8 @@
 // The service-account key is resolved in order:
 //   1. $GOOGLE_SERVICE_ACCOUNT_JSON    raw JSON (or base64 of it), single value
 //   2. $GOOGLE_APPLICATION_CREDENTIALS path to the JSON key file (Google's own convention)
-//   3. sops-decrypted from $TD_RIDER_SA_SOPS_FILE, key GOOGLE_SERVICE_ACCOUNT_JSON
-//      (override the file with $TD_RIDER_SA_SOPS_FILE) — same pattern as the PSI key.
+//   3. sops-decrypted from $WISHBUSTERZ_RIDER_SA_SOPS_FILE, key GOOGLE_SERVICE_ACCOUNT_JSON
+//      (override the file with $WISHBUSTERZ_RIDER_SA_SOPS_FILE) — same pattern as the PSI key.
 //
 // Without a key it returns { skip: <reason> } so callers degrade gracefully.
 // One-time operator setup (not in this repo): a GCloud project with the Search
@@ -25,7 +25,7 @@ const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 export async function getAccessToken(scopes) {
   const raw = resolveCreds();
   if (!raw) {
-    return { skip: 'no Google service-account key — set $GOOGLE_SERVICE_ACCOUNT_JSON, $GOOGLE_APPLICATION_CREDENTIALS, or point $TD_RIDER_SA_SOPS_FILE at a sops-encrypted env file' };
+    return { skip: 'no Google service-account key — set $GOOGLE_SERVICE_ACCOUNT_JSON, $GOOGLE_APPLICATION_CREDENTIALS, or point $WISHBUSTERZ_RIDER_SA_SOPS_FILE at a sops-encrypted env file' };
   }
   let sa;
   try { sa = parseSA(raw); }
@@ -88,9 +88,9 @@ function resolveCreds() {
     try { return readFileSync(path, 'utf8'); } catch { /* fall through to sops */ }
   }
 
-  // Opt-in only: no default path. Point $TD_RIDER_SA_SOPS_FILE at a sops-encrypted
+  // Opt-in only: no default path. Point $WISHBUSTERZ_RIDER_SA_SOPS_FILE at a sops-encrypted
   // env file holding GOOGLE_SERVICE_ACCOUNT_JSON, or leave it unset and this leg skips.
-  const file = process.env.TD_RIDER_SA_SOPS_FILE;
+  const file = process.env.WISHBUSTERZ_RIDER_SA_SOPS_FILE;
   if (!file || !existsSync(file) || !hasSops()) return null;
   const env = { ...process.env };
   if (!env.SOPS_AGE_KEY_FILE) {

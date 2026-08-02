@@ -1,6 +1,6 @@
 # wishbusterz-rider
 
-An on-demand best-practices auditor for **Astro** sites. One slash command (`/td-rider`), one zero-dependency script, nine domains (six offline + three live). No framework, no contract, nothing installed into the sites it audits — it reports, you decide.
+An on-demand best-practices auditor for **Astro** sites. One slash command (`/wishbusterz-rider`), one zero-dependency script, nine domains (six offline + three live). No framework, no contract, nothing installed into the sites it audits — it reports, you decide.
 
 ```
 ✅ modules: astro:version — ^7.1.6
@@ -89,7 +89,7 @@ git clone https://github.com/mergodon/wishbusterz-rider.git
 cd wishbusterz-rider && ./install.sh
 ```
 
-This symlinks the `/td-rider` command and its tools into `~/.claude/`. It installs nothing into any project and never touches a project's `CLAUDE.md`. Re-run `./install.sh` after `git pull` to update.
+This symlinks the `/wishbusterz-rider` command and its tools into `~/.claude/`. It installs nothing into any project and never touches a project's `CLAUDE.md`. Re-run `./install.sh` after `git pull` to update.
 
 Requires **Node 22+**. No `npm install` — the tool uses Node built-ins only.
 
@@ -98,18 +98,18 @@ Requires **Node 22+**. No `npm install` — the tool uses Node built-ins only.
 From inside any Astro project, in [Claude Code](https://claude.com/claude-code):
 
 ```
-/td-rider                 # offline: source + dist checks
-/td-rider https://site    # also check the live/served site
+/wishbusterz-rider                 # offline: source + dist checks
+/wishbusterz-rider https://site    # also check the live/served site
 ```
 
 Or call the script directly — it's a plain CLI, Claude Code is optional:
 
 ```bash
-node ~/.claude/td-rider-tools/audit.mjs --help
-node ~/.claude/td-rider-tools/audit.mjs                     # everything offline
-node ~/.claude/td-rider-tools/audit.mjs -s seo -s images    # scope to domains
-node ~/.claude/td-rider-tools/audit.mjs --url https://site  # add live + lighthouse
-node ~/.claude/td-rider-tools/audit.mjs --json              # machine-readable
+node ~/.claude/wishbusterz-rider-tools/audit.mjs --help
+node ~/.claude/wishbusterz-rider-tools/audit.mjs                     # everything offline
+node ~/.claude/wishbusterz-rider-tools/audit.mjs -s seo -s images    # scope to domains
+node ~/.claude/wishbusterz-rider-tools/audit.mjs --url https://site  # add live + lighthouse
+node ~/.claude/wishbusterz-rider-tools/audit.mjs --json              # machine-readable
 ```
 
 `--url` works from **any directory** — the offline domains need an Astro project in the cwd, but a live/lighthouse run only needs the URL.
@@ -120,16 +120,16 @@ Outcomes: `✅` pass · `🔧` fixable (required) · `🛑` needs a decision · 
 
 Both live-API domains skip gracefully when their key is absent; everything else still runs.
 
-**PageSpeed Insights** (`lighthouse`) — a [free PSI key](https://developers.google.com/speed/docs/insights/v5/get-started), resolved from `$PAGESPEED_API_KEY`, or sops-decrypted from `$TD_RIDER_PSI_SOPS_FILE`. Note that a single Lighthouse run is **noisy** (lab scores swing run-to-run) and the API needs a **publicly reachable** URL.
+**PageSpeed Insights** (`lighthouse`) — a [free PSI key](https://developers.google.com/speed/docs/insights/v5/get-started), resolved from `$PAGESPEED_API_KEY`, or sops-decrypted from `$WISHBUSTERZ_RIDER_PSI_SOPS_FILE`. Note that a single Lighthouse run is **noisy** (lab scores swing run-to-run) and the API needs a **publicly reachable** URL.
 
-**Google service account** (`google`) — resolved from `$GOOGLE_SERVICE_ACCOUNT_JSON` (the key JSON, raw or base64), `$GOOGLE_APPLICATION_CREDENTIALS` (path to the key file), or `$TD_RIDER_SA_SOPS_FILE`. One-time setup: a Google Cloud project with the **Search Console**, **Site Verification**, and **Analytics Admin** APIs enabled, and a service account granted read access to your GA account. The Zaraz leg additionally uses `$CLOUDFLARE_API_TOKEN` (Zaraz read + zone read) and skips independently.
+**Google service account** (`google`) — resolved from `$GOOGLE_SERVICE_ACCOUNT_JSON` (the key JSON, raw or base64), `$GOOGLE_APPLICATION_CREDENTIALS` (path to the key file), or `$WISHBUSTERZ_RIDER_SA_SOPS_FILE`. One-time setup: a Google Cloud project with the **Search Console**, **Site Verification**, and **Analytics Admin** APIs enabled, and a service account granted read access to your GA account. The Zaraz leg additionally uses `$CLOUDFLARE_API_TOKEN` (Zaraz read + zone read) and skips independently.
 
 The tool only ever *reads* through these APIs. It never provisions, never writes.
 
 ## Layout
 
 ```
-commands/td-rider.md       the slash command (orchestration)
+commands/wishbusterz-rider.md       the slash command (orchestration)
 tools/
   audit.mjs                  entry: detect project, run domains, report
   test.mjs                   the gate: fixture + known-bad synthetic projects

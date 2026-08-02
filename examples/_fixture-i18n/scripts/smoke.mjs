@@ -4,7 +4,7 @@
  *
  * Validates the full multi-locale stack: routes, SEO surface, search,
  * faceting, locale boundaries, hash state, translation switcher. First
- * iteration of what tests/preview.spec.ts becomes for /td-rider-preview
+ * iteration of what tests/preview.spec.ts becomes for /wishbusterz-rider-preview
  * in Phase 2.
  *
  * Usage:  node scripts/smoke.mjs [base-url]
@@ -63,7 +63,7 @@ async function seoSurface() {
   const html = await (await fetch(`${base}/blog/welcome`)).text();
 
   const checks = [
-    ['title tag', /<title>Welcome to the i18n fixture · td-rider i18n fixture<\/title>/],
+    ['title tag', /<title>Welcome to the i18n fixture · wishbusterz-rider i18n fixture<\/title>/],
     ['meta description', /<meta name="description"/],
     ['canonical link', /<link rel="canonical" href="[^"]+\/blog\/welcome"/],
     ['hreflang en-US', /<link rel="alternate" hreflang="en-US"/],

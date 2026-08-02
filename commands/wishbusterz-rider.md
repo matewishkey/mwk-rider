@@ -11,7 +11,7 @@ The argument (if any) is a base URL to also audit live (e.g. `https://example.co
 Read enough to understand the site, then tell the user in one short paragraph what it is:
 
 ```bash
-node ~/.claude/td-rider-tools/audit.mjs --help   # confirm the tool is installed
+node ~/.claude/wishbusterz-rider-tools/audit.mjs --help   # confirm the tool is installed
 ```
 
 Look at `astro.config.*`, `package.json`, and `src/content.config.ts` to summarize: Astro version, `output` mode, which integrations are installed, whether it's single- or multi-locale, and what content collections exist. Keep it to a few sentences — this orients the user before the findings.
@@ -19,13 +19,13 @@ Look at `astro.config.*`, `package.json`, and `src/content.config.ts` to summari
 ## Step 2 — Run the audit
 
 ```bash
-node ~/.claude/td-rider-tools/audit.mjs
+node ~/.claude/wishbusterz-rider-tools/audit.mjs
 ```
 
 If the user passed a URL, add it:
 
 ```bash
-node ~/.claude/td-rider-tools/audit.mjs --url <the-url>
+node ~/.claude/wishbusterz-rider-tools/audit.mjs --url <the-url>
 ```
 
 Scope to one domain when the user only cares about part of it: `-s seo`, `-s images`, `-s perf`, `-s modules`, `-s data`, `-s lighthouse`, `-s google` (repeatable). `--url` works from any directory — offline domains need an Astro project in cwd, but a live/lighthouse/google run only needs the URL.
@@ -39,8 +39,8 @@ The tool checks six offline domains, plus three that run with `--url`:
 - **data** — machine-readable surface for other tools: JSON-LD (BlogPosting + WebSite), `/llms.txt` built from the content store, RSS, an Orama search-index endpoint, a Zod-validated content schema. Endpoints are matched by pattern, so single- and per-locale naming both pass.
 - **analytics** — no hardcoded Google Analytics / GTM snippet in `src/` or `dist/` (`gtag.js`/`gtm.js`/`analytics.js`/`gtag(`/`GTM-…`/`UA-…`). The baseline delivers analytics through Cloudflare Zaraz, which loads GA at the edge behind its consent banner (CMP). The Zaraz loader is edge-injected, so the positive check (`/cdn-cgi/zaraz/` present) runs only under `--url` (see **live**).
 - **live** (only with `--url`) — real Cache-Control headers, served image bytes (measured with a browser-realistic `Accept` so transforms negotiate AVIF/webp), rendered SEO + JSON-LD, `/llms.txt`, the Cloudflare Zaraz analytics loader (`/cdn-cgi/zaraz/`); also flags the transform-param anti-patterns on the rendered HTML. A plain `astro dev` server won't have cache headers — point `--url` at a `wrangler dev` of `dist/` or the deployed site for the cache check to be meaningful.
-- **lighthouse** (only with `--url`) — measured PageSpeed Insights scores (Performance/SEO/Accessibility/Best-Practices) + Core Web Vitals. Needs a free PSI key (`$PAGESPEED_API_KEY`, or a sops file via `$TD_RIDER_PSI_SOPS_FILE`); `⏭ skips` without one. `--strategy desktop` switches from the default mobile. Note: a single run is noisy (lab scores swing) and PSI needs a publicly reachable URL — say so when you report a score rather than treating one number as final.
-- **google** (only with `--url`) — the operator-provisioned Google state no source file shows: the domain is a verified Search Console property with a sitemap submitted, a GA4 property + web data stream exists for it (→ measurement ID), and that ID is wired into the zone's Zaraz config. Needs a Google service-account key (`$GOOGLE_SERVICE_ACCOUNT_JSON`, a `$GOOGLE_APPLICATION_CREDENTIALS` path, or a sops file via `$TD_RIDER_SA_SOPS_FILE`); the Zaraz leg reuses `$CLOUDFLARE_API_TOKEN`. Each leg `⏭ skips` independently without its credential. Verifies the setup; never provisions it.
+- **lighthouse** (only with `--url`) — measured PageSpeed Insights scores (Performance/SEO/Accessibility/Best-Practices) + Core Web Vitals. Needs a free PSI key (`$PAGESPEED_API_KEY`, or a sops file via `$WISHBUSTERZ_RIDER_PSI_SOPS_FILE`); `⏭ skips` without one. `--strategy desktop` switches from the default mobile. Note: a single run is noisy (lab scores swing) and PSI needs a publicly reachable URL — say so when you report a score rather than treating one number as final.
+- **google** (only with `--url`) — the operator-provisioned Google state no source file shows: the domain is a verified Search Console property with a sitemap submitted, a GA4 property + web data stream exists for it (→ measurement ID), and that ID is wired into the zone's Zaraz config. Needs a Google service-account key (`$GOOGLE_SERVICE_ACCOUNT_JSON`, a `$GOOGLE_APPLICATION_CREDENTIALS` path, or a sops file via `$WISHBUSTERZ_RIDER_SA_SOPS_FILE`); the Zaraz leg reuses `$CLOUDFLARE_API_TOKEN`. Each leg `⏭ skips` independently without its credential. Verifies the setup; never provisions it.
 
 ## Step 3 — Walk the findings
 

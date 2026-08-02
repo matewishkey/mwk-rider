@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// td-rider — check an Astro site against baseline best practices.
+// wishbusterz-rider — check an Astro site against baseline best practices.
 //
 // Six offline domains read source + dist:
 //   modules   expected baseline integrations + config are present and wired
@@ -45,22 +45,22 @@ const { values } = parseArgs({
 });
 
 if (values.help) {
-  console.log(`td-rider — check an Astro site against baseline best practices
+  console.log(`wishbusterz-rider — check an Astro site against baseline best practices
 
 Usage:
-  td-rider                       Run every offline check in the current dir
-  td-rider -s seo -s images      Run only those domains
-  td-rider --url https://site    Also run live + lighthouse against a served site
-  td-rider --url … --strategy desktop   Lighthouse on desktop (default: mobile)
-  td-rider --url … --post /blog/x       Audit a specific page live
-  td-rider -s lighthouse --url https://site   Just the Lighthouse scorecard
-  td-rider --strict              Treat house-style baseline checks as required too
-  td-rider --json                Machine-readable output
-  td-rider --quiet               Print only findings (skip ✅ lines)
+  wishbusterz-rider                       Run every offline check in the current dir
+  wishbusterz-rider -s seo -s images      Run only those domains
+  wishbusterz-rider --url https://site    Also run live + lighthouse against a served site
+  wishbusterz-rider --url … --strategy desktop   Lighthouse on desktop (default: mobile)
+  wishbusterz-rider --url … --post /blog/x       Audit a specific page live
+  wishbusterz-rider -s lighthouse --url https://site   Just the Lighthouse scorecard
+  wishbusterz-rider --strict              Treat house-style baseline checks as required too
+  wishbusterz-rider --json                Machine-readable output
+  wishbusterz-rider --quiet               Print only findings (skip ✅ lines)
 
 Offline domains: ${Object.keys(OFFLINE).join(', ')}
 With --url:      live, lighthouse, google
-                 (lighthouse needs a PSI key; google needs a Google service-account key — both $PAGESPEED_API_KEY/$GOOGLE_SERVICE_ACCOUNT_JSON, or the $TD_RIDER_*_SOPS_FILE files)
+                 (lighthouse needs a PSI key; google needs a Google service-account key — both $PAGESPEED_API_KEY/$GOOGLE_SERVICE_ACCOUNT_JSON, or the $WISHBUSTERZ_RIDER_*_SOPS_FILE files)
 
 Note: --url works from any directory — offline domains need an Astro project in cwd,
 but a live/lighthouse run only needs the URL.

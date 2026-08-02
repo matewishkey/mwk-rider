@@ -1,4 +1,4 @@
-# td-rider canonical cache-control rules (contract §6.2).
+# wishbusterz-rider canonical cache-control rules (contract §6.2).
 #
 # Drop this at public/_headers. Astro copies it verbatim to dist/_headers,
 # where Cloudflare Workers Static Assets parses it as config (same syntax as

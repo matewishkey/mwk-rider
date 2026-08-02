@@ -17,7 +17,7 @@
 //
 // This is the *verify* half of automatic GSC/GA intake: an operator (or a future
 // provisioning tool) creates the property, submits the sitemap, and wires Zaraz;
-// td-rider confirms it landed. The tool never provisions — it checks.
+// wishbusterz-rider confirms it landed. The tool never provisions — it checks.
 
 import { getAccessToken } from '../lib/google-auth.mjs';
 

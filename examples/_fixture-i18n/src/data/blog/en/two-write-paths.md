@@ -19,7 +19,7 @@ Media writes are different. A new hero image is one binary file going to one key
 
 ## Splitting the paths
 
-td-rider names them:
+wishbusterz-rider names them:
 
 - **Path A — media → R2.** Run from the operator's machine. Generates images locally, pushes to R2 via direct CF API calls. No build.
 - **Path B — code → Workers Builds.** Run via `git push origin main`. CF picks up the push, builds, ships `dist/`. ~30–90s.

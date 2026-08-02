@@ -1,8 +1,8 @@
 # Voice (fixture stub)
 
-This is the multi-locale fixture for the td-rider framework — a test bed, not a real publication. There is no voice to follow: posts are written to exercise contract patterns at depth, not to communicate ideas.
+This is the multi-locale fixture for the wishbusterz-rider framework — a test bed, not a real publication. There is no voice to follow: posts are written to exercise contract patterns at depth, not to communicate ideas.
 
-This file exists so that `td-rider check` (and any future tooling that gates on `.td-rider/` presence) treats the fixture as a managed-site shape.
+This file exists so that `wishbusterz-rider check` (and any future tooling that gates on `.wishbusterz-rider/` presence) treats the fixture as a managed-site shape.
 
 ## Images
 

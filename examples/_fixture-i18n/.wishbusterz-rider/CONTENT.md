@@ -1,8 +1,8 @@
 # Content (fixture stub)
 
-This is the multi-locale fixture for the td-rider framework. The posts in `src/data/blog/{en,hu}/` exist to exercise contract patterns, not to publish.
+This is the multi-locale fixture for the wishbusterz-rider framework. The posts in `src/data/blog/{en,hu}/` exist to exercise contract patterns, not to publish.
 
-This file exists so `td-rider check` treats the fixture as a managed-site shape.
+This file exists so `wishbusterz-rider check` treats the fixture as a managed-site shape.
 
 ## Paths
 

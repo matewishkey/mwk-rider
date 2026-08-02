@@ -30,10 +30,10 @@ export const config = {
     //
     // CRITICAL: Cloudflare's "auto-install" toggle in the dashboard only
     // injects the beacon for orange-cloud proxied static HTML. Sites on
-    // Workers Builds (the canonical td-rider deploy shape per §2) serve via
+    // Workers Builds (the canonical wishbusterz-rider deploy shape per §2) serve via
     // a Worker, which CF does NOT rewrite. Auto-install silently does
     // nothing. **Manual <script> injection in RootLayout.astro is mandatory
-    // for every td-rider managed site.** Audit existing managed sites by
+    // for every wishbusterz-rider managed site.** Audit existing managed sites by
     // curl-grepping for 'cloudflareinsights' — if absent, no data flows.
     cloudflareAnalyticsToken: null,
 
@@ -48,12 +48,12 @@ export const config = {
     // Install the matching collection: `npm i @iconify-json/<family>`.
     // Different families have different icon names — e.g. Lucide's `search`
     // is `magnifying-glass` in Phosphor — so swapping isn't drop-in.
-    // Pick once, stay with it; document in .td-rider/VOICE.md § Images.
+    // Pick once, stay with it; document in .wishbusterz-rider/VOICE.md § Images.
     iconFamily: 'lucide',
-    siteName: 'td-rider i18n fixture',
+    siteName: 'wishbusterz-rider i18n fixture',
     siteUrl: 'http://localhost:4321',
     logoUrl: null,
-    tagline: 'Multi-locale (en + hu) test bed for the td-rider contract.',
+    tagline: 'Multi-locale (en + hu) test bed for the wishbusterz-rider contract.',
     authorName: 'Example',
     authorUrl: 'https://example.com',
     twitterSite: '@example',

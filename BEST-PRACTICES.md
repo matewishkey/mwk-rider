@@ -148,7 +148,7 @@ thing a version bump leaves behind. Each maps to a documented v7 breaking change
 - **The og:image is a real card, not just a 200.** A resolvable image URL
   (status + `image/*` content-type) is necessary but not sufficient: a generator
   that screenshots an *error* page uploads a perfectly valid PNG. That's the
-  td-rider#5 incident — a site on `trailingSlash:'always'` had its generator
+  wishbusterz-rider#5 incident — a site on `trailingSlash:'always'` had its generator
   request the no-trailing-slash `/preview/og/<slug>` → 404 → it screenshotted
   and shipped Astro's 404 page as the post's OG card, and status+content-type
   alone never caught it. The live check fetches the served bytes and verifies the
@@ -158,7 +158,7 @@ thing a version bump leaves behind. Each maps to a documented v7 breaking change
   *Boundary:* the same-viewport case (a 404 shot at the real 1200×630 viewport)
   is indistinguishable from headers/bytes — the fix for that is a `resp.ok()`
   guard in the **generator** (assert a 200 before screenshotting), which lives in
-  the audited site, not here. td-rider documents the practice; the site
+  the audited site, not here. wishbusterz-rider documents the practice; the site
   implements the guard.
 - **No `<meta name="keywords">`.** Ignored by search engines and a weak spam
   signal — its presence is the anti-pattern. → `seo: no-keywords`
@@ -373,7 +373,7 @@ key and Zaraz config itself, **the tool verifies this; it never provisions it.**
 > **Search Console API**, **Site Verification API**, and **Analytics Admin API**
 > enabled; a **service account** whose key is read like the PSI key
 > (`$GOOGLE_SERVICE_ACCOUNT_JSON`, or `$GOOGLE_APPLICATION_CREDENTIALS` path, or
-> `GOOGLE_SERVICE_ACCOUNT_JSON`, or a sops file via `$TD_RIDER_SA_SOPS_FILE`); that SA granted
+> `GOOGLE_SERVICE_ACCOUNT_JSON`, or a sops file via `$WISHBUSTERZ_RIDER_SA_SOPS_FILE`); that SA granted
 > read access to the operator's GA account and (for the verify/add provisioning steps)
 > ownership it gains by running verification. The Zaraz leg reuses the existing
 > `$CLOUDFLARE_API_TOKEN` (with Zaraz read + zone read). Treat it exactly like the

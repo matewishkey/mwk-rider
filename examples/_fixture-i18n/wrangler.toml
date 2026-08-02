@@ -2,5 +2,5 @@
 # Present so the contract's §12 "wrangler.toml at project root" ⚖ check passes
 # when the migrate command is dogfooded against this fixture.
 
-name = "td-rider-fixture-i18n"
+name = "wishbusterz-rider-fixture-i18n"
 compatibility_date = "2026-05-27"

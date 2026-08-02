@@ -77,13 +77,13 @@ baseline means upgrading the fixture in the same commit.
       against an off-baseline site so you can see which mode it lands in.
 - [ ] If `tools/checks/*.mjs` changed: also run it against a real site — drift there is
       expected and informational, and it's how you confirm the check fires in the wild.
-- [ ] If `commands/td-rider.md` or `install.sh` changed: re-run `./install.sh`, then
-      confirm `node ~/.claude/td-rider-tools/audit.mjs --help` resolves and the symlinks
-      point at your checkout (`ls -la ~/.claude/td-rider-tools`).
+- [ ] If `commands/wishbusterz-rider.md` or `install.sh` changed: re-run `./install.sh`, then
+      confirm `node ~/.claude/wishbusterz-rider-tools/audit.mjs --help` resolves and the symlinks
+      point at your checkout (`ls -la ~/.claude/wishbusterz-rider-tools`).
 
 ## Distribution
 
 A dev tool — no deploy, no live UI. Distribution is consumer pull: `git pull &&
 ./install.sh`. `install.sh` is idempotent and symlinks the command into
-`~/.claude/commands/` and `tools/` into `~/.claude/td-rider-tools`. Pure Node ESM on
+`~/.claude/commands/` and `tools/` into `~/.claude/wishbusterz-rider-tools`. Pure Node ESM on
 system Node 22+, no dependencies, no `package.json` at the repo root.

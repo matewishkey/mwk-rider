@@ -6,7 +6,7 @@
 //
 // Needs a free PSI API key, resolved in order:
 //   1. $PAGESPEED_API_KEY
-//   2. sops-decrypted from $TD_RIDER_PSI_SOPS_FILE (key PAGESPEED_API_KEY)
+//   2. sops-decrypted from $WISHBUSTERZ_RIDER_PSI_SOPS_FILE (key PAGESPEED_API_KEY)
 // Without a key it skips gracefully (the tool still works for everything else).
 
 import { spawnSync } from 'node:child_process';
@@ -27,7 +27,7 @@ const CWV = [
 export async function run({ reporter, url, strategy = 'mobile' }) {
   const key = resolveKey();
   if (!key) {
-    reporter.skip(SEC, 'psi', 'no PageSpeed Insights key — set $PAGESPEED_API_KEY or point $TD_RIDER_PSI_SOPS_FILE at a sops-encrypted env file. Skipping real-metric audit.');
+    reporter.skip(SEC, 'psi', 'no PageSpeed Insights key — set $PAGESPEED_API_KEY or point $WISHBUSTERZ_RIDER_PSI_SOPS_FILE at a sops-encrypted env file. Skipping real-metric audit.');
     return;
   }
 
@@ -94,9 +94,9 @@ async function fetchPSI(url, strategy, key, reporter) {
 
 function resolveKey() {
   if (process.env.PAGESPEED_API_KEY?.trim()) return process.env.PAGESPEED_API_KEY.trim();
-  // Opt-in only: no default path. Point $TD_RIDER_PSI_SOPS_FILE at a sops-encrypted
+  // Opt-in only: no default path. Point $WISHBUSTERZ_RIDER_PSI_SOPS_FILE at a sops-encrypted
   // env file holding PAGESPEED_API_KEY, or leave it unset and this domain skips.
-  const file = process.env.TD_RIDER_PSI_SOPS_FILE;
+  const file = process.env.WISHBUSTERZ_RIDER_PSI_SOPS_FILE;
   if (!file || !existsSync(file) || !hasSops()) return null;
   const env = { ...process.env };
   if (!env.SOPS_AGE_KEY_FILE) {

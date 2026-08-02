@@ -19,7 +19,7 @@ A média-írások mások. Egy új hero-kép egyetlen bináris fájl, egyetlen ku
 
 ## Az útvonalak szétválasztása
 
-A td-rider így nevezi őket:
+A wishbusterz-rider így nevezi őket:
 
 - **A útvonal — média → R2.** Az operátor gépéről fut. Helyben generálja a képeket, közvetlenül a CF API-n keresztül R2-be tölti. Nincs build.
 - **B útvonal — kód → Workers Builds.** A `git push origin main` indítja. A CF felveszi a push-t, build-el, kiküldi a `dist/`-et. Kb. 30–90s.

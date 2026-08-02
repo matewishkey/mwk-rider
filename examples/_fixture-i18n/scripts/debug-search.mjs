@@ -11,7 +11,7 @@
  *   - "Clear all" pill resets filters
  *
  * First iteration of what tests/preview.spec.ts will become for
- * /td-rider-preview in Phase 2.
+ * /wishbusterz-rider-preview in Phase 2.
  */
 import { chromium } from 'playwright';
 

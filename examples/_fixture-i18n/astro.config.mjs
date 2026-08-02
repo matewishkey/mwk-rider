@@ -5,9 +5,9 @@ import sitemap from '@astrojs/sitemap';
 import robotsTxt from 'astro-robots-txt';
 import icon from 'astro-icon';
 
-// _fixture-i18n — the td-rider multi-locale test bed (contract §18).
+// _fixture-i18n — the wishbusterz-rider multi-locale test bed (contract §18).
 // Two locales: en (default at root) + hu (at /hu/). Local-only fixture;
-// no R2 bucket, no real deploy. Used by /td-rider-preview to drive
+// no R2 bucket, no real deploy. Used by /wishbusterz-rider-preview to drive
 // localhost validation of the multi-locale stack before patterns get
 // promoted to templates/ and shipped to managed sites.
 export default defineConfig({
