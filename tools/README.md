@@ -9,7 +9,7 @@ cd ~/projects/<some-astro-site>
 
 node ~/.claude/wishbusterz-rider-tools/audit.mjs            # every offline domain
 node ~/.claude/wishbusterz-rider-tools/audit.mjs -s seo -s images   # subset
-node ~/.claude/wishbusterz-rider-tools/audit.mjs --url https://site # add live checks
+node ~/.claude/wishbusterz-rider-tools/audit.mjs --url https://example.com # add live checks
 node ~/.claude/wishbusterz-rider-tools/audit.mjs --json     # machine-readable
 node ~/.claude/wishbusterz-rider-tools/audit.mjs --quiet    # only findings, no ✅
 node ~/.claude/wishbusterz-rider-tools/audit.mjs --help
@@ -28,7 +28,13 @@ node ~/.claude/wishbusterz-rider-tools/audit.mjs --help
 | `live` | Only with `--url`: real Cache-Control, served image bytes, rendered SEO + JSON-LD, `/llms.txt` |
 | `lighthouse` | Only with `--url`: measured PageSpeed Insights scores (perf/seo/a11y/best-practices) + Core Web Vitals. Needs a PSI key (see below); skips without one |
 
-It **assumes the baseline stack is in place** and validates compliance — it does not set anything up.
+It **assumes a baseline stack** and validates compliance — it does not set anything up.
+
+"The baseline" throughout these docs means: Astro 7+, `output: 'static'`, Cloudflare
+delivery (Image Transformations, immutable hashed assets), Orama client-side search,
+analytics via Cloudflare Zaraz. Checks that only make sense on that stack report as
+`💡 [baseline]` by default and are required only under `--strict` — so a site built
+differently still gets useful answers. See `../BEST-PRACTICES.md`.
 
 ## Lighthouse key resolution
 

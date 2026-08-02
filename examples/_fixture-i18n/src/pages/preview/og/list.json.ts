@@ -1,5 +1,5 @@
 /**
- * Content Layer JSON endpoint feeding scripts/og.mjs (multi-locale per §18.9).
+ * Content Layer JSON endpoint feeding scripts/og.mjs (multi-locale per.
  * Returns one entry per (locale, slug) pair — translations are NOT deduplicated.
  */
 import type { APIRoute } from 'astro';

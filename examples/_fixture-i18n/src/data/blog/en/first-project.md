@@ -2,14 +2,14 @@
 title: Building the multi-locale stack
 date: 2026-05-25
 tags: [project, astro, i18n]
-excerpt: How the contract's §18 patterns map onto Astro 6 — i18n routing, schema additions, per-locale endpoints, SEO with hreflang. The work that built this fixture.
+excerpt: How the contract'spatterns map onto Astro 6 — i18n routing, schema additions, per-locale endpoints, SEO with hreflang. The work that built this fixture.
 draft: false
 type: project
 locale: en
 translationKey: first-project
 ---
 
-The contract talks about multi-locale in §18 as a layered set of defaults. This fixture is what those defaults look like once they're wired into a real Astro 6 project.
+The contract talks about multi-locale inas a layered set of defaults. This fixture is what those defaults look like once they're wired into a real Astro 6 project.
 
 ## The wiring
 

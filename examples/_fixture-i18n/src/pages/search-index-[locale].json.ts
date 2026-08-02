@@ -1,5 +1,5 @@
 /**
- * Per-locale Orama search index per §18.6.
+ * Per-locale Orama search index per.
  *
  * One persisted JSON per locale, served at /search-index-<locale>.json.
  * Uses native Orama `save()` (plain JSON object) instead of

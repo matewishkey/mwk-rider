@@ -1,5 +1,5 @@
 /**
- * Per-locale llms.txt per §18.8.
+ * Per-locale llms.txt per.
  * One file per locale, posts grouped by `type:`. Same filter predicate
  * as RSS + search-index (one expression, four discovery surfaces).
  */

@@ -9,7 +9,7 @@ locale: hu
 translationKey: welcome
 ---
 
-Ez a teszt-oldal a wishbusterz-rider contract §18 többnyelvű mintáinak gyakorlóterepe. Csak helyileg fut — nincs igazi telepítés, nincs igazi R2-bucket. A célja, hogy a lektor kattintható oldalt kapjon a telefonján mielőtt bármelyik többnyelvű minta éles weboldalra (például a example.com-ra) kerülne.
+Ez a teszt-oldal a wishbusterz-rider contracttöbbnyelvű mintáinak gyakorlóterepe. Csak helyileg fut — nincs igazi telepítés, nincs igazi R2-bucket. A célja, hogy a lektor kattintható oldalt kapjon a telefonján mielőtt bármelyik többnyelvű minta éles weboldalra (például a example.com-ra) kerülne.
 
 Két nyelv: az **angol** (alapértelmezett, a `/`, `/blog` és hasonló útvonalakon) és a **magyar** (a `/hu/` alatt). Az Astro i18n konfiguráció `prefixDefaultLocale: false` beállítással fut, így az angol URL-ek tiszták maradnak.
 

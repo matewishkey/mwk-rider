@@ -1,6 +1,6 @@
 ---
 /**
- * Multi-locale SEO component for the wishbusterz-rider i18n fixture (§15 + §18.5).
+ * Multi-locale SEO component for the wishbusterz-rider i18n fixture+.
  *
  * Extends the mono-locale SEO.astro template with:
  *   - hreflang alternates (translationKey-driven for posts, getRelativeLocaleUrlList for chrome)
@@ -66,7 +66,7 @@ function resolveOg(): string {
 }
 const ogImage = resolveOg();
 
-// --- Hreflang alternates (§18.5) ----------------------------------
+// --- Hreflang alternates----------------------------------
 type Alt = { hreflang: string; href: string };
 let alternates: Alt[] = [];
 

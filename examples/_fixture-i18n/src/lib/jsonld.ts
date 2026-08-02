@@ -1,5 +1,5 @@
 /**
- * JSON-LD builders extended for multi-locale (§15 + §18.5).
+ * JSON-LD builders extended for multi-locale+.
  * Adds inLanguage to BlogPosting when the site is multi-locale.
  */
 import type { CollectionEntry } from 'astro:content';

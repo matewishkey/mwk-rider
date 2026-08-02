@@ -1,12 +1,12 @@
 import { defineCollection, z } from 'astro:content';
 import { glob } from 'astro/loaders';
 
-// Per contract §7 + §15.2 (dateModified optional) + §18.2 (locale + translationKey).
+// Per contract+(dateModified optional) +(locale + translationKey).
 //
-// Pattern B layout (§18.3): src/data/blog/<locale>/<slug>.md
+// Pattern B layout: src/data/blog/<locale>/<slug>.md
 // entry.id KEEPS the locale prefix (e.g. "en/welcome") so Content Layer
 // IDs stay unique. URL slugs strip the prefix via src/lib/slug.ts.
-// (Contract §18.3 currently prescribes stripping in generateId — that
+// (Contractcurrently prescribes stripping in generateId — that
 // causes silent ID collisions; Phase 2 will fix the contract to match.)
 const blog = defineCollection({
   loader: glob({

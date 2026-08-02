@@ -1,4 +1,4 @@
-# wishbusterz-rider canonical cache-control rules (contract §6.2).
+# wishbusterz-rider canonical cache-control rules (contract.
 #
 # Drop this at public/_headers. Astro copies it verbatim to dist/_headers,
 # where Cloudflare Workers Static Assets parses it as config (same syntax as
@@ -9,7 +9,7 @@
 # That is correct for HTML (a deploy must show immediately) but wrong for
 # content-hashed bundles — they never change under a given URL, yet repeat
 # visitors re-validate every .js/.css/font on every navigation. `immutable`
-# eliminates the round-trip. This is the JS/CSS/font analogue of the §6.1
+# eliminates the round-trip. This is the JS/CSS/font analogue of the
 # image-delivery win.
 
 # Astro content-hashed assets (/_astro/app.[hash].js etc.) — cache forever.

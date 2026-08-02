@@ -2,14 +2,14 @@
 title: Welcome to the i18n fixture
 date: 2026-05-27
 tags: [meta, fixture]
-excerpt: This site exercises the wishbusterz-rider contract's multi-locale patterns. Two locales, paired translations, locale-only posts. It runs only on localhost.
+excerpt: This site exercises multi-locale patterns. Two locales, paired translations, locale-only posts. It runs only on localhost.
 draft: false
 type: thoughts
 locale: en
 translationKey: welcome
 ---
 
-This fixture is the test bed for the wishbusterz-rider contract's §18 multi-locale patterns. It runs only on localhost — never deploys, never has a real R2 bucket. Its job is to give a reviewer a clickable site they can check on a phone before any multi-locale pattern lands on a real managed site like example.com.
+This fixture is the test bed for multi-locale patterns. It runs only on localhost — never deploys, never has a real R2 bucket. Its job is to give a reviewer a clickable site they can check on a phone before any multi-locale pattern lands on a real managed site like example.com.
 
 Two locales: **English** (the default, at root paths like `/`, `/blog`) and **Hungarian** (under `/hu/`). Astro's i18n config sets `prefixDefaultLocale: false`, so English URLs stay clean.
 

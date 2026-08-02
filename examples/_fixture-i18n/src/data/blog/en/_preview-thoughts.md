@@ -9,7 +9,7 @@ locale: en
 previewOnly: true
 ---
 
-This post is `previewOnly: true` per §14.4. It never appears in the public feed, sitemap, RSS, search index, or llms.txt. It exists to exercise the post layout for the **thoughts** type.
+This post is `previewOnly: true` per. It never appears in the public feed, sitemap, RSS, search index, or llms.txt. It exists to exercise the post layout for the **thoughts** type.
 
 ## Heading level 2
 

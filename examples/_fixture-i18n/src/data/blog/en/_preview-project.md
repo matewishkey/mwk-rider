@@ -9,7 +9,7 @@ locale: en
 previewOnly: true
 ---
 
-This post is `previewOnly: true` per §14.4. It exists to exercise the post layout for the **project** type.
+This post is `previewOnly: true` per. It exists to exercise the post layout for the **project** type.
 
 ## Project shape
 

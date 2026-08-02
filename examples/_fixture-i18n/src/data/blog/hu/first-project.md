@@ -2,14 +2,14 @@
 title: A többnyelvű stack felépítése
 date: 2026-05-25
 tags: [projekt, astro, i18n]
-excerpt: Hogyan ültethetők át a contract §18 mintái Astro 6-ra — i18n útválasztás, séma-bővítés, nyelvenkénti végpontok, SEO hreflanggel. Ez a teszt-oldal felépítése.
+excerpt: Hogyan ültethetők át a contractmintái Astro 6-ra — i18n útválasztás, séma-bővítés, nyelvenkénti végpontok, SEO hreflanggel. Ez a teszt-oldal felépítése.
 draft: false
 type: project
 locale: hu
 translationKey: first-project
 ---
 
-A contract a §18-ban a többnyelvű támogatást rétegzett alapértelmezésekként írja le. Ez a teszt-oldal megmutatja, hogy néznek ki ezek az alapértelmezések valódi Astro 6 projektbe bekötve.
+A contract a-ban a többnyelvű támogatást rétegzett alapértelmezésekként írja le. Ez a teszt-oldal megmutatja, hogy néznek ki ezek az alapértelmezések valódi Astro 6 projektbe bekötve.
 
 ## A bekötés
 

@@ -2,9 +2,9 @@
 /**
  * OG generator stub for _fixture-i18n.
  *
- * The full Playwright-driven generator (per §9.2 + §18.9) is wired in
+ * The full Playwright-driven generator (per+is wired in
  * Phase 2 once the localhost review approves the fixture. For now this
- * stub keeps the `npm run og` script defined (per §3 ⚖ check) but does
+ * stub keeps the `npm run og` script defined (per⚖ check) but does
  * nothing — the dev server review uses the live HTML template page at
  * /preview/og/<locale>/<id> as the visual OG preview, not generated
  * PNGs on disk.

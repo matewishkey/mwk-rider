@@ -46,14 +46,14 @@ audit complete — 5 findings to address (exit 1).
 
 ```bash
 export PAGESPEED_API_KEY=…
-node /tmp/rider/tools/audit.mjs -s lighthouse --url https://your-site.com
+node /tmp/rider/tools/audit.mjs -s lighthouse --url https://example.com
 ```
 
 **Want to test the running site in a real browser?** Install Playwright in *your* project and the `browser` domain switches itself on:
 
 ```bash
 npm i -D playwright && npx playwright install chromium
-node /tmp/rider/tools/audit.mjs -s browser --url https://your-site.com
+node /tmp/rider/tools/audit.mjs -s browser --url https://example.com
 ```
 
 That catches what no static check can: scripts that throw, assets that 404 only when requested, real measured layout shift, and images served at 4× the size they're displayed.
@@ -110,7 +110,7 @@ From inside any Astro project, in [Claude Code](https://claude.com/claude-code):
 
 ```
 /wishbusterz-rider                 # offline: source + dist checks
-/wishbusterz-rider https://site    # also check the live/served site
+/wishbusterz-rider https://example.com    # also check the live/served site
 ```
 
 Or call the script directly — it's a plain CLI, Claude Code is optional:
@@ -119,13 +119,34 @@ Or call the script directly — it's a plain CLI, Claude Code is optional:
 node ~/.claude/wishbusterz-rider-tools/audit.mjs --help
 node ~/.claude/wishbusterz-rider-tools/audit.mjs                     # everything offline
 node ~/.claude/wishbusterz-rider-tools/audit.mjs -s seo -s images    # scope to domains
-node ~/.claude/wishbusterz-rider-tools/audit.mjs --url https://site  # add live + lighthouse
+node ~/.claude/wishbusterz-rider-tools/audit.mjs --url https://example.com  # add live + lighthouse
 node ~/.claude/wishbusterz-rider-tools/audit.mjs --json              # machine-readable
 ```
 
 `--url` works from **any directory** — the offline domains need an Astro project in the cwd, but a live/lighthouse run only needs the URL.
 
 Outcomes: `✅` pass · `🔧` fixable (required) · `🛑` needs a decision · `💡` optional suggestion · `⏭` skipped. Exit `0` if clean (suggestions don't count), `1` if any required findings, `2` on tooling error — so it drops into CI as-is.
+
+## Optional: `scripts/og.config.mjs`
+
+A few checks read brand details from an optional file at `scripts/og.config.mjs` in the audited project. **You don't need it** — without it, those checks simply don't run. If you have one, this is the shape the tool looks for:
+
+```js
+export const config = {
+  brand: {
+    siteName: 'Example',                 // required by seo: brand.siteName
+    siteUrl:  'https://example.com',     // required by seo: brand.siteUrl
+    tagline:  'What the site is about',  // required by seo: brand.tagline
+    mediaDomain: 'media.example.com',    // enables modules: remotePatterns
+    authorName: 'Example',               // optional, richer social cards
+    authorUrl: 'https://example.com',
+    twitterSite: '@example',
+    twitterCreator: '@example',
+  },
+};
+```
+
+Creating this file **adds** required checks (`brand.siteName`, `brand.siteUrl`, `brand.tagline`), so add it only if you want them enforced. The file is read as text and never executed — see [`SECURITY.md`](SECURITY.md).
 
 ## Optional API keys
 

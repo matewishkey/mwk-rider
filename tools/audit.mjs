@@ -63,10 +63,10 @@ if (values.help) {
 Usage:
   wishbusterz-rider                       Run every offline check in the current dir
   wishbusterz-rider -s seo -s images      Run only those domains
-  wishbusterz-rider --url https://site    Also run live + lighthouse against a served site
+  wishbusterz-rider --url https://example.com    Also run live + lighthouse against a served site
   wishbusterz-rider --url … --strategy desktop   Lighthouse on desktop (default: mobile)
   wishbusterz-rider --url … --post /blog/x       Audit a specific page live
-  wishbusterz-rider -s lighthouse --url https://site   Just the Lighthouse scorecard
+  wishbusterz-rider -s lighthouse --url https://example.com   Just the Lighthouse scorecard
   wishbusterz-rider --strict              Treat house-style baseline checks as required too
   wishbusterz-rider --json                Machine-readable output
   wishbusterz-rider --quiet               Print only findings (skip ✅ lines)

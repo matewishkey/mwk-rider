@@ -5,7 +5,7 @@ import sitemap from '@astrojs/sitemap';
 import robotsTxt from 'astro-robots-txt';
 import icon from 'astro-icon';
 
-// _fixture-i18n — the wishbusterz-rider multi-locale test bed (contract §18).
+// _fixture-i18n — the wishbusterz-rider multi-locale test bed (contract.
 // Two locales: en (default at root) + hu (at /hu/). Local-only fixture;
 // no R2 bucket, no real deploy. Used by /wishbusterz-rider-preview to drive
 // localhost validation of the multi-locale stack before patterns get
@@ -15,7 +15,7 @@ export default defineConfig({
   output: 'static',
   trailingSlash: 'never',
 
-  // §18.1 — canonical multi-locale routing
+  //canonical multi-locale routing
   i18n: {
     defaultLocale: 'en',
     locales: ['en', 'hu'],
@@ -23,8 +23,8 @@ export default defineConfig({
       prefixDefaultLocale: false,         // default locale at root: /, /blog
       // redirectToDefaultLocale is incompatible with prefixDefaultLocale: false
       // (Astro 6 rejects the combo to prevent infinite redirect loops). The
-      // contract §18.1 currently prescribes redirectToDefaultLocale: true —
-      // this is a contract bug surfaced by this fixture. Phase 2: fix §18.1.
+      // contractcurrently prescribes redirectToDefaultLocale: true —
+      // this is a contract bug surfaced by this fixture. Phase 2: fix.
       fallbackType: 'rewrite',            // serve fallback at the locale URL
     },
     fallback: { hu: 'en' },               // missing hu → serve en at /hu/...
@@ -34,9 +34,9 @@ export default defineConfig({
     icon(),
     mdx(),
     sitemap({
-      // §14 exclusion #1 — preview routes never enter the sitemap.
+      //preview routes never enter the sitemap.
       filter: (page) => !page.includes('/preview'),
-      // §18.4 — auto-emit hreflang alternates per URL.
+      //auto-emit hreflang alternates per URL.
       i18n: {
         defaultLocale: 'en',
         locales: {
@@ -46,7 +46,7 @@ export default defineConfig({
       },
     }),
     robotsTxt({
-      // §14 exclusion #2 — preview routes blocked from crawlers.
+      //preview routes blocked from crawlers.
       policy: [
         { userAgent: '*', disallow: '/preview/' },
         { userAgent: '*', allow: '/' },

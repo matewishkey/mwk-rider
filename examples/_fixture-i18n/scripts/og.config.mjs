@@ -4,7 +4,7 @@
 // rather than R2. SEO.astro + jsonld.ts detect null mediaDomain and
 // resolve og:image relative to the site URL instead.
 //
-// Real managed sites set mediaDomain to a CF custom domain (per §1).
+// Real managed sites set mediaDomain to a CF custom domain (per.
 // Brand inputs drive both the OG template page and SEO meta.
 
 export const config = {
@@ -26,11 +26,11 @@ export const config = {
     // Cloudflare Web Analytics token. Null in the fixture (localhost-only —
     // no analytics needed). Managed sites set this to their site_tag from
     // https://one.dash.cloudflare.com/<account>/web-analytics — single line,
-    // and the beacon script renders. See §21 Observability.
+    // and the beacon script renders. SeeObservability.
     //
     // CRITICAL: Cloudflare's "auto-install" toggle in the dashboard only
     // injects the beacon for orange-cloud proxied static HTML. Sites on
-    // Workers Builds (the canonical wishbusterz-rider deploy shape per §2) serve via
+    // Workers Builds (the canonical wishbusterz-rider deploy shape perserve via
     // a Worker, which CF does NOT rewrite. Auto-install silently does
     // nothing. **Manual <script> injection in RootLayout.astro is mandatory
     // for every wishbusterz-rider managed site.** Audit existing managed sites by
@@ -59,7 +59,7 @@ export const config = {
     twitterSite: '@example',
     twitterCreator: '@example',
 
-    // §18.5 — multi-locale i18n block (single source of truth, matches astro.config.mjs).
+    //multi-locale i18n block (single source of truth, matches astro.config.mjs).
     i18n: {
       defaultLocale: 'en',
       locales: ['en', 'hu'],
