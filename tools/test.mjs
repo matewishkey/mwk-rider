@@ -200,6 +200,19 @@ check('data-src does not satisfy src', attrValue('data-src="/a.png"', 'src') ===
 check('data-width does not satisfy width', hasAttr('data-width="8"', 'width') === false);
 check('unquoted attribute values are read', attrValue('src=/a.png', 'src') === '/a.png');
 
+// Astro serialises alt="" as a bare `alt`. Treating that as "no alt" reported
+// every correctly-marked decorative image as a WCAG violation — in one dogfood
+// run it was the only finding, so exit 1 was entirely spurious. Verbatim from a
+// real build: dist/index.html of a site with a decorative aria-hidden hero.
+check('bare alt (Astro\'s alt="") counts as present',
+  hasAttr('src="/a.webp" alt sizes="90vw" aria-hidden="true"', 'alt') === true);
+check('  …and imgsMissingAlt agrees',
+  imgsMissingAlt('<img src="/a.webp" alt aria-hidden="true" width="16" height="9">').length === 0);
+check('  …while a genuinely missing alt is still caught',
+  imgsMissingAlt('<img src="/a.webp" width="16" height="9">').length === 1);
+check('a bare attribute name does not match a longer one',
+  hasAttr('widths="1"', 'width') === false);
+
 // A site using BaseHead.astro rather than SEO.astro is not wrong. This used to
 // emit required findings AND silently skip every meta:* check.
 const headDir = tmpProject('wishbusterz-rider-head-');
@@ -214,9 +227,41 @@ const headRun = runJson(headDir, ['-s', 'seo']);
 const seoRows = headRun.json?.results.filter(r => r.section === 'seo') ?? [];
 check('head meta found in BaseHead.astro (not just SEO.astro)',
   seoRows.find(r => r.name === 'SEO component')?.outcome === 'pass');
+const META_NAMES = ['og:image','og:image:width','og:image:height','og:type','og:url','canonical'];
 check('  …and every meta:* check actually ran',
-  ['og:image','og:image:width','og:image:height','og:type','og:url','canonical']
-    .every(n => seoRows.find(r => r.name === `meta:${n}`)?.outcome === 'pass'));
+  META_NAMES.every(n => seoRows.find(r => r.name === `meta:${n}`)?.outcome === 'pass'));
+
+// The worst failure this tool can have: reporting *verified good* where nothing
+// was checked. Bare-substring matching meant a component whose entire content
+// was a TODO comment passed all six meta checks.
+const todoDir = tmpProject('wishbusterz-rider-todo-');
+writeFileSync(join(todoDir, 'package.json'), JSON.stringify({ name: 'fx', type: 'module', dependencies: { astro: '^7.1.6' } }));
+writeFileSync(join(todoDir, 'astro.config.mjs'), "export default { output: 'static' };\n");
+mkdirSync(join(todoDir, 'src', 'components'), { recursive: true });
+mkdirSync(join(todoDir, 'src', 'pages'), { recursive: true });
+writeFileSync(join(todoDir, 'src', 'components', 'BaseHead.astro'),
+  '---\n// TODO: emit og:image:width and og:image:height and og:type here.\n// Also rel="canonical" and og:url.\n---\n');
+writeFileSync(join(todoDir, 'src', 'pages', 'index.astro'), '<p>hi</p>\n');
+const todoRows = runJson(todoDir, ['-s', 'seo']).json?.results ?? [];
+check('a TODO comment does not satisfy any meta:* check',
+  META_NAMES.every(n => todoRows.find(r => r.name === `meta:${n}`)?.outcome === 'fix'),
+  JSON.stringify(todoRows.filter(r => r.name?.startsWith('meta:') && r.outcome !== 'fix')));
+check('  …nor make the file count as a head-meta component',
+  todoRows.find(r => r.name === 'SEO component')?.outcome === 'fix');
+
+// …and a commented-out tag is not an emitted tag either.
+writeFileSync(join(todoDir, 'src', 'components', 'BaseHead.astro'),
+  '<title>t</title>\n<!-- <meta property="og:image" content="/a.png" /> -->\n/* <meta property="og:type" content="website" /> */\n');
+const commentedRows = runJson(todoDir, ['-s', 'seo']).json?.results ?? [];
+check('a commented-out meta tag does not count as emitted',
+  ['og:image', 'og:type'].every(n => commentedRows.find(r => r.name === `meta:${n}`)?.outcome === 'fix'),
+  JSON.stringify(commentedRows.filter(r => r.name?.startsWith('meta:') && r.outcome !== 'fix')));
+
+const { stripComments } = await import('./lib/src-scan.mjs');
+check('comment blanking preserves offsets and line count',
+  stripComments('a // x\nb').length === 'a // x\nb'.length &&
+  stripComments('a // x\nb').split('\n').length === 2);
+check('  …and leaves a URL alone', /https:\/\/example\.com/.test(stripComments('const u = "https://example.com/x";')));
 
 // Auditing a repo must never be equivalent to running it.
 const rceDir = tmpProject('wishbusterz-rider-rce-');

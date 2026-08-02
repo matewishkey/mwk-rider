@@ -7,7 +7,7 @@
 // dist/, or production.
 
 import { transformSmells } from '../lib/cf-image.mjs';
-import { headingLevels, headingAudit, attrValue } from '../lib/html.mjs';
+import { headingLevels, headingAudit, attrValue, hasAttr } from '../lib/html.mjs';
 import { imageSize } from '../lib/image-size.mjs';
 
 // A host that accepts the connection and never answers used to hang the audit
@@ -251,10 +251,11 @@ async function auditImages(home, postPath, base, get, head, reporter) {
   const noQuality = [];
   const noAlt = [];
   for (const img of imgs) {
-    // Anchor on an attribute-name boundary (not \b — see html.mjs imgsMissingAlt).
+    // hasAttr, not a local regex: it accepts the bare `alt` that Astro emits for
+    // alt="" (see html.mjs), so a decorative image isn't reported as missing alt.
     // Dedup by src so a templated image shared across pages counts once, matching
     // the dist-side alt check's unique-src semantics.
-    if (!/(?:^|\s)alt\s*=/.test(img.attrs) && !noAlt.includes(img.src)) noAlt.push(img.src);
+    if (!hasAttr(img.attrs, 'alt') && !noAlt.includes(img.src)) noAlt.push(img.src);
 
     // Two correct paths by provenance: Astro build-time optimization for local
     // assets (/_astro/…) and Cloudflare Image Transformations for R2 content.
@@ -263,7 +264,10 @@ async function auditImages(home, postPath, base, get, head, reporter) {
     if (optimized || routed) routedOk++;
     else reporter.fix('images', `optimized (${truncate(img.src, 70)})`, 'content image not optimized — neither Astro build (/_astro/) nor an image transform (/cdn-cgi/image/)', '<Image>/astro:assets for local assets; a /cdn-cgi/image/ URL for R2-hosted content');
 
-    const sized = /\bwidth=/.test(img.attrs) && /\bheight=/.test(img.attrs);
+    // attrValue, not /\bwidth=/: \b matches inside `data-width=`, so a tag with
+    // only data-attributes passed the CLS check. A value is required — a bare
+    // `width` reserves no space.
+    const sized = attrValue(img.attrs, 'width') != null && attrValue(img.attrs, 'height') != null;
     if (sized) sizedOk++;
     else reporter.fix('images', `cls (${truncate(img.src, 70)})`, 'no width/height attr → layout shift (CLS)', 'use <Image> (bakes dimensions) or add width+height');
 

@@ -7,7 +7,7 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, extname, relative } from 'node:path';
 
-import { attrValue, hasAttr } from '../lib/html.mjs';
+import { attrValue } from '../lib/html.mjs';
 
 const SEC = 'perf';
 // The hashed-asset rule, as written by any of the common conventions:
@@ -95,7 +95,9 @@ function checkCls(project, reporter) {
       const attrs = m[1];
       const src = attrValue(attrs, 'src') ?? '';
       if (!isContentImageRef(src)) continue;
-      if (!hasAttr(attrs, 'width') || !hasAttr(attrs, 'height')) {
+      // A *value* is required here, not mere presence: a bare `width` reserves
+      // no space, so it cannot prevent the layout shift this check exists for.
+      if (attrValue(attrs, 'width') == null || attrValue(attrs, 'height') == null) {
         offenders.push({ file: relPath, line: lineOf(text, m.index), src });
       }
     }

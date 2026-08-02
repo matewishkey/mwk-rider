@@ -67,8 +67,15 @@ export function attrValue(attrs, name) {
       ?? attrs.match(new RegExp(`(?:^|\\s)${name}\\s*=\\s*([^\\s>"'\`]+)`, 'i'))?.[1]
       ?? null;
 }
+// Present, with or without a value. An attribute written with an empty value is
+// serialised bare: Astro emits `<img alt="" aria-hidden="true">` as `<img alt
+// aria-hidden="true">`, and per the HTML spec that bare `alt` IS the empty
+// string. Requiring `=` reported every correctly-marked decorative image as an
+// accessibility violation — advice that, if followed, adds alt text to an image
+// deliberately hidden from assistive tech. The trailing lookahead keeps
+// `width` from matching `widths`; the leading one keeps it off `data-width`.
 export function hasAttr(attrs, name) {
-  return new RegExp(`(?:^|\\s)${name}\\s*=`, 'i').test(attrs);
+  return new RegExp(`(?:^|\\s)${name}(?=\\s|=|/|$)`, 'i').test(attrs);
 }
 
 // Content <img> tags with no alt attribute at all. `alt=""` is intentional

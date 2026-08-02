@@ -2,12 +2,27 @@
 // canonical URL, OG meta, and the brand fields they need.
 // (Structured data / JSON-LD / llms.txt live in the data check.)
 
-import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { eachDistHtml, isContentPage, headingLevels, headingAudit } from '../lib/html.mjs';
 import { readSrcFiles, headMetaFiles } from '../lib/src-scan.mjs';
 
 const SEC = 'seo';
+
+// A tag counts as emitted only when it appears as a real attribute —
+// `property="og:image"`, never the bare word. Matching bare substrings meant a
+// line of prose satisfied the check: a component containing nothing but
+// `// TODO: emit og:image, og:type and rel="canonical"` passed six checks at
+// once. Comments are blanked before matching too (see lib/src-scan.mjs), so
+// both halves of that failure are closed.
+const metaRe = (key) => new RegExp(`(?:property|name)\\s*=\\s*["']${key}["']`, 'i');
+const CANONICAL_RE = /rel\s*=\s*["']canonical["']/i;
+const META_TAGS = [
+  ['og:image',        metaRe('og:image')],
+  ['og:image:width',  metaRe('og:image:width')],
+  ['og:image:height', metaRe('og:image:height')],
+  ['og:type',         metaRe('og:type')],
+  ['og:url',          metaRe('og:url')],
+  ['canonical',       CANONICAL_RE],
+];
 
 export async function run({ project, reporter }) {
   // The head-meta surface, found by behaviour rather than filename. A site may
@@ -15,7 +30,7 @@ export async function run({ project, reporter }) {
   // correct, so search every source file and report against the union.
   const srcFiles = readSrcFiles(project.root);
   const headFiles = headMetaFiles(srcFiles);
-  const head = headFiles.map((f) => f.text).join('\n');
+  const head = headFiles.map((f) => f.code).join('\n');
 
   if (headFiles.length === 0) {
     reporter.fix(SEC, 'SEO component', 'no source file emits head metadata (canonical, OG tags or <title>)', 'add an SEO/head component that every page renders in <head>');
@@ -25,20 +40,10 @@ export async function run({ project, reporter }) {
 
   // Individual tags run whether or not a dedicated component exists — an absent
   // component must not silently skip them.
-  const required = [
-    ['og:image',        /og:image/],
-    ['og:image:width',  /og:image:width/],
-    ['og:image:height', /og:image:height/],
-    ['og:type',         /og:type/],
-    ['og:url',          /og:url/],
-    ['canonical',       /rel=["']canonical["']/],
-  ];
-  for (const [name, re] of required) {
-    if (re.test(head)) reporter.pass(SEC, `meta:${name}`);
-    else               reporter.fix(SEC, `meta:${name}`, 'tag not emitted anywhere in src/', `emit a ${name} tag from the component that renders <head>`);
-  }
+  checkMetaTags(project, reporter, head);
+
   // Anti-pattern: <meta name="keywords"> (ignored by search engines, signals spam)
-  const kw = srcFiles.find((f) => /name=["']keywords["']/.test(f.text));
+  const kw = srcFiles.find((f) => /name=["']keywords["']/.test(f.code));
   if (kw) reporter.fix(SEC, 'no-keywords', `<meta name="keywords"> in ${kw.path} (anti-pattern)`, 'remove the keywords meta');
   else    reporter.pass(SEC, 'no-keywords');
 
@@ -69,6 +74,50 @@ export async function run({ project, reporter }) {
   // Scoped to pages with a canonical link, so OG-template / preview routes (no
   // canonical) don't get flagged for legitimately having no <h1>.
   if (project.hasDist) checkHeadings(project, reporter);
+}
+
+/**
+ * Are the head tags actually emitted? Assert against `dist/` when it exists —
+ * that is the artifact that ships, and it contains no comments, no unreachable
+ * branches and no aspirational TODOs. Source is the fallback for an unbuilt
+ * project, and is matched comment-blanked.
+ *
+ * Presence is judged across the whole build (a tag emitted anywhere counts),
+ * mirroring the source semantics. Coverage is reported separately for the og:*
+ * tags: how many *content* pages omit one. Canonical gets no coverage line —
+ * a content page is *defined* as one carrying a canonical, so it would be
+ * measuring itself.
+ */
+function checkMetaTags(project, reporter, headSrc) {
+  const all = [], content = [];
+  if (project.hasDist) {
+    eachDistHtml(project.root, (rel, html) => {
+      all.push({ rel, html });
+      if (isContentPage(html)) content.push({ rel, html });
+    });
+  }
+
+  if (all.length === 0) {
+    const where = project.hasDist ? 'dist/ has no HTML' : 'no dist/';
+    for (const [name, re] of META_TAGS) {
+      if (re.test(headSrc)) reporter.pass(SEC, `meta:${name}`, `emitted in src/ (${where} — build to check the shipped HTML)`);
+      else                  reporter.fix(SEC, `meta:${name}`, `tag not emitted anywhere in src/ (${where}, so source is all there is to read)`, `emit the ${name} tag from the component that renders <head>`);
+    }
+    return;
+  }
+
+  for (const [name, re] of META_TAGS) {
+    if (!all.some((p) => re.test(p.html))) {
+      reporter.fix(SEC, `meta:${name}`, `not emitted on any of the ${all.length} built page(s)`, `emit the ${name} tag from the component that renders <head>`);
+      continue;
+    }
+    const missing = name === 'canonical' ? [] : content.filter((p) => !re.test(p.html));
+    if (missing.length === 0) {
+      reporter.pass(SEC, `meta:${name}`, `emitted in dist/ (${content.length} content page(s))`);
+    } else {
+      reporter.suggest(SEC, `meta:${name}`, `${missing.length}/${content.length} content page(s) omit it — ${sampleOf(missing.map((p) => p.rel))}`, `emit ${name} on every content page, not just some`);
+    }
+  }
 }
 
 function checkHeadings(project, reporter) {
@@ -104,9 +153,4 @@ function checkHeadings(project, reporter) {
 
 function sampleOf(list, n = 3) {
   return list.slice(0, n).join('; ') + (list.length > n ? ' …' : '');
-}
-
-function pickFirst(paths) {
-  for (const p of paths) if (existsSync(p)) return p;
-  return null;
 }
