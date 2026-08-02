@@ -1,4 +1,4 @@
-# Security
+# Security — Wish BusterZ Rider
 
 ## Reporting a vulnerability
 

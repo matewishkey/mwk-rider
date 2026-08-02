@@ -145,6 +145,7 @@ if (project) {
 
 // URL-only domains
 if (values.url) {
+  reporter.source = 'live';
   const base = values.url.replace(/\/$/, '');
   const strategy = values.strategy ?? 'mobile';
   if (!wanted || wanted.has('live')) {

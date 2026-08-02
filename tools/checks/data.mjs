@@ -24,7 +24,9 @@ export async function run({ project, reporter }) {
   const hasFilter = (rel) => {
     const t = read(rel);
     const inline = /!\s*[\w.]*\bdraft\b/.test(t) && /!\s*[\w.]*\bpreviewOnly\b/.test(t);
-    const helper = /\b\w*[Pp]ublished\s*\(/.test(t);
+    // `.filter(isPublished)` passes the predicate by reference — the idiomatic
+    // form, and the one the comment above already claims to accept.
+    const helper = /\b\w*[Pp]ublished\s*[(,)\]]/.test(t) || /\bfilter\(\s*\w*[Pp]ublished\s*\)/.test(t);
     return inline || helper;
   };
 

@@ -75,7 +75,9 @@ export function hasAttr(attrs, name) {
 // (decorative) and passes; a missing attribute is the WCAG 1.1.1 violation.
 export function imgsMissingAlt(html) {
   const out = [];
-  for (const m of html.matchAll(/<img\b([^>]*)>/gi)) {
+  // `[^>]*` truncates at a `>` inside an attribute value (data-x="a>b"), which
+  // hid the real alt attribute and invented a violation. Consume quoted values.
+  for (const m of html.matchAll(/<img\b((?:"[^"]*"|'[^']*'|[^>])*)>/gi)) {
     const attrs = m[1];
     // Anchor on an attribute-name boundary (start or whitespace), NOT \b — \b
     // matches inside `data-alt`/`data-src`, which would mask a real missing alt.

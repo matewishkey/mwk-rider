@@ -10,6 +10,9 @@ import { join, extname, relative } from 'node:path';
 import { attrValue, hasAttr } from '../lib/html.mjs';
 
 const SEC = 'perf';
+// The hashed-asset rule, as written by any of the common conventions:
+// `/_astro/*`, a renamed build.assets dir, or the full-URL Pages rule form.
+const IMMUTABLE_PATH_RE = /(?:^|\/)_astro\/\*$/;
 
 const SCAN_EXTS = new Set(['.astro', '.tsx', '.jsx', '.html', '.md', '.mdx']);
 const CONTENT_IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.avif']);
@@ -36,7 +39,11 @@ function checkHeaders(project, reporter) {
   try { headersRaw = readFileSync(path, 'utf8'); }
   catch { return null; }
   const blocks = parseHeaders(headersRaw);
-  const astroBlock = blocks.find((b) => b.path === '/_astro/*');
+  // Exact-string matching missed correct configs: a site that renamed the asset
+  // dir (build.assets) or wrote the full-URL Cloudflare Pages rule form was told
+  // it had no rule at all. Match the hashed-asset directory however it's spelled.
+  const astroBlock = blocks.find((b) => IMMUTABLE_PATH_RE.test(b.path))
+                  ?? blocks.find((b) => /\/(?:_astro|assets|chunks|_?build)\/\*/.test(b.path));
   if (!astroBlock) {
     reporter.fix(SEC, '_headers:/_astro/*', 'no /_astro/* rule — content-hashed bundles not marked immutable', 'add a /_astro/* block to public/_headers');
     return;

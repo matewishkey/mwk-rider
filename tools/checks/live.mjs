@@ -7,8 +7,12 @@
 // dist/, or production.
 
 import { transformSmells } from '../lib/cf-image.mjs';
-import { headingLevels, headingAudit } from '../lib/html.mjs';
+import { headingLevels, headingAudit, attrValue } from '../lib/html.mjs';
 import { imageSize } from '../lib/image-size.mjs';
+
+// A host that accepts the connection and never answers used to hang the audit
+// indefinitely — in CI, forever.
+const NET_TIMEOUT_MS = 15_000;
 
 // What a modern browser sends for an image — so a format=auto transform negotiates
 // AVIF/webp and the measured bytes reflect what a real visitor actually downloads.
@@ -172,7 +176,7 @@ async function auditSeo(home, postPath, base, get, head, reporter) {
       // 200 + image/* is necessary but not sufficient: a screenshot of a 404
       // page is *also* a valid 200 image/png (the bug behind wishbusterz-rider#5).
       // Verify the served bytes are a real card by their intrinsic dimensions.
-      await checkOgCard(ogImg, h, reporter);
+      await checkOgCard(ogImg, h, reporter, base);
     }
   }
 }
@@ -186,8 +190,10 @@ async function auditSeo(home, postPath, base, get, head, reporter) {
 // real 1200×630 viewport) can't be told apart from headers/bytes; preventing *that*
 // is the generator's resp.ok() guard — a site-side fix (see BEST-PRACTICES § seo),
 // not something the audit can catch from outside.
-async function checkOgCard(ogImg, html, reporter) {
-  const buf = await fetchBytes(ogImg);
+async function checkOgCard(ogImg, html, reporter, base) {
+  // A relative og:image used to throw inside fetchBytes and be swallowed, so the
+  // check emitted no line at all — indistinguishable from "card is fine".
+  const buf = await fetchBytes(absolutize(ogImg, base));
   const size = buf && imageSize(buf);
   if (!size) return; // format we don't parse (WebP/AVIF/SVG) — leave the resolves pass standing
   const { w, h } = size;
@@ -227,9 +233,12 @@ async function auditImages(home, postPath, base, get, head, reporter) {
     let m;
     while ((m = re.exec(page.text)) !== null) {
       const attrs = m[1];
-      const src = attrs.match(/(?:^|\s)src=(["'`])([^"'`]+)\1/)?.[2];
+      const src = attrValue(attrs, 'src');
       if (!src || isExempt(src)) continue;
-      imgs.push({ src: absolutize(src, base), attrs });
+      // Resolve against the page, not the site root: `images/x.png` on
+      // /blog/hello/ is /blog/hello/images/x.png. Resolving against base gave a
+      // wrong URL in the finding and a 404 that silently voided the byte check.
+      imgs.push({ src: absolutize(src, page.url ?? base), attrs });
     }
   }
 

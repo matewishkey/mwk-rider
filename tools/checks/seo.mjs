@@ -58,9 +58,11 @@ export async function run({ project, reporter }) {
   // Sitemap lastmod (advisory — @astrojs/sitemap defaults to file mtime)
   const cfg = project.astroConfig ?? '';
   if (/serialize\s*:/.test(cfg) && !/lastmod/.test(cfg)) {
-    reporter.fix(SEC, 'sitemap:lastmod', 'custom sitemap serializer present without lastmod', 'emit entry.data.dateModified ?? entry.data.date from the serializer');
-  } else {
+    reporter.suggest(SEC, 'sitemap:lastmod', 'custom sitemap serializer present without lastmod', 'emit entry.data.dateModified ?? entry.data.date from the serializer');
+  } else if (/@astrojs\/sitemap/.test(cfg)) {
     reporter.pass(SEC, 'sitemap:lastmod', '@astrojs/sitemap defaults applied');
+  } else {
+    reporter.skip(SEC, 'sitemap:lastmod', 'no @astrojs/sitemap in astro.config — nothing to check');
   }
 
   // Heading outline on built content pages: exactly one <h1>, no skipped levels.

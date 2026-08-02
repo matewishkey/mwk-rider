@@ -21,7 +21,9 @@ import { eachDistHtml } from '../lib/html.mjs';
 
 const SEC = 'analytics';
 
-const SCAN_EXTS = new Set(['.astro', '.tsx', '.jsx', '.ts', '.js', '.html', '.md', '.mdx']);
+// Markdown is prose: a post that *writes about* gtag() is not a site that ships
+// it. Only files that can actually emit a script tag are scanned.
+const SCAN_EXTS = new Set(['.astro', '.tsx', '.jsx', '.ts', '.js', '.html']);
 
 // Hardcoded Google Analytics / Tag Manager signals — each is something Zaraz is
 // meant to load on your behalf, behind consent. (No bare `G-…` id match: too

@@ -153,7 +153,9 @@ function scanBackgroundImages(text, relPath, projectRoot, findings) {
     if (IT_PREFIX_RE.test(url)) continue;
     if (url.startsWith('data:')) continue;
     const sizeBytes = resolveAssetSize(url, projectRoot);
-    if (sizeBytes != null && sizeBytes < SIZE_WARN_BG) continue;
+    // Unknown size (remote host, or a path we can't resolve locally) is not
+    // evidence of a large file — the documented rule is ">200 KB and untransformed".
+    if (sizeBytes == null || sizeBytes < SIZE_WARN_BG) continue;
     findings.bgNotRouted.push({ file: relPath, line: lineOf(text, m.index), url, sizeBytes });
   }
 }

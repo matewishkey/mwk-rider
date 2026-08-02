@@ -11,6 +11,9 @@ import { isHouseStyle } from './policy.mjs';
 
 export class Reporter {
   constructor({ json = false, quiet = false, strict = false } = {}) {
+    // Offline and live checks share section names (`images`, `perf`, `data`), so
+    // section+name alone collides in --json. `source` tells the two apart.
+    this.source = 'offline';
     this.json = json;
     this.quiet = quiet;
     this.strict = strict;
@@ -70,7 +73,7 @@ export class Reporter {
   }
 
   _record(r) {
-    this.results.push(r);
+    this.results.push({ ...r, source: this.source });
   }
 
   finish() {
@@ -86,9 +89,13 @@ export class Reporter {
     console.log('');
     console.log(`${c.pass} ✅   ${c.fix} 🔧   ${c.block} 🛑   ${c.suggest} 💡   ${c.skip} ⏭`);
 
+    // Only explain the demotion when the 💡 lines it refers to were actually
+    // printed — under --quiet they are hidden, so the footer described findings
+    // the reader could not see.
     const demoted = this.results.filter(r => r.houseStyle).length;
-    if (demoted > 0) {
-      console.log(`${demoted} of the 💡 are [baseline] — this project's house style (Cloudflare, Orama, llms.txt …),`);
+    if (demoted > 0 && !this.quiet) {
+      const is = demoted === 1 ? 'is' : 'are';
+      console.log(`${demoted} of the 💡 ${is} [baseline] — this project's house style (Cloudflare, Orama, llms.txt …),`);
       console.log('not universal practice. Re-run with --strict to treat them as required.');
     }
 

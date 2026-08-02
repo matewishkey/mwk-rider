@@ -1,4 +1,4 @@
-# wishbusterz-rider — dev notes for this repo
+# Wish BusterZ Rider (`wishbusterz-rider`) — dev notes for this repo
 
 This repo is **wishbusterz-rider**: a single on-demand slash command (`/wishbusterz-rider`) that checks an Astro site against baseline best practices. It is *not* a framework — it installs nothing into the sites it audits and never touches their `CLAUDE.md`. You run it when you want a compliance check; it prints findings and suggests fixes.
 

@@ -233,11 +233,20 @@ export async function run({ project, reporter }) {
 // compares numerically — so two-digit minors (6.10) and future majors (7+) pass.
 function atLeast(range, minMajor, minMinor = 0) {
   if (!range) return false;
-  const m = range.match(/(\d+)(?:\.(\d+))?/);
-  if (!m) return false;
-  const major = Number(m[1]);
-  const minor = Number(m[2] ?? 0);
-  return major > minMajor || (major === minMajor && minor >= minMinor);
+  // Non-numeric specifiers carry no version to compare (`latest`, `workspace:*`,
+  // `catalog:`, a git URL). Treat them as satisfied rather than inventing a
+  // failure — the tool can't know, and a false 🔧 is worse than a missed nudge.
+  if (!/\d/.test(range)) return true;
+  // An OR'd range passes if ANY branch does: `^6 || ^7` satisfies a 7 floor.
+  return range.split('||').some((branch) => {
+    const m = branch.match(/(\d+)(?:\.(\d+))?/);
+    if (!m) return false;
+    const major = Number(m[1]);
+    // `22.x` / `7.*` — an unpinned minor can be anything at or above 0.
+    const minorRaw = m[2];
+    const minor = minorRaw == null ? (/^\s*[~^]?\d+\s*$|\.[x*]/.test(branch) ? Infinity : 0) : Number(minorRaw);
+    return major > minMajor || (major === minMajor && minor >= minMinor);
+  });
 }
 
 // Leading major of a version/range string (`^6.0.3` → 6, `>=22.12.0` → 22).
