@@ -10,8 +10,11 @@ cd ~/projects/<some-astro-site>
 node ~/.claude/wishbusterz-rider-tools/audit.mjs            # every offline domain
 node ~/.claude/wishbusterz-rider-tools/audit.mjs -s seo -s images   # subset
 node ~/.claude/wishbusterz-rider-tools/audit.mjs --url https://example.com # add live checks
+node ~/.claude/wishbusterz-rider-tools/audit.mjs --url … --post /wiki/x     # audit that page, not a discovered one
+node ~/.claude/wishbusterz-rider-tools/audit.mjs --url … --strategy desktop # Lighthouse on desktop (default: mobile)
+node ~/.claude/wishbusterz-rider-tools/audit.mjs --strict    # require the house-style baseline too
 node ~/.claude/wishbusterz-rider-tools/audit.mjs --json     # machine-readable
-node ~/.claude/wishbusterz-rider-tools/audit.mjs --quiet    # only findings, no ✅
+node ~/.claude/wishbusterz-rider-tools/audit.mjs --quiet    # hide ✅ lines; findings, 💡 and ⏭ still print
 node ~/.claude/wishbusterz-rider-tools/audit.mjs --help
 ```
 
@@ -20,13 +23,14 @@ node ~/.claude/wishbusterz-rider-tools/audit.mjs --help
 | Domain | Checks |
 |---|---|
 | `modules` | Astro 7+, Node ≥ 22.12, TypeScript ≤ 6.x, baseline integrations, `output: 'static'`, strict TS, `<ClientRouter>`, custom 404, adapter iff `<Image>` under SSR, remotePatterns (if og.config declares a media domain), Astro 7 migration residue (`astro7:experimental`, `astro7:markdown`, `astro7:db`, `astro7:transitions`) |
-| `seo` | SEO component emits canonical + OG meta; no `keywords` anti-pattern; sitemap lastmod; brand fields (if og.config present) |
+| `seo` | Head meta emitted (asserted against `dist/` when built, source otherwise); no `keywords` anti-pattern; `dist/robots.txt` with a `Sitemap:` line; `<lastmod>` in the built sitemap; one `<h1>` per content page; brand fields (if og.config present) |
 | `images` | `<img>` + CSS `background-image` routed through an image transform; no oversized raster in `src/assets/`; no oversized built image in `dist/` |
 | `perf` | `public/_headers` marks `/_astro/*` immutable; content `<img>` carry width/height (CLS) |
 | `analytics` | Flags a hardcoded Google Analytics / GTM snippet in `src/` + `dist/`; the positive "Zaraz loader present" check is live-only |
-| `data` | JSON-LD emitted + a BlogPosting/WebSite helper; `/llms.txt` from `getCollection()` with a draft/preview filter; RSS; Zod-validated content schema |
-| `live` | Only with `--url`: real Cache-Control, served image bytes, rendered SEO + JSON-LD, `/llms.txt` |
+| `data` | JSON-LD parsed out of `dist/` (an Article-family type + `WebSite`, and it must be valid JSON); `/llms.txt` from `getCollection()` with a draft/preview filter; the built RSS feed has items; Zod-validated content schema |
+| `live` | Only with `--url`: real Cache-Control, served image bytes, rendered SEO + JSON-LD, `/llms.txt`. The content page is discovered from the sitemap → homepage links → `/llms.txt`, or forced with `--post` |
 | `lighthouse` | Only with `--url`: measured PageSpeed Insights scores (perf/seo/a11y/best-practices) + Core Web Vitals. Needs a PSI key (see below); skips without one |
+| `browser` | Only with `--url`: what a real browser sees — uncaught JS errors, failed/404 sub-requests, measured CLS, images far larger than their rendered box, heavy third-party origins. Needs `playwright` installed; skips cleanly without it |
 
 It **assumes a baseline stack** and validates compliance — it does not set anything up.
 
@@ -69,6 +73,8 @@ tools/
     reporter.mjs         outcome collection, human/JSON output, exit code
     cf-image.mjs         Cloudflare transform-URL param parsing (shared offline + live)
     html.mjs             dist/served HTML scanning — headings, alt text, content-page gate
+    dist.mjs             read the build output (find + read files under dist/)
+    jsonld.mjs           parse the JSON-LD a page emits; Article-family types
   checks/
     modules.mjs          baseline stack
     seo.mjs              discoverability meta
@@ -78,4 +84,5 @@ tools/
     analytics.mjs        no hardcoded GA/GTM snippet (delivered via Zaraz)
     live.mjs             HTTP checks against a served site (--url)
     lighthouse.mjs       measured PSI scores + Core Web Vitals (--url + key)
+    browser.mjs          real-Chromium runtime checks (--url + playwright)
 ```

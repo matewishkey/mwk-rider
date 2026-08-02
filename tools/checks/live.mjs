@@ -119,7 +119,7 @@ async function auditCache(home, head, reporter) {
           'perf',
           'cache:_astro',
           `Cache-Control "${cc || '(none)'}" — hashed asset not immutable (repeat visits re-validate)`,
-          'ship public/_headers marking /_astro/* "public, max-age=31536000, immutable". NB: a plain `astro dev` server never applies _headers — run against `wrangler dev` of dist/ or the deployed site',
+          'ship public/_headers marking /_astro/* "public, max-age=31536000, immutable". NB: neither `astro dev` nor `astro preview` applies _headers — both serve /_astro/* as no-cache regardless (measured), so this fires against them even when the file is correct and the offline perf:_headers check passes on the same tree. Run against `wrangler dev` of dist/ or the deployed site to judge it',
         );
       }
     }
@@ -179,20 +179,47 @@ async function auditSeo(home, postPath, base, get, head, reporter) {
     'content page emits no Article-family JSON-LD (Article/BlogPosting/NewsArticle/TechArticle…)',
     'emit an Article-family shape per post', { url: postPath });
 
-  const ogImg = h.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/)?.[1];
-  if (ogImg) {
+  const ogImgRaw = h.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/)?.[1];
+  if (ogImgRaw) {
+    const ogImg = rebaseOnAudited(ogImgRaw, h, base);
     const r = await head(ogImg);
     const ct = r.headers?.get?.('content-type') || '';
     if (!(r.ok && r.status === 200 && /image\//.test(ct))) {
-      reporter.fix('seo', 'og:image-resolves', `og:image ${ogImg} → ${r.status ?? r.error} (${ct || 'no content-type'})`, 'the og:image URL must resolve to a real image');
+      reporter.fix('seo', 'og:image-resolves', `og:image ${ogImg} → ${r.status ?? r.error} (${ct || 'no content-type'})`, 'the og:image URL must resolve to a real image', { url: ogImg });
     } else {
-      reporter.pass('seo', 'og:image-resolves', `${ct}`);
+      reporter.pass('seo', 'og:image-resolves', `${ct}`, { url: ogImg });
       // 200 + image/* is necessary but not sufficient: a screenshot of a 404
       // page is *also* a valid 200 image/png (the bug behind wishbusterz-rider#5).
       // Verify the served bytes are a real card by their intrinsic dimensions.
       await checkOgCard(ogImg, h, reporter, base);
     }
   }
+}
+
+/**
+ * Point a self-hosted asset URL at the site being audited.
+ *
+ * og:image is built from the *production* siteUrl, so auditing localhost or a
+ * staging deploy fetched production — or, on a site not yet live, nothing at
+ * all, and the check could never pass. Rebasing only applies when the asset sits
+ * on the page's own declared origin (its canonical/og:url): a genuine separate
+ * media host (R2, a CDN) is fetched exactly as written, because that URL is what
+ * a social scraper will really request.
+ */
+function rebaseOnAudited(assetUrl, html, base) {
+  let asset, audited;
+  try { audited = new URL(base); } catch { return assetUrl; }
+  try { asset = new URL(assetUrl, base); } catch { return assetUrl; }
+  if (asset.origin === audited.origin) return asset.href;
+
+  const declared = html.match(/<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']+)["']/)?.[1]
+                ?? html.match(/<meta[^>]+property=["']og:url["'][^>]+content=["']([^"']+)["']/)?.[1];
+  let declaredOrigin = null;
+  try { declaredOrigin = declared ? new URL(declared, base).origin : null; } catch {}
+  if (declaredOrigin && asset.origin === declaredOrigin) {
+    return new URL(asset.pathname + asset.search, audited.origin).href;
+  }
+  return asset.href;
 }
 
 // A resolvable og:image isn't proof it's a real card. A generator that screenshots
@@ -257,7 +284,10 @@ async function auditImages(home, postPath, base, get, head, reporter) {
   }
 
   if (imgs.length === 0) {
-    reporter.skip('images', 'delivery', 'no content <img> on audited pages — nothing to check');
+    // Name each one. A single "delivery: nothing to check" left routed/cls/alt
+    // absent from the output entirely, which reads as though they passed.
+    const why = 'no content <img> on the audited pages — nothing to check';
+    for (const name of ['routed', 'cls', 'alt', 'bytes']) reporter.skip('images', name, why);
     return;
   }
 

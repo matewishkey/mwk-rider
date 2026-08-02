@@ -82,7 +82,10 @@ export class Reporter {
   suggest(section, name, message, suggestion, at = {}) {
     const houseStyle = at.houseStyle === true;
     this._record({ section, name, outcome: 'suggest', message, fix: suggestion, houseStyle }, at);
-    if (!this.json && !this.quiet) {
+    // --quiet hides ✅ only. A 💡 is a finding and a ⏭ says a check did NOT
+    // run — hiding those made a quiet run look cleaner than it was, and
+    // contradicted what --help and tools/README.md promise.
+    if (!this.json) {
       console.log(`💡 ${section}: ${name}${where(at)} — ${message}${houseStyle ? ' [baseline]' : ''}`);
       if (suggestion) console.log(`     suggestion: ${suggestion}`);
     }
@@ -90,7 +93,7 @@ export class Reporter {
 
   skip(section, name, reason, at = {}) {
     this._record({ section, name, outcome: 'skip', message: reason }, at);
-    if (!this.json && !this.quiet) {
+    if (!this.json) {
       console.log(`⏭  ${section}: ${name}${where(at)} — ${reason}`);
     }
   }
@@ -123,11 +126,8 @@ export class Reporter {
     console.log('');
     console.log(`${c.pass} ✅   ${c.fix} 🔧   ${c.block} 🛑   ${c.suggest} 💡   ${c.skip} ⏭`);
 
-    // Only explain the demotion when the 💡 lines it refers to were actually
-    // printed — under --quiet they are hidden, so the footer described findings
-    // the reader could not see.
     const demoted = this.results.filter(r => r.houseStyle).length;
-    if (demoted > 0 && !this.quiet) {
+    if (demoted > 0) {
       const is = demoted === 1 ? 'is' : 'are';
       console.log(`${demoted} of the 💡 ${is} [baseline] — this project's house style (Cloudflare, Orama, llms.txt …),`);
       console.log('not universal practice. Re-run with --strict to treat them as required.');

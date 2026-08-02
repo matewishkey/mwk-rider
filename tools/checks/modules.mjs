@@ -131,10 +131,16 @@ export async function run({ project, reporter }) {
     reporter.block(SEC, 'astro.config', 'missing', 'create astro.config.mjs');
     return;
   }
-  if (/output\s*:\s*['"]static['"]/.test(cfg)) {
-    reporter.pass(SEC, 'output:static');
+  // `output` defaults to 'static' (Astro configuration reference, verified
+  // 2026-08-02), so omitting it is correct — it was a required finding for
+  // writing less config than necessary. Only an explicit 'server' is a
+  // departure from the baseline, and even that is a legitimate choice.
+  if (/output\s*:\s*['"]server['"]/.test(cfg)) {
+    reporter.fix(SEC, 'output:static', "output: 'server' — the baseline is a fully static build", "set output: 'static' (or drop the option, since static is Astro's default) unless this site genuinely needs on-demand rendering");
+  } else if (/output\s*:\s*['"]static['"]/.test(cfg)) {
+    reporter.pass(SEC, 'output:static', 'explicit');
   } else {
-    reporter.fix(SEC, 'output:static', 'not set to "static"', "set output: 'static' in astro.config.mjs");
+    reporter.pass(SEC, 'output:static', "not set — static is Astro's default");
   }
 
   // --- Astro 7 migration residue -------------------------------------------

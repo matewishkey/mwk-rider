@@ -94,6 +94,11 @@ against a known-good site and a known-bad one.
   library at all → `⏭`. It used to pass on the mere absence of a competitor, so a
   site with no search was reported as "Orama ✅" — a pass for something that
   wasn't there. → `modules: search:engine` (pairs with `data: search:index`)
+- **A fully static build.** `output` defaults to `'static'` (Astro configuration
+  reference, verified 2026-08-02), so *omitting* it is correct and only an
+  explicit `output: 'server'` is a departure. The check used to flag any config
+  that didn't spell it out — a required finding for writing less config than
+  necessary. → `modules: output:static`
 - **Cloudflare adapter only for SSR `<Image>`.** On `output: 'static'` (the
   baseline), `astro:assets`' `<Image>` is optimized at *build time* by Sharp and
   emitted to `dist/` — no adapter exists or is needed. The Cloudflare image

@@ -12,7 +12,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, extname, relative } from 'node:path';
 import { transformSmells } from '../lib/cf-image.mjs';
-import { eachDistHtml, imgsMissingAlt, attrValue } from '../lib/html.mjs';
+import { eachDistHtml, contentImgs, attrValue } from '../lib/html.mjs';
 
 const SEC = 'images';
 
@@ -35,6 +35,14 @@ export async function run({ project, reporter }) {
     transformParams: [],
     transformTotal: 0,
     altMissing: [],
+    // Totals, so "nothing was wrong" and "there was nothing to look at" report
+    // differently. `✅ routed — all content <img> go through a transform` on a
+    // page with no images is a pass for work never done.
+    imgTotal: 0,
+    bgTotal: 0,
+    assetTotal: 0,
+    distImgTotal: 0,
+    altTotal: 0,
   };
 
   walkDir(join(project.root, 'src'), (relPath) => {
@@ -55,16 +63,20 @@ export async function run({ project, reporter }) {
 
   // Report
 
-  if (findings.imgNotRouted.length === 0) {
-    reporter.pass(SEC, 'routed', 'all content <img> go through an image transform');
+  if (findings.imgTotal === 0) {
+    reporter.skip(SEC, 'routed', 'no content <img> in src/ — nothing to check');
+  } else if (findings.imgNotRouted.length === 0) {
+    reporter.pass(SEC, 'routed', `all ${findings.imgTotal} content <img> go through an image transform`);
   } else {
     for (const f of findings.imgNotRouted) {
       reporter.fix(SEC, 'routed', `<img src="${truncate(f.src, 80)}"> not routed through an image transform`, '<Image> from astro:assets (adds width/height too), or a /cdn-cgi/image/width=,format=auto,quality=80/… URL', { file: f.file, line: f.line });
     }
   }
 
-  if (findings.bgNotRouted.length === 0) {
-    reporter.pass(SEC, 'background-image', 'all background-image refs go through an image transform');
+  if (findings.bgTotal === 0) {
+    reporter.skip(SEC, 'background-image', 'no background-image refs to a content image — nothing to check');
+  } else if (findings.bgNotRouted.length === 0) {
+    reporter.pass(SEC, 'background-image', `all ${findings.bgTotal} background-image refs go through an image transform`);
   } else {
     for (const f of findings.bgNotRouted) {
       const sizeLabel = f.sizeBytes != null ? ` (${humanSize(f.sizeBytes)})` : '';
@@ -72,8 +84,10 @@ export async function run({ project, reporter }) {
     }
   }
 
-  if (findings.oversizedAssets.length === 0) {
-    reporter.pass(SEC, 'assets:size', `no PNG/JPG over ${humanSize(SIZE_WARN_ASSET)} in src/assets/`);
+  if (findings.assetTotal === 0) {
+    reporter.skip(SEC, 'assets:size', 'no raster images in src/assets/ — nothing to check');
+  } else if (findings.oversizedAssets.length === 0) {
+    reporter.pass(SEC, 'assets:size', `none of the ${findings.assetTotal} image(s) in src/assets/ is over ${humanSize(SIZE_WARN_ASSET)}`);
   } else {
     for (const f of findings.oversizedAssets) {
       const refLabel = f.references.length === 0 ? 'unused' : `referenced by: ${f.references.slice(0, 3).join(', ')}${f.references.length > 3 ? ` (+${f.references.length - 3} more)` : ''}`;
@@ -90,8 +104,10 @@ export async function run({ project, reporter }) {
   }
 
   if (project.hasDist) {
-    if (findings.oversizedDist.length === 0) {
-      reporter.pass(SEC, 'dist:size', `no built content image over ${humanSize(SIZE_WARN_DIST)} in dist/`);
+    if (findings.distImgTotal === 0) {
+      reporter.skip(SEC, 'dist:size', 'no content images in dist/ — nothing to check');
+    } else if (findings.oversizedDist.length === 0) {
+      reporter.pass(SEC, 'dist:size', `none of the ${findings.distImgTotal} built content image(s) is over ${humanSize(SIZE_WARN_DIST)}`);
     } else {
       for (const f of findings.oversizedDist) {
         reporter.fix(SEC, 'dist:size', `${humanSize(f.sizeBytes)} shipped — over ${humanSize(SIZE_WARN_DIST)}`, 'resize at build (<Image> width=) or serve via an image transform; a hero should be 50–250 KB', { file: f.path });
@@ -118,8 +134,10 @@ export async function run({ project, reporter }) {
 
     // Alt text on content <img> in built HTML (WCAG 1.1.1). `alt=""` = decorative
     // and passes; a missing attribute is the violation.
-    if (findings.altMissing.length === 0) {
-      reporter.pass(SEC, 'alt', 'all content <img> in dist/ carry an alt attribute');
+    if (findings.altTotal === 0) {
+      reporter.skip(SEC, 'alt', 'no content <img> in dist/ — nothing to check');
+    } else if (findings.altMissing.length === 0) {
+      reporter.pass(SEC, 'alt', `all ${findings.altTotal} content <img> in dist/ carry an alt attribute`);
     } else {
       reporter.fix(SEC, 'alt', `${findings.altMissing.length} content <img> in dist/ have no alt attribute (e.g. ${truncate(findings.altMissing[0], 80)})`, 'add alt text (alt="" only if the image is purely decorative); <Image> from astro:assets requires it');
     }
@@ -138,8 +156,9 @@ function scanImgTags(text, relPath, findings) {
     const src = attrValue(m[1], 'src');
     if (!src) continue;
     if (!isContentImageRef(src)) continue;
-    if (IT_PREFIX_RE.test(src)) continue;
     if (src.startsWith('data:') || src.startsWith('blob:')) continue;
+    findings.imgTotal++;
+    if (IT_PREFIX_RE.test(src)) continue;
     findings.imgNotRouted.push({ file: relPath, line: lineOf(text, m.index), src });
   }
 }
@@ -150,8 +169,9 @@ function scanBackgroundImages(text, relPath, projectRoot, findings) {
   while ((m = re.exec(text)) !== null) {
     const url = m[2];
     if (!isContentImageRef(url)) continue;
-    if (IT_PREFIX_RE.test(url)) continue;
     if (url.startsWith('data:')) continue;
+    findings.bgTotal++;
+    if (IT_PREFIX_RE.test(url)) continue;
     const sizeBytes = resolveAssetSize(url, projectRoot);
     // Unknown size (remote host, or a path we can't resolve locally) is not
     // evidence of a large file — the documented rule is ">200 KB and untransformed".
@@ -167,6 +187,7 @@ function scanOversizedAssets(projectRoot, findings) {
   walkDir(assetsDir, (rel) => {
     const ext = extname(rel).toLowerCase();
     if (!CONTENT_IMAGE_EXTS.has(ext)) return;
+    findings.assetTotal++;
     try {
       const sz = statSync(join(projectRoot, rel)).size;
       if (sz > SIZE_WARN_ASSET) candidates.push({ rel, sz });
@@ -202,6 +223,7 @@ function scanDist(projectRoot, findings) {
   walkDir(dist, (rel) => {
     const ext = extname(rel).toLowerCase();
     if (!CONTENT_IMAGE_EXTS.has(ext)) return;
+    findings.distImgTotal++;
     try {
       const sz = statSync(join(projectRoot, rel)).size;
       if (sz > SIZE_WARN_DIST) findings.oversizedDist.push({ path: rel, sizeBytes: sz });
@@ -227,10 +249,11 @@ function scanDistHtml(projectRoot, findings) {
         findings.transformParams.push({ file: rel, url, ...smells });
       }
     }
-    for (const src of imgsMissingAlt(html)) {
+    for (const { src, hasAlt } of contentImgs(html)) {
       if (seenAlt.has(src)) continue;
       seenAlt.add(src);
-      findings.altMissing.push(src);
+      findings.altTotal++;
+      if (!hasAlt) findings.altMissing.push(src);
     }
   });
 }

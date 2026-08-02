@@ -84,6 +84,7 @@ function parseHeaders(text) {
 
 function checkCls(project, reporter) {
   const offenders = [];
+  let scanned = 0;
   walkSource(project.root, (relPath) => {
     if (!SCAN_EXTS.has(extname(relPath).toLowerCase())) return;
     let text;
@@ -95,6 +96,7 @@ function checkCls(project, reporter) {
       const attrs = m[1];
       const src = attrValue(attrs, 'src') ?? '';
       if (!isContentImageRef(src)) continue;
+      scanned++;
       // A *value* is required here, not mere presence: a bare `width` reserves
       // no space, so it cannot prevent the layout shift this check exists for.
       if (attrValue(attrs, 'width') == null || attrValue(attrs, 'height') == null) {
@@ -103,8 +105,10 @@ function checkCls(project, reporter) {
     }
   });
 
-  if (offenders.length === 0) {
-    reporter.pass(SEC, 'cls:img-dimensions', 'all content <img> carry width + height (or use <Image>)');
+  if (scanned === 0) {
+    reporter.skip(SEC, 'cls:img-dimensions', 'no raw content <img> in src/ — nothing to check (<Image> bakes dimensions in)');
+  } else if (offenders.length === 0) {
+    reporter.pass(SEC, 'cls:img-dimensions', `all ${scanned} content <img> carry width + height`);
   } else {
     for (const o of offenders) {
       reporter.fix(SEC, 'cls:img-dimensions', `<img src="${truncate(o.src, 60)}"> lacks width/height → layout shift (CLS)`, 'use <Image> from astro:assets (bakes width/height), or add explicit width + height', { file: o.file, line: o.line });

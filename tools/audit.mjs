@@ -69,7 +69,7 @@ Usage:
   wishbusterz-rider -s lighthouse --url https://example.com   Just the Lighthouse scorecard
   wishbusterz-rider --strict              Treat house-style baseline checks as required too
   wishbusterz-rider --json                Machine-readable output
-  wishbusterz-rider --quiet               Print only findings (skip ✅ lines)
+  wishbusterz-rider --quiet               Hide the ✅ lines (findings, 💡 and ⏭ still print)
 
 Offline domains: ${Object.keys(OFFLINE).join(', ')}
 With --url:      live, lighthouse, browser

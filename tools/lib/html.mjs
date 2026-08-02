@@ -78,24 +78,34 @@ export function hasAttr(attrs, name) {
   return new RegExp(`(?:^|\\s)${name}(?=\\s|=|/|$)`, 'i').test(attrs);
 }
 
-// Content <img> tags with no alt attribute at all. `alt=""` is intentional
-// (decorative) and passes; a missing attribute is the WCAG 1.1.1 violation.
-export function imgsMissingAlt(html) {
+/**
+ * Content <img> tags in a document, as { src, hasAlt }.
+ *
+ * The total matters as much as the offenders: a check that reports "all content
+ * <img> carry an alt attribute" on a page with no images is a pass for work it
+ * never did. Callers count what came back before deciding pass vs skip.
+ */
+export function contentImgs(html) {
   const out = [];
   // `[^>]*` truncates at a `>` inside an attribute value (data-x="a>b"), which
   // hid the real alt attribute and invented a violation. Consume quoted values.
   for (const m of html.matchAll(/<img\b((?:"[^"]*"|'[^']*'|[^>])*)>/gi)) {
     const attrs = m[1];
-    // Anchor on an attribute-name boundary (start or whitespace), NOT \b — \b
-    // matches inside `data-alt`/`data-src`, which would mask a real missing alt.
-    if (hasAttr(attrs, 'alt')) continue;
     // srcset-only images are still content images; fall back to its first URL.
     const src = attrValue(attrs, 'src')
              ?? (attrValue(attrs, 'srcset') ?? '').split(',')[0]?.trim().split(/\s+/)[0]
              ?? '';
     if (!src || /\.(svg|ico)(\?|#|$)|\bfavicon\b/i.test(src)) continue;
     if (src.startsWith('data:') || src.startsWith('blob:')) continue;
-    out.push(src);
+    // Anchor on an attribute-name boundary (start or whitespace), NOT \b — \b
+    // matches inside `data-alt`/`data-src`, which would mask a real missing alt.
+    out.push({ src, hasAlt: hasAttr(attrs, 'alt') });
   }
   return out;
+}
+
+// Content <img> with no alt attribute at all. `alt=""` is intentional
+// (decorative) and passes; a missing attribute is the WCAG 1.1.1 violation.
+export function imgsMissingAlt(html) {
+  return contentImgs(html).filter((i) => !i.hasAlt).map((i) => i.src);
 }

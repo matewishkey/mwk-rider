@@ -288,6 +288,36 @@ const emptyFeed = row(mkBuilt({
 }), 'data', 'data/rss');
 check('  …and a feed that built empty → fix', emptyFeed?.outcome === 'fix', JSON.stringify(emptyFeed));
 
+console.log('a check with nothing to look at skips, and defaults are not defects:');
+// `output` defaults to 'static', so omitting it is correct — this was a
+// required finding for writing less config than necessary.
+function mkConfig(body) {
+  const dir = tmpProject('wishbusterz-rider-out-');
+  writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'fx', type: 'module', dependencies: { astro: '^7.1.6' } }));
+  writeFileSync(join(dir, 'astro.config.mjs'), `export default { ${body} };\n`);
+  mkdirSync(join(dir, 'src', 'pages'), { recursive: true });
+  writeFileSync(join(dir, 'src', 'pages', 'index.astro'), '<p>hi</p>\n');
+  return dir;
+}
+check('output omitted → pass (static is the default)',
+  row(mkConfig('trailingSlash: "never"'), 'modules', 'modules/output-static')?.outcome === 'pass');
+check('  …explicit static → pass', row(mkConfig("output: 'static'"), 'modules', 'modules/output-static')?.outcome === 'pass');
+check('  …explicit server → fix', row(mkConfig("output: 'server'"), 'modules', 'modules/output-static')?.outcome === 'fix');
+
+// "all content <img> go through a transform" on a page with no images is a pass
+// for work never done. Sibling checks already used ⏭ for exactly this.
+const noImgs = mkBuilt({ 'dist/index.html': '<html><body><p>no images here</p></body></html>' });
+for (const [section, id] of [['images', 'images/routed'], ['images', 'images/alt'], ['perf', 'perf/cls-img-dimensions']]) {
+  const r = row(noImgs, section, id);
+  check(`${id} skips when there is nothing to check`, r?.outcome === 'skip', JSON.stringify(r));
+}
+
+// --quiet hides ✅ and nothing else. It used to swallow 💡 and ⏭ too, so a quiet
+// run looked cleaner than it was — and contradicted --help.
+const quiet = spawnSync('node', [AUDIT, '-s', 'images', '--quiet'], { cwd: noImgs, encoding: 'utf8' }).stdout;
+check('--quiet hides ✅ lines', !quiet.includes('✅ images'));
+check('  …and still prints ⏭', quiet.includes('⏭'), quiet.slice(0, 200));
+
 console.log('detection accepts correct variants (the false-positive failure mode):');
 // Each of these was a real defect: a compliant site got a required finding, or a
 // real offender passed. They stay tested so the fix can't silently regress.
