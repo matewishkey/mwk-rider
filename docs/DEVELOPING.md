@@ -48,7 +48,13 @@ baseline means upgrading the fixture in the same commit.
 - **Manual offline:** `node tools/audit.mjs` run *inside* `examples/_fixture-i18n/`. No
   flag runs all six offline domains; `-s <name>` scopes to one. The fixture should return
   `0 🔧 / 0 🛑` — `💡` suggestions are fine, they don't count. If the fixture is flagged,
-  the tool has a bug (or the fixture drifted).
+  the tool has a bug (or the fixture drifted). Check **both** modes: the fixture is fully
+  compliant, so `--strict` must be clean too.
+
+- **The severity split.** `tools/lib/policy.mjs` decides which checks are universal and
+  which are house style; house-style findings demote to `💡 [baseline]` unless `--strict`.
+  A new check that isn't classified there defaults to universal — i.e. it will fail the
+  build of every stranger who doesn't share the opinion. Classify deliberately.
 
 - **Live (`--url`):** `node tools/audit.mjs --url http://localhost:4321` — HTTP checks of
   the served site. Cache-header checks need a prod-like server (`wrangler dev` of `dist/`,
@@ -66,7 +72,9 @@ baseline means upgrading the fixture in the same commit.
 
 - [ ] If any `tools/**` changed: `node tools/test.mjs` passes.
 - [ ] If any `tools/**` changed: `node tools/audit.mjs` inside `examples/_fixture-i18n/`
-      is `0 🔧 / 0 🛑`.
+      is `0 🔧 / 0 🛑`, in default **and** `--strict`.
+- [ ] If a check was added: it's classified in `tools/lib/policy.mjs`, and sanity-checked
+      against an off-baseline site so you can see which mode it lands in.
 - [ ] If `tools/checks/*.mjs` changed: also run it against a real site — drift there is
       expected and informational, and it's how you confirm the check fires in the wild.
 - [ ] If `commands/td-rider.md` or `install.sh` changed: re-run `./install.sh`, then

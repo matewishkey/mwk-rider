@@ -12,6 +12,56 @@ An on-demand best-practices auditor for **Astro** sites. One slash command (`/td
 audit complete — 1 finding to address (exit 1).
 ```
 
+## Quickstart
+
+No install, no dependencies, no API key. From the root of any Astro project:
+
+```bash
+git clone --depth 1 https://github.com/mergodon/wishbusterz-rider.git /tmp/rider
+npm run build          # optional, but the image + perf checks read dist/
+node /tmp/rider/tools/audit.mjs
+```
+
+That's the whole thing. You get findings like:
+
+```
+🔧 perf: cls:img-dimensions (src/pages/index.astro:140) — <img src="/shot.png"> lacks width/height → layout shift (CLS)
+     fix: use <Image> from astro:assets (bakes width/height), or add explicit width + height
+🔧 data: jsonld:emitted — no <script type="application/ld+json"> in the SEO component
+     fix: emit JSON-LD structured data from the SEO component
+🔧 data: content:schema — content collection has no Zod schema
+     fix: define a Zod schema in src/content.config.ts
+
+16 ✅   5 🔧   0 🛑   12 💡   0 ⏭
+12 of the 💡 are [baseline] — this project's house style (Cloudflare, Orama, llms.txt …),
+not universal practice. Re-run with --strict to treat them as required.
+audit complete — 5 findings to address (exit 1).
+```
+
+*(That's a real run against an off-baseline Astro 5 site — not a mock-up.)*
+
+**Want measured PageSpeed scores too?** One free API key ([2 minutes, no billing](https://developers.google.com/speed/docs/insights/v5/get-started)) against a publicly reachable URL:
+
+```bash
+export PAGESPEED_API_KEY=…
+node /tmp/rider/tools/audit.mjs -s lighthouse --url https://your-site.com
+```
+
+See [`.env.example`](.env.example) for every optional key, and [`.github/workflows/audit.yml`](.github/workflows/audit.yml) for a copy-paste CI job.
+
+## Required vs suggested
+
+This tool ships an **opinionated baseline** — Cloudflare delivery, Orama search, Zaraz analytics, RSS + `llms.txt` endpoints, a particular file layout. Those are defensible choices, but your site isn't *broken* for making different ones.
+
+So by default only **universal practice** is required (`🔧`): missing canonical/OG meta, images without dimensions, no structured data, oversized assets, unschema'd content collections, Astro 7 config that will break your build. Everything that's just house style reports as `💡 … [baseline]` and doesn't fail the run.
+
+```bash
+node audit.mjs             # universal practice only — 5 🔧, 12 💡 on a typical site
+node audit.mjs --strict    # require the full baseline too — 17 🔧
+```
+
+Use `--strict` when you've adopted the baseline deliberately and want it enforced. What counts as which — and why — is one readable table in [`tools/lib/policy.mjs`](tools/lib/policy.mjs); disagree with a call and it's a one-line edit.
+
 ## What it checks
 
 | Domain | What it looks for |

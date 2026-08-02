@@ -19,6 +19,21 @@ it never sets anything up or migrates.
 **Severities.** 🔧 fix = required, fails the run · 🛑 = needs a human decision ·
 💡 = advisory suggestion, never fails · ⏭ = not testable in this mode.
 
+**Universal vs house style.** Not every practice here binds every Astro site.
+A check is **universal** when ignoring it means a real defect — a broken build, a
+measurable performance or accessibility problem, or missing SEO fundamentals
+every crawler and social preview depends on. It's **house style** when a
+reasonable site could make a different call and still be well built: which search
+library, which host's cache-header file, whether there's an RSS or `llms.txt`
+endpoint at all.
+
+By default only universal checks are required; house-style ones report as
+`💡 … [baseline]` and don't fail the run. `--strict` requires everything, which
+is the right mode once you've adopted the baseline deliberately. The
+classification is one table in `tools/lib/policy.mjs` — **when you add a
+practice, classify it there too**, or it silently defaults to universal and
+starts failing strangers' builds.
+
 ## How we add a practice
 
 When a reporter repo hits a problem worth preventing everywhere:
@@ -30,8 +45,12 @@ When a reporter repo hits a problem worth preventing everywhere:
 3. **Bake the check** into `tools/checks/<domain>.mjs`. Reuse `tools/lib/`
    helpers; keep detection precise so it doesn't false-positive on a legitimate
    variant (e.g. per-locale naming, a factored predicate helper).
+3b. **Classify it** in `tools/lib/policy.mjs` — universal practice, or this
+   project's house style? Unclassified means universal, which means it fails the
+   build of every stranger who doesn't share the opinion. Ask: could a
+   well-built Astro site reasonably do this differently?
 4. **Verify.** `node tools/audit.mjs` in `examples/_fixture-i18n/` must stay
-   `0 🔧`, and run it against at least one real site (drift there is expected and
+   `0 🔧` (in both default and `--strict`), and run it against at least one real site (drift there is expected and
    informational — it's how we confirm the check fires on the wild case).
 5. **Ship + close** the reporting issue. The check is now permanent.
 

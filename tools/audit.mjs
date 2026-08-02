@@ -36,6 +36,7 @@ const { values } = parseArgs({
     url:      { type: 'string' },
     post:     { type: 'string' },
     strategy: { type: 'string' },
+    strict:   { type: 'boolean' },
     json:     { type: 'boolean' },
     quiet:    { type: 'boolean' },
     help:     { type: 'boolean', short: 'h' },
@@ -53,6 +54,7 @@ Usage:
   td-rider --url … --strategy desktop   Lighthouse on desktop (default: mobile)
   td-rider --url … --post /blog/x       Audit a specific page live
   td-rider -s lighthouse --url https://site   Just the Lighthouse scorecard
+  td-rider --strict              Treat house-style baseline checks as required too
   td-rider --json                Machine-readable output
   td-rider --quiet               Print only findings (skip ✅ lines)
 
@@ -62,6 +64,10 @@ With --url:      live, lighthouse, google
 
 Note: --url works from any directory — offline domains need an Astro project in cwd,
 but a live/lighthouse run only needs the URL.
+
+By default only universal Astro/SEO/perf practice is required. Checks that encode this
+project's baseline (Cloudflare delivery, Orama search, RSS/llms.txt, view transitions)
+report as 💡 [baseline] and don't fail the run — pass --strict to require them.
 
 Outcomes:
   ✅  pass                    🔧  fix it (mechanical, required)
@@ -80,7 +86,7 @@ if (!project && !values.url) {
   process.exit(2);
 }
 
-const reporter = new Reporter({ json: values.json, quiet: values.quiet });
+const reporter = new Reporter({ json: values.json, quiet: values.quiet, strict: values.strict });
 const wanted = values.section?.length ? new Set(values.section) : null;
 
 // Offline domains (skip if cwd isn't an Astro project but a --url run was requested)

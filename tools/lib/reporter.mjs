@@ -7,12 +7,21 @@
 //   suggest 💡  optional / nice-to-have, not required (advisory → exit 0)
 //   skip    ⏭  not run / not testable here
 
+import { isHouseStyle } from './policy.mjs';
+
 export class Reporter {
-  constructor({ json = false, quiet = false } = {}) {
+  constructor({ json = false, quiet = false, strict = false } = {}) {
     this.json = json;
     this.quiet = quiet;
+    this.strict = strict;
     this.results = [];
     this.errors = [];
+  }
+
+  // Outside --strict, a house-style finding is advice, not a defect: it becomes
+  // 💡 and stops failing the run. See lib/policy.mjs for what counts and why.
+  _demoted(section, name) {
+    return !this.strict && isHouseStyle(section, name);
   }
 
   pass(section, name, message = '') {
@@ -23,6 +32,7 @@ export class Reporter {
   }
 
   fix(section, name, message, fix) {
+    if (this._demoted(section, name)) return this.suggest(section, name, message, fix, true);
     this._record({ section, name, outcome: 'fix', message, fix });
     if (!this.json) {
       console.log(`🔧 ${section}: ${name} — ${message}`);
@@ -31,6 +41,7 @@ export class Reporter {
   }
 
   block(section, name, message, fix) {
+    if (this._demoted(section, name)) return this.suggest(section, name, message, fix, true);
     this._record({ section, name, outcome: 'block', message, fix });
     if (!this.json) {
       console.log(`🛑 ${section}: ${name} — ${message}`);
@@ -38,10 +49,10 @@ export class Reporter {
     }
   }
 
-  suggest(section, name, message, suggestion) {
-    this._record({ section, name, outcome: 'suggest', message, fix: suggestion });
+  suggest(section, name, message, suggestion, houseStyle = false) {
+    this._record({ section, name, outcome: 'suggest', message, fix: suggestion, houseStyle });
     if (!this.json && !this.quiet) {
-      console.log(`💡 ${section}: ${name} — ${message}`);
+      console.log(`💡 ${section}: ${name} — ${message}${houseStyle ? ' [baseline]' : ''}`);
       if (suggestion) console.log(`     suggestion: ${suggestion}`);
     }
   }
@@ -74,6 +85,12 @@ export class Reporter {
     const c = this._counts();
     console.log('');
     console.log(`${c.pass} ✅   ${c.fix} 🔧   ${c.block} 🛑   ${c.suggest} 💡   ${c.skip} ⏭`);
+
+    const demoted = this.results.filter(r => r.houseStyle).length;
+    if (demoted > 0) {
+      console.log(`${demoted} of the 💡 are [baseline] — this project's house style (Cloudflare, Orama, llms.txt …),`);
+      console.log('not universal practice. Re-run with --strict to treat them as required.');
+    }
 
     if (this.errors.length > 0) {
       const n = this.errors.length;

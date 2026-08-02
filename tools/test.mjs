@@ -93,7 +93,7 @@ function mkProject({ output, withImage, withAdapter }) {
   return dir;
 }
 function adapterResult(opts) {
-  const { json } = runJson(mkProject(opts), ['-s', 'modules']);
+  const { json } = runJson(mkProject(opts), ['-s', 'modules', '--strict']);
   return json?.results.find(r => r.name === 'adapter:cloudflare') ?? null;
 }
 const staticImg = adapterResult({ output: 'static', withImage: true, withAdapter: false });
@@ -113,12 +113,16 @@ function mkLegacyProject({ deps = {}, config = '', src = '' } = {}) {
     dependencies: { astro: '^6.4.2', ...deps },
   }));
   writeFileSync(join(dir, 'astro.config.mjs'), `export default { output: 'static', ${config} };\n`);
+  // Satisfy the *universal* checks so what's left is purely house style — that's
+  // what makes the "default mode exits 0" assertion below mean anything.
+  writeFileSync(join(dir, 'tsconfig.json'), JSON.stringify({ extends: 'astro/tsconfigs/strict' }));
   mkdirSync(join(dir, 'src', 'pages'), { recursive: true });
   writeFileSync(join(dir, 'src', 'pages', 'index.astro'), src || `<p>hi</p>\n`);
+  writeFileSync(join(dir, 'src', 'pages', '404.astro'), `<p>not found</p>\n`);
   return dir;
 }
 function modResult(opts, name) {
-  const { json } = runJson(mkLegacyProject(opts), ['-s', 'modules']);
+  const { json } = runJson(mkLegacyProject(opts), ['-s', 'modules', '--strict']);
   return json?.results.find(r => r.name === name) ?? null;
 }
 
@@ -155,6 +159,27 @@ const transitions = modResult({
 }, 'astro7:transitions');
 check('removed astro:transitions internal → fix', transitions?.outcome === 'fix', JSON.stringify(transitions));
 check('  …and names the API', /TRANSITION_BEFORE_SWAP/.test(transitions?.message ?? ''), transitions?.message);
+
+console.log('house-style checks demote to 💡 unless --strict:');
+// A stranger's Astro site should see real defects, not "you're not us". Universal
+// checks keep their severity in both modes; baseline ones only bite under --strict.
+const legacyDir = mkLegacyProject({});
+const loose = runJson(legacyDir, ['-s', 'modules']);
+const strict = runJson(legacyDir, ['-s', 'modules', '--strict']);
+const find = (r, n) => r.json?.results.find(x => x.name === n) ?? null;
+
+const looseVer = find(loose, 'astro:version');
+check('default: astro:version → suggest, flagged houseStyle',
+  looseVer?.outcome === 'suggest' && looseVer?.houseStyle === true, JSON.stringify(looseVer));
+check('--strict: astro:version → fix', find(strict, 'astro:version')?.outcome === 'fix');
+check('default exits 0 when only house-style findings remain', loose.code === 0, `exit ${loose.code}`);
+check('--strict exits 1 on the same project', strict.code === 1, `exit ${strict.code}`);
+
+// A universal check must NOT be demoted — that would hide real defects.
+const universal = runJson(mkLegacyProject({ config: `experimental: { rustCompiler: true }` }), ['-s', 'modules']);
+const exp = find(universal, 'astro7:experimental');
+check('default: astro7:experimental stays a fix (universal)',
+  exp?.outcome === 'fix' && !exp?.houseStyle, JSON.stringify(exp));
 
 console.log('');
 if (failures === 0) { console.log('PASS — all assertions ok'); process.exit(0); }
