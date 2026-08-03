@@ -202,7 +202,7 @@ install.sh                   symlink the skill, the command, the tools and the
 
 ## Contributing
 
-See [`CONTRIBUTING.md`](CONTRIBUTING.md). The short version: `node tools/test.mjs` is the gate, a new check needs both test halves (stays quiet on the compliant fixture **and** fires on a known-bad project), and it must be classified in [`tools/lib/policy.mjs`](tools/lib/policy.mjs) or it will start failing strangers' builds.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md). The short version: `node tools/test.mjs` is the gate, a new check needs both test halves (stays quiet on the compliant example sites **and** fires on a known-bad project), it must be classified in [`tools/lib/policy.mjs`](tools/lib/policy.mjs) or it will start failing strangers' builds, and anything that moves the baseline updates **both** `examples/` sites in the same commit.
 
 Security issues: please use [private reporting](SECURITY.md), not a public issue.
 

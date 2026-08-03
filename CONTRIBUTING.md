@@ -18,7 +18,9 @@ node tools/test.mjs          # the gate — must pass
 
 ## The two rules that matter
 
-**1. A new check needs both halves of a test.** `tools/test.mjs` asserts that checks stay quiet on the compliant fixture in `examples/_fixture-i18n/` *and* that each one actually fires on a purpose-built known-bad project. The fixture alone proves nothing: a check that is broken and never fires passes the fixture just as happily as one that works.
+**1. A new check needs both halves of a test.** `tools/test.mjs` asserts that checks stay quiet on the two compliant example sites — `examples/_fixture-i18n/` and `examples/starter/` — *and* that each one actually fires on a purpose-built known-bad project. A compliant site alone proves nothing: a check that is broken and never fires passes it just as happily as one that works.
+
+And if your change moves the baseline, **both example sites are upgraded in the same commit**. `examples/starter/` is what `/rider` copies to create a site, so a starter that has fallen behind the checks ships non-compliant sites to people who trusted it.
 
 **2. A new check must be classified in `tools/lib/policy.mjs`.** Is it universal practice, or this project's house style? Anything unclassified defaults to universal, which means it becomes a required finding that fails the build of every stranger who doesn't share the opinion. Ask: *could a well-built Astro site reasonably do this differently?* If yes, it's house style — it reports as `💡 [baseline]` and only bites under `--strict`.
 
