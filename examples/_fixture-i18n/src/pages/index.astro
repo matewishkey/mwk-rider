@@ -12,12 +12,12 @@ const posts = (await getCollection('blog'))
   .sort((a, b) => b.data.date.getTime() - a.data.date.getTime());
 ---
 <RootLayout>
-  <h1>wishbusterz-rider · i18n fixture (EN)</h1>
+  <h1>rider · i18n fixture (EN)</h1>
   <!-- One real content image, so the images domain and perf CLS check have
        something to judge. <Image> optimizes at build time and bakes in
        width/height, which is the practice the checks encode. -->
   <Image src={hero} alt="Fixture hero — a gradient placeholder" width={800} height={500} />
-  <p>Multi-locale (English + Hungarian) test bed for the wishbusterz-rider contract.
+  <p>Multi-locale (English + Hungarian) test bed for the rider contract.
     Switch to <a href="/hu">Magyar</a> to see the same site in Hungarian.</p>
 
   <SearchBox placeholder="Search English posts…" />

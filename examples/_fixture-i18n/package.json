@@ -1,9 +1,9 @@
 {
-  "name": "wishbusterz-rider-fixture-i18n",
+  "name": "rider-fixture-i18n",
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Multi-locale Astro 7 fixture (en + hu) that exercises every wishbusterz-rider contract template plus \u00a718 multi-locale patterns. Local-only \u2014 never deployed.",
+  "description": "Multi-locale Astro 7 fixture (en + hu) that exercises every rider contract template plus \u00a718 multi-locale patterns. Local-only \u2014 never deployed.",
   "engines": {
     "node": ">=22.12.0"
   },

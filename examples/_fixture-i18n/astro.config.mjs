@@ -11,9 +11,9 @@ import { postLastmods, lastmodSerializer } from './scripts/sitemap-lastmod.mjs';
 // crawler what changed.
 const lastmods = postLastmods(process.cwd(), { defaultLocale: 'en' });
 
-// _fixture-i18n — the wishbusterz-rider multi-locale test bed (contract.
+// _fixture-i18n — the rider multi-locale test bed (contract.
 // Two locales: en (default at root) + hu (at /hu/). Local-only fixture;
-// no R2 bucket, no real deploy. Used by /wishbusterz-rider-preview to drive
+// no R2 bucket, no real deploy. Used by /rider-preview to drive
 // localhost validation of the multi-locale stack before patterns get
 // promoted to templates/ and shipped to managed sites.
 export default defineConfig({
