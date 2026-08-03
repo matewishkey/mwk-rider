@@ -66,6 +66,23 @@ the alternative is a starter that quietly stops complying with the tool that shi
   the tool has a bug (or the fixture drifted). Check **both** modes: the fixture is fully
   compliant, so `--strict` must be clean too.
 
+- **Dogfooding: run it against a real site you did not write for it.** The two examples
+  are compliant *by construction*, so they can only ever prove a check stays quiet. The
+  synthetic known-bad projects prove it fires on a shape you thought of. Neither catches
+  the thing that actually goes wrong, which is a check firing on correct code in a shape
+  nobody anticipated.
+
+  Round 3 (2026-08-03, against `wishbusterz-web` and `cypruspokerbrisbane-web`) is the
+  example: the new quote lint put 19 findings on one site, and every one was a possessive
+  apostrophe inside a quoted YAML description — frontmatter is not prose, and `’` is not
+  a quotation mark. Both fixed, both now regression-tested. Nothing in the fixture, the
+  starter, or the synthetic cases could have shown that. The same round confirmed
+  `perf: font:styles` firing correctly on a real site and `perf: embed:eager` staying
+  quiet on one that had already moved its Maps iframe behind a facade.
+
+  **Audit those repos, never edit them.** A checkout next door is not permission; anything
+  found goes back as an issue filed into that repo.
+
 - **The severity split.** `tools/lib/policy.mjs` decides which checks are universal and
   which are house style; house-style findings demote to `💡 [baseline]` unless `--strict`.
   A new check that isn't classified there defaults to universal — i.e. it will fail the

@@ -125,6 +125,30 @@ function designEvidence(html) {
 }
 
 /**
+ * DOUBLE directional quotes only.
+ *
+ * Round dogfood 3 caught the alternative: including `’` matched every possessive
+ * apostrophe in English prose, so `description: "…everyone’s been waiting for!"`
+ * was a finding on 19 lines of a real site. An apostrophe is not a quotation
+ * mark, and the ambiguity these engines disagree about is a double quote's
+ * direction.
+ */
+const DIRECTIONAL_DOUBLE = /[„“”«»]/;
+
+/**
+ * The body after YAML frontmatter, and the line number it starts on.
+ *
+ * Frontmatter is YAML, not prose — no markdown engine smart-quotes it, and its
+ * values are *delimited* by straight quotes, so scanning it guarantees a hit on
+ * any post whose description contains a curly apostrophe. Same round-3 finding.
+ */
+function withoutFrontmatter(text) {
+  const m = text.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/);
+  if (!m) return { body: text, offset: 0 };
+  return { body: text.slice(m[0].length), offset: m[0].split('\n').length - 1 };
+}
+
+/**
  * Straight quotes on a line that also uses directional ones — the exact input
  * two smart-quote engines resolve differently.
  *
@@ -153,15 +177,16 @@ function checkAmbiguousQuotes(project, reporter) {
     let text;
     try { text = readFileSync(join(project.root, file), 'utf8'); } catch { continue; }
     scanned++;
+    const { body, offset } = withoutFrontmatter(text);
     let inFence = false;
-    text.split('\n').forEach((line, i) => {
+    body.split('\n').forEach((line, i) => {
       // Fenced code is not prose and no engine touches its quotes.
       if (/^\s*(```|~~~)/.test(line)) { inFence = !inFence; return; }
       if (inFence) return;
-      const withoutCode = line.replace(/`[^`]*`/g, '');
-      if (!/"/.test(withoutCode)) return;
-      if (!/[„“”«»‚‘’]/.test(withoutCode)) return;
-      hits.push({ file, line: i + 1, text: withoutCode.trim() });
+      const prose = line.replace(/`[^`]*`/g, '');
+      if (!/"/.test(prose)) return;
+      if (!DIRECTIONAL_DOUBLE.test(prose)) return;
+      hits.push({ file, line: offset + i + 1, text: prose.trim() });
     });
   }
 

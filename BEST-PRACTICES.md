@@ -844,19 +844,22 @@ The queue. Each becomes a real check when a reporter hits it or we decide it's
 worth it — following *How we add a practice* above. Listed so we don't lose them.
 
 **The live queue is the issue tracker**, not this list:
-[wishbusterz/rider issues](https://github.com/wishbusterz/rider/issues). Six came
-in from audited sites and were re-verified against the current check set on
-2026-08-03 — eager third-party embeds, `dist:size` flagging srcset rungs, CSS
+[wishbusterz/rider issues](https://github.com/wishbusterz/rider/issues). The six
+that came in from audited sites were all closed on 2026-08-03 by shipped checks —
+eager third-party embeds, `dist:size` flagging srcset rungs, CSS
 `background-image` (no srcset, no lazy loading), the two remaining font-hygiene
 traps, cross-origin `preconnect`, and the two Astro 7 changes that build clean and
 ship wrong. What is below is the older, quieter half.
 
-- **`compressHTML: 'jsx'` whitespace regressions (Astro 7).** v7 changed the
-  default from `true` to `'jsx'`, so whitespace between inline elements is
-  stripped by JSX rules — `<span>hello</span><em>world</em>` now renders
-  "helloworld". Real but invisible to static analysis: telling a deliberate
-  `{" "}` from a swallowed space needs rendered-output diffing against a v6
-  build. Caught by eye or by the live check, not by a config assertion.
+- **Astro scoped CSS does not reach `innerHTML`-injected DOM.** A component's
+  scoped styles are keyed on a `data-astro-cid-*` attribute the compiler stamps
+  on markup it emits; nodes built at runtime and inserted with `innerHTML` carry
+  no such attribute, so the rules simply do not apply. It fails silently and
+  completely — cypruspokerbrisbane shipped unstyled search rows and an entirely
+  unstyled `/search` page this way. The fix is `<style is:global>` namespaced
+  under a unique class. Not checked: telling a legitimate `innerHTML` from one
+  that needed styling means knowing what the injected markup is, which is a
+  runtime question. Worth knowing about; not worth a false positive.
 - **`src/fetch.ts` reserved (Astro 7).** Advanced routing is on by default and
   reserves the filename; a pre-existing `src/fetch.ts` that means something else
   must be renamed or `fetchFile` configured. Not checked because a *legitimate*
@@ -870,7 +873,13 @@ ship wrong. What is below is the older, quieter half.
   `rel="alternate" hreflang=…` (+ `x-default`); single-locale posts should omit
   the block entirely. The fixture smoke test checks this; the audit doesn't yet.
 - **Responsive `srcset`/`sizes`.** Large content images should ship responsive
-  variants, not a single fixed width.
+  variants, not a single fixed width. Partly covered now from the other side:
+  `images: dist:size` reads the ladders out of the built HTML and judges them by
+  their smallest rung, `images: background-image:fixed-width` flags a CSS
+  background that cannot have a ladder at all, and `browser:
+  images:rendered-size` names an overstated `sizes` when it measures one. What is
+  still missing is the positive assertion — *this large image has no `srcset` and
+  should*.
 - **Offline heading scan beyond the canonical gate (see also `headings:order`,
   which now names the component rather than the built page).** Today the offline outline
   check only inspects pages with a `<link rel="canonical">`; a page that should

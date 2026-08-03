@@ -917,6 +917,12 @@ check('  …while straight quotes alone are not ambiguous',
   quoteRow('---\ntitle: t\n---\n\nA "bespoke" service.\n')?.outcome === 'pass');
 check('  …and a fenced code block is not prose',
   quoteRow('---\ntitle: t\n---\n\nSome „prose”.\n\n```js\nconst a = "x";\n```\n')?.outcome === 'pass');
+// Both found by dogfood round 3, which put 19 findings on one real site — every
+// one of them a possessive apostrophe inside a quoted YAML description.
+check('  …nor is YAML frontmatter, whose values are delimited by straight quotes',
+  quoteRow('---\ndescription: "the final everyone’s been waiting for"\n---\n\nPlain body.\n')?.outcome === 'pass');
+check('  …and an apostrophe is not a quotation mark',
+  quoteRow('---\ntitle: t\n---\n\nHere’s the "seating chart" for day one.\n')?.outcome === 'pass');
 
 // A CSS background gets neither srcset nor lazy loading, so a pinned width is
 // what every device downloads. tasmanvisa-web had QuoteCTA pinned at width=1600
