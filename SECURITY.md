@@ -14,7 +14,7 @@ This tool is designed to be pointed at **projects you may not control** — that
 
 **It never writes to the audited project.** The tool only reads. It creates no files, modifies nothing, and installs nothing.
 
-**It makes no network requests unless you pass `--url`.** The six offline domains are entirely local. With `--url`, it fetches the URL you give it (and assets that page references) with a browser-like `Accept` header, and every request has a timeout.
+**It makes no network requests unless you pass `--url`.** The seven offline domains are entirely local. With `--url`, it fetches the URL you give it (and assets that page references) with a browser-like `Accept` header, and every request has a timeout.
 
 ## Credentials
 

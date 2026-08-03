@@ -186,8 +186,8 @@ tools/
   audit.mjs                  entry: detect project, run domains, report
   test.mjs                   the gate: fixture + known-bad synthetic projects
   checks/{modules,seo,images,perf,data,analytics,content,live,lighthouse,browser}.mjs
-  lib/{project,reporter,policy,rules,cf-image,html,dist,jsonld,image-size,
-       src-scan,untrusted,analytics-signals,search-engines}.mjs
+  lib/{project,reporter,policy,rules,cf-image,html,dist,headers,jsonld,image-size,
+       src-scan,untrusted,analytics-signals,search-engines,embed-hosts,fonts-config}.mjs
 examples/starter/            the reference site: single-locale, compliant under
                              --strict, and what `/rider` copies to create a site
 examples/_fixture-i18n/      a compliant multi-locale Astro site — the harder

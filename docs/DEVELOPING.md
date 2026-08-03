@@ -96,6 +96,15 @@ the alternative is a starter that quietly stops complying with the tool that shi
   the offline gate. Without a key each leg `⏭ skips` and the run still exits 0. Lighthouse
   lab scores are noisy; re-run before trusting a number.
 
+  **The key is provisioned on the dev box** — `$PAGESPEED_API_KEY`, in `~/.secrets`, with
+  `mergodon/td-sops` (`apps/td-rider.enc.env`) as the record. Rotate in both. It was absent
+  until 2026-08-03, and that gap hid a real bug for a whole release: the diagnostics were
+  written against a hand-built response, and the first live call showed Lighthouse had
+  **renamed the audit ids** out from under them (`lcp-discovery-insight` etc.). A renamed
+  id does not error — it produces a permanent `⏭`, which reads exactly like "nothing to
+  report". **Any check that parses a third-party payload has to be run against the real
+  API at least once**; a fixture only proves you can parse your own assumptions.
+
 - **Runtime smoke (fixture-specific):** `node examples/_fixture-i18n/scripts/smoke.mjs` —
   Playwright against a live dev server (routes, SEO, search, locale boundaries).
 
