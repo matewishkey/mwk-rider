@@ -749,6 +749,24 @@ check('  …and inside <noscript> → pass',
 check('  …and a same-origin iframe is not the tool\'s business',
   embedRow({ 'dist/index.html': PAGE('<iframe src="/widgets/toc.html"></iframe>') })?.outcome === 'pass');
 
+// A CSS background gets neither srcset nor lazy loading, so a pinned width is
+// what every device downloads. tasmanvisa-web had QuoteCTA pinned at width=1600
+// for a 393px viewport: ~1.1 MB on the home page, audited `images ✅ all`.
+console.log('a CSS background can use neither srcset nor lazy loading:');
+const bgRow = (css) => runJson(mkBuilt({ 'src/components/X.astro': css }), ['-s', 'images', '--strict'])
+  .json?.results.find(r => r.id === 'images/background-image-fixed-width') ?? null;
+
+const pinned = bgRow('<style>.cta { background-image: url("/cdn-cgi/image/width=1600,format=auto/hero.jpg"); }</style>');
+check('a background pinned to width=1600 → fix, naming the width',
+  pinned?.outcome === 'fix' && /width=1600/.test(pinned.message ?? ''), JSON.stringify(pinned));
+check('  …the ?w= and /w_N/ spellings too',
+  bgRow('<style>.a { background: url("https://media.x.test/a.jpg?w=1600"); }</style>')?.outcome === 'fix'
+  && bgRow('<style>.b { background-image: url("https://res.x.test/w_1280/a.jpg"); }</style>')?.outcome === 'fix');
+check('  …while image-set() is exempt (it does DPR selection at least)',
+  bgRow('<style>.c { background-image: image-set(url("/cdn-cgi/image/width=1600/a.jpg") 1x, url("/cdn-cgi/image/width=3200/a.jpg") 2x); }</style>')?.outcome === 'pass');
+check('  …and a small decorative texture is not worth a finding',
+  bgRow('<style>.d { background-image: url("/cdn-cgi/image/width=320,format=auto/dots.png"); }</style>')?.outcome === 'pass');
+
 // Cross-origin images. tasmanvisa-web served every hero and card from
 // media.tasmanvisa.com with no preconnect: blog index LCP 5424 ms, ~3500 ms once
 // a preconnect and a matching preload were added. The audit passed perf ✅ all.

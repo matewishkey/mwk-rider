@@ -314,6 +314,22 @@ thing a version bump leaves behind. Each maps to a documented v7 breaking change
   judged on its own bytes. Ladders are read out of the built HTML — an `<img>`'s
   `srcset` plus its `src` fallback, and each `<source>` in a `<picture>`.
   Reported by `tasmanvisa-web`, 2026-08-02.
+- **A CSS background does not pin a width.** `background-image` gets neither
+  `srcset` nor lazy loading, and neither is recoverable: whatever width is
+  hardcoded is what every device downloads, and the fetch starts as soon as the
+  rule matches an element — so cards four screens down compete with the LCP image
+  for bandwidth. tasmanvisa-web had `QuoteCTA` pinned at `width=1600`, so phones
+  fetched a 1600 px photo for a 393 px viewport; the home page shipped ~1.1 MB of
+  CSS backgrounds and audited `images ✅ all`. Converting 19 of them took that
+  page from 1834 KB to 925 KB. → `images: background-image:fixed-width`
+
+  The fix is an absolutely-inset `<img>` with `srcset`/`sizes`/`loading="lazy"`
+  inside a positioned parent. `image-set()` is exempt — it does DPR selection,
+  which is less than an `<img>` gets but more than nothing. Scanned in source
+  rather than `dist/`, because the fix is a template edit and that is where the
+  finding should point. Widths under 640 px are not flagged: a pinned width that
+  small is roughly what a phone wants anyway, and flagging a decorative texture
+  is the noise that gets a tool ignored.
 - **Transforms use `format=auto`, not an explicit format.** `format=auto` lets
   Cloudflare negotiate AVIF/webp per the browser's `Accept`; an explicit
   `format=webp` (the default Astro emits for bare markdown `![]()`) means no AVIF

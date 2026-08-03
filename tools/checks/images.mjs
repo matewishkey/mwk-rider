@@ -22,6 +22,10 @@ const SCAN_EXTS = new Set(['.astro', '.tsx', '.ts', '.jsx', '.js', '.mdx', '.md'
 const CONTENT_IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.avif']);
 
 const SIZE_WARN_BG = 200 * 1024;     // CSS background raster without a transform
+// Below this a pinned width is roughly what a phone wants anyway, so the
+// srcset it can't have would buy little — and flagging a small decorative
+// texture is the noise that gets a tool ignored.
+const BG_PINNED_WIDTH_MIN = 640;
 const SIZE_WARN_ASSET = 500 * 1024;  // PNG/JPG in src/assets/
 const SIZE_WARN_DIST = 300 * 1024;   // built content image byte budget
 
@@ -32,6 +36,7 @@ export async function run({ project, reporter }) {
   const findings = {
     imgNotRouted: [],
     bgNotRouted: [],
+    bgFixedWidth: [],
     oversizedAssets: [],
     oversizedDist: [],
     oversizedLadders: [],
@@ -91,6 +96,25 @@ export async function run({ project, reporter }) {
     for (const f of findings.bgNotRouted) {
       const sizeLabel = f.sizeBytes != null ? ` (${humanSize(f.sizeBytes)})` : '';
       reporter.fix(SEC, 'background-image', `background-image: url(${truncate(f.url, 80)})${sizeLabel} not routed through a transform`, 'rewrite as image-set() with /cdn-cgi/image/width=,format=auto,quality=80/…', { file: f.file, line: f.line });
+    }
+  }
+
+  // Routed is not the same as delivered well. A CSS background gets neither
+  // srcset nor lazy loading, so whatever width is pinned is what every device
+  // downloads, and it starts as soon as the rule matches an element.
+  if (findings.bgTotal === 0) {
+    reporter.skip(SEC, 'background-image:fixed-width', 'no background-image refs to a content image — nothing to check');
+  } else if (findings.bgFixedWidth.length === 0) {
+    reporter.pass(SEC, 'background-image:fixed-width', `none of the ${findings.bgTotal} background-image ref(s) pins a width of ${BG_PINNED_WIDTH_MIN}px or more`);
+  } else {
+    for (const f of findings.bgFixedWidth) {
+      reporter.fix(
+        SEC,
+        'background-image:fixed-width',
+        `background-image pinned to width=${f.width} — a CSS background can use neither srcset nor lazy loading, so every phone downloads the ${f.width}px file and starts as soon as the rule matches (${truncate(f.url, 70)})`,
+        'render an absolutely-inset <img> with srcset/sizes/loading="lazy" inside a positioned parent instead; image-set() is the smaller fix if it must stay CSS (DPR selection only, still no lazy)',
+        { file: f.file, line: f.line },
+      );
     }
   }
 
@@ -190,6 +214,15 @@ function scanBackgroundImages(text, relPath, projectRoot, findings) {
     if (!isContentImageRef(url)) continue;
     if (url.startsWith('data:')) continue;
     findings.bgTotal++;
+
+    // A background pinned to one width is what every device downloads: a CSS
+    // background gets neither srcset nor lazy loading, and neither is
+    // recoverable. image-set() is exempt — it at least does DPR selection.
+    const width = pinnedWidth(url);
+    if (width != null && width >= BG_PINNED_WIDTH_MIN && !/image-set\s*\(/i.test(m[0])) {
+      findings.bgFixedWidth.push({ file: relPath, line: lineOf(text, m.index), url, width });
+    }
+
     if (IT_PREFIX_RE.test(url)) continue;
     const sizeBytes = resolveAssetSize(url, projectRoot);
     // Unknown size (remote host, or a path we can't resolve locally) is not
@@ -391,6 +424,20 @@ function walkDir(dir, callback, root) {
       else callback(relative(root, full));
     }
   }
+}
+
+/**
+ * The one width this URL will always return, or null if it doesn't pin one.
+ *
+ * Covers the three common spellings: a Cloudflare transform
+ * (`/cdn-cgi/image/width=1600,…`), a query parameter (`?w=1600`, `?width=1600`)
+ * and a Cloudinary-style path segment (`/w_1600/`).
+ */
+function pinnedWidth(url) {
+  const m = url.match(/\bwidth=(\d{2,5})\b/)
+        ?? url.match(/[?&]w=(\d{2,5})\b/)
+        ?? url.match(/\/w_(\d{2,5})(?:[,/])/);
+  return m ? Number(m[1]) : null;
 }
 
 function isContentImageRef(src) {
