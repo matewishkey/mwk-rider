@@ -30,7 +30,7 @@ const SEC = 'modules';
 // feature. What still binds is coherence — see `search:engine` below and
 // `data:search:index`, which fires when a search library ships with nothing to
 // feed it.
-const BASELINE_DEPS = [
+export const BASELINE_DEPS = [
   '@astrojs/mdx',
   '@astrojs/sitemap',
   '@astrojs/rss',

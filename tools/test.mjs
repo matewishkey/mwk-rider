@@ -11,7 +11,7 @@ import { spawnSync, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs';
 import { imageSize } from './lib/image-size.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -712,6 +712,37 @@ writeFileSync(join(emptyProject, 'package.json'), JSON.stringify({ name: 'fx', t
 writeFileSync(join(emptyProject, 'astro.config.mjs'), "export default { output: 'static' };\n");
 check('analytics does not pass on a project with nothing to scan',
   runJson(emptyProject, ['-s', 'analytics']).json?.results.find(r => r.id === 'analytics/no-hardcoded-ga')?.outcome === 'skip');
+
+console.log('the starter is the baseline, made copyable:');
+// The anti-drift mechanism. examples/starter/ is what create-mode copies, and
+// the checks are what define the baseline — so if a check changes and the
+// starter stops complying, this goes red on the same commit rather than months
+// later when someone scaffolds from it.
+//
+// Deliberately cheap: no npm install, no build. Unbuilt, most dist/-reading
+// checks ⏭ — the CI matrix builds both sites and audits them properly. What
+// this catches is the source-level regression, on every run, in a second.
+const STARTER = join(here, '..', 'examples', 'starter');
+for (const mode of [[], ['--strict']]) {
+  const label = mode.length ? '--strict' : 'default';
+  const run = runJson(STARTER, mode);
+  const s = run.json?.summary;
+  check(`the unbuilt starter has no required findings (${label})`,
+    s?.fix === 0 && s?.block === 0, JSON.stringify(s));
+  check(`  …and exits 0 (${label})`, run.code === 0, `exit ${run.code}`);
+}
+// The starter must actually install what the baseline asks for. Reading it off
+// the check rather than a second list is the point: add a baseline dep and this
+// fails until the starter has it.
+const { BASELINE_DEPS } = await import('./checks/modules.mjs');
+const starterPkg = JSON.parse(readFileSync(join(STARTER, 'package.json'), 'utf8'));
+const starterDeps = { ...starterPkg.dependencies, ...starterPkg.devDependencies };
+const missingBaseline = BASELINE_DEPS.filter((d) => !starterDeps[d]);
+check('the starter installs every baseline dependency',
+  missingBaseline.length === 0, missingBaseline.join(', '));
+// It is the thing create-mode copies, so it must not carry an invented secret.
+check('  …and ships no invented token or credential',
+  /cloudflareAnalyticsToken:\s*null/.test(readFileSync(join(STARTER, 'scripts', 'og.config.mjs'), 'utf8')));
 
 console.log('analytics is reported, never demanded:');
 // The invariant the 2026-08-03 softening rests on. `analytics/provider` answers

@@ -33,10 +33,23 @@ live in `CLAUDE.md`; the *why* behind each individual check lives in
 
 ## Testing
 
-Pure-Node tool (`tools/*.mjs`, no dependencies) plus a multi-locale Astro fixture at
-`examples/_fixture-i18n/` as the test target. The fixture tracks the baseline — it runs
-Astro 7 (`npm install && npx astro build && npx astro check` all green), so raising the
-baseline means upgrading the fixture in the same commit.
+Pure-Node tool (`tools/*.mjs`, no dependencies) plus **two** real Astro sites as test
+targets:
+
+- `examples/_fixture-i18n/` — the multi-locale exerciser. Two locales, search, a preview
+  shelf, OG tooling. It exists to make checks fire on shapes a simple site never has.
+- `examples/starter/` — the single-locale reference, and what create mode copies. It is
+  the baseline's *existence proof*: the checks say what compliant means, and this is a
+  site that is. It must stay `0 🔧 / 0 🛑` under `--strict`, enforced in CI.
+
+**Raising the baseline means upgrading BOTH in the same commit.** Both run Astro 7
+(`npm install && npm run build && npm run check` green), and a floor moved in only one of
+them makes the other's clean run a lie.
+
+The honest cost of the second site: two lockfiles, two `@astrojs/upgrade` runs per bump,
+double Dependabot noise, and roughly double CI wall-clock. Mitigated with a
+`[_fixture-i18n, starter]` matrix and `cache: npm` on `actions/setup-node`. Worth paying:
+the alternative is a starter that quietly stops complying with the tool that ships it.
 
 - **The gate: `node tools/test.mjs`.** Runs the audit against the fixture and a non-Astro
   dir and asserts the engine behaves (0 required findings on the fixture, scoping works,
@@ -72,20 +85,33 @@ baseline means upgrading the fixture in the same commit.
 ### Pre-ship checklist
 
 - [ ] If any `tools/**` changed: `node tools/test.mjs` passes.
-- [ ] If any `tools/**` changed: `node tools/audit.mjs` inside `examples/_fixture-i18n/`
-      is `0 🔧 / 0 🛑`, in default **and** `--strict`.
+- [ ] If any `tools/**` changed: `node tools/audit.mjs` inside **both**
+      `examples/_fixture-i18n/` and `examples/starter/` is `0 🔧 / 0 🛑`, in default
+      **and** `--strict`. Build each first — most of the interesting checks read `dist/`.
+- [ ] If the baseline moved (a version floor, a required dep, a new check): **both**
+      example sites were upgraded in this same commit. `tools/test.mjs` asserts the
+      starter carries every `BASELINE_DEPS` entry, but it cannot assert taste.
 - [ ] If a check was added: it's classified in `tools/lib/policy.mjs`, and sanity-checked
       against an off-baseline site so you can see which mode it lands in.
 - [ ] If `tools/checks/*.mjs` changed: also run it against a real site — drift there is
       expected and informational, and it's how you confirm the check fires in the wild.
-- [ ] If `skills/rider/SKILL.md` or `install.sh` changed: re-run `./install.sh`, then
-      confirm `node ~/.claude/rider-tools/audit.mjs --help` resolves and the symlinks
-      point at your checkout (`ls -la ~/.claude/rider-tools`).
+- [ ] If `skills/rider/**` or `install.sh` changed: re-run `./install.sh`, then confirm
+      `node ~/.claude/rider-tools/audit.mjs --help` resolves, that
+      `~/.claude/skills/rider/references/CREATE.md` is readable **through** the directory
+      symlink, and that `~/.claude/rider-starter` points at your checkout.
+- [ ] If create mode changed: scaffold end to end into an empty directory, let it build,
+      and confirm the audit it runs on itself comes back `0 🔧`.
 
 ## Distribution
 
 A dev tool — no deploy, no live UI. Distribution is consumer pull: `git pull &&
-./install.sh`. `install.sh` is idempotent and symlinks `skills/rider/SKILL.md` into
-both `~/.claude/skills/rider/` and `~/.claude/commands/`, and `tools/` into
-`~/.claude/rider-tools`. Pure Node ESM on
-system Node 22+, no dependencies, no `package.json` at the repo root.
+./install.sh`. `install.sh` is idempotent and creates four links:
+
+| Link | Target | Why |
+|---|---|---|
+| `~/.claude/skills/rider` | `skills/rider/` | A **directory** link — a file link cannot carry `references/CREATE.md` |
+| `~/.claude/commands/rider.md` | `skills/rider/SKILL.md` | The slash command is the same file, so the two cannot drift |
+| `~/.claude/rider-tools` | `tools/` | What the skill invokes |
+| `~/.claude/rider-starter` | `examples/starter/` | What create mode copies |
+
+Pure Node ESM on system Node 22+, no dependencies, no `package.json` at the repo root.

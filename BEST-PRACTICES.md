@@ -130,13 +130,42 @@ against a known-good site and a known-bad one.
   explicit `output: 'server'` is a departure. The check used to flag any config
   that didn't spell it out — a required finding for writing less config than
   necessary. → `modules: output:static`
-- **Cloudflare adapter only for SSR `<Image>`.** On `output: 'static'` (the
-  baseline), `astro:assets`' `<Image>` is optimized at *build time* by Sharp and
-  emitted to `dist/` — no adapter exists or is needed. The Cloudflare image
-  service only matters under `output: 'server'`, where pages render on-demand and
-  Sharp can't run on Workers. So the check passes on any static build (with or
-  without `<Image>`) and only flags an SSR site that uses `<Image>` without the
-  adapter. → `modules: adapter:cloudflare`
+- **Rendering on demand means an adapter — any adapter.** A route that renders
+  per-request needs one, and without it the build fails outright. The trap is
+  that "renders on demand" is *not* the same as `output: 'server'`: a single
+  `export const prerender = false` page in an otherwise static site is enough,
+  and that is exactly the shape a contact form takes. The check tests for both,
+  and names the route it found rather than just the output mode.
+
+  It accepts **any** adapter — Cloudflare, Node, Vercel, Netlify, Deno, or a
+  third-party one declared as `adapter:` in `astro.config`. The build fails
+  identically on all of them, so naming ours would be house style wearing a
+  universal badge. Classified universal for the same reason: a build that cannot
+  run is a defect on anyone's site. → `modules: adapter:on-demand`
+- **The Cloudflare adapter specifically, only for on-demand `<Image>`.** On a
+  fully prerendered build, `astro:assets`' `<Image>` is optimized at *build time*
+  by Sharp and emitted to `dist/` — no adapter exists or is needed. The Cloudflare
+  image service only matters where pages render on demand *on Workers*, since
+  Sharp can't run there.
+
+  This check used to test `output: 'server'` alone, which was a false negative
+  with real consequences: a static build with one `prerender = false` page using
+  `<Image>` renders on Workers and was never flagged. Widened to the same
+  on-demand definition as above. When there is no adapter at all it defers —
+  `adapter:on-demand` already reports that, and one defect should produce one
+  finding. → `modules: adapter:cloudflare`
+- **Set `imageService` explicitly, or you may be buying something.** The
+  Cloudflare adapter's `imageService` default changed from `'compile'` to
+  `'cloudflare-binding'` (Astro's Cloudflare adapter docs, verified 2026-08-03).
+  That service transforms images at runtime through the Cloudflare Images
+  binding, which is *"automatically provisioned upon deployment"* — a paid
+  product. So installing the adapter for something unrelated (a contact form,
+  say) can silently move image transforms from free build-time Sharp onto a
+  billed runtime service, with nothing in the build output saying so.
+
+  A `💡` rather than a `🔧`: `'cloudflare-binding'` is a legitimate choice, and
+  the only defect is making it by accident. Fires only when the adapter and
+  `<Image>` are both present. → `modules: adapter:imageService`
 - **Strict TypeScript.** `extends: astro/tsconfigs/strict` catches whole classes
   of content/schema bugs at build. → `modules: tsconfig:strict`
 - **`<ClientRouter />` in the root layout.** View transitions / SPA-style nav. →
@@ -597,6 +626,14 @@ Lab scores are noisy — treat one run as a sample, not a verdict.
 
 The queue. Each becomes a real check when a reporter hits it or we decide it's
 worth it — following *How we add a practice* above. Listed so we don't lose them.
+
+**The live queue is the issue tracker**, not this list:
+[wishbusterz/rider issues](https://github.com/wishbusterz/rider/issues). Six came
+in from audited sites and were re-verified against the current check set on
+2026-08-03 — eager third-party embeds, `dist:size` flagging srcset rungs, CSS
+`background-image` (no srcset, no lazy loading), the two remaining font-hygiene
+traps, cross-origin `preconnect`, and the two Astro 7 changes that build clean and
+ship wrong. What is below is the older, quieter half.
 
 - **`compressHTML: 'jsx'` whitespace regressions (Astro 7).** v7 changed the
   default from `true` to `'jsx'`, so whitespace between inline elements is

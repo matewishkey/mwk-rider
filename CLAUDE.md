@@ -5,7 +5,7 @@ This repo is **rider**: a single on-demand slash command (`/rider`) that checks 
 
 ## What it is
 
-- **One skill:** `skills/rider/SKILL.md` — orchestrates a run: load the project's details, run the tool, walk the findings. `install.sh` links that one file as both the skill and the `/rider` command, so the two cannot drift.
+- **One skill, two modes:** `skills/rider/SKILL.md` — a ~10-line router at the top picks **create** (scaffold a new site from `examples/starter/`, steps in `skills/rider/references/CREATE.md`) or **audit** (the rest of the file: load the project's details, run the tool, walk the findings). `install.sh` links the skill *directory* — a file link cannot carry `references/` — and links `SKILL.md` again as the `/rider` command, so the two cannot drift.
 - **One tool:** `tools/audit.mjs` — the entry. Detects an Astro project, runs the offline domain checks, and (with `--url`) the live ones. Reports `✅ / 🔧 / 🛑 / 💡 / ⏭` and exits non-zero on findings.
 - **Seven offline domains + three `--url` domains**, one module each under `tools/checks/`:
   - `modules` — baseline stack present + wired (version, integrations, `output: 'static'`, strict TS, adapter-iff-`<Image>`); search is optional, two engines at once is a finding.
@@ -27,9 +27,11 @@ This repo is **rider**: a single on-demand slash command (`/rider`) that checks 
 - **Surface, don't auto-fix.** Findings are suggestions. Only edit a project when the user asks.
 - **Practice ⇒ check (the `BEST-PRACTICES.md` contract).** `BEST-PRACTICES.md` is the *why* behind every check and a living practice↔check registry. Every best practice there has an enforcing check in `tools/checks/*`; a practice with no check is a tracked *gap*, not a practice yet. Adding one = understand the integration (context7) → write the why in `BEST-PRACTICES.md` → bake the check → verify on the fixture (stays `0 🔧`) + a real site → ship. Keep `BEST-PRACTICES.md` § Gaps current.
 - **Verify Astro/Cloudflare specifics via `context7`** before writing about them or generating config/code (hard rule).
-- **Test against the fixture.** `examples/_fixture-i18n/` is a full compliant multi-locale Astro site — run `node tools/audit.mjs` inside it; it should pass clean. Testing/deploy discipline lives in `docs/DEVELOPING.md`.
+- **Two example sites, upgraded together.** `examples/_fixture-i18n/` is the multi-locale exerciser (i18n, search, preview routes); `examples/starter/` is the single-locale reference and what create mode copies. Both must be `0 🔧 / 0 🛑` in default **and** `--strict`, and CI runs them as a matrix. **Raising the baseline means upgrading both in the same commit** — a floor moved in one makes the other's clean run a lie. Testing/deploy discipline lives in `docs/DEVELOPING.md`.
+- **The starter is the baseline's existence proof, not a second copy of it.** The checks define compliant; `examples/starter/` is a site that is. `references/CREATE.md` describes only the *interaction* and is forbidden from restating the rules — it points at `--rules --json` for what, and `BEST-PRACTICES.md` for why. A third prose copy of the baseline is how all three drift.
+- **Create mode copies, never composes.** It copies `~/.claude/rider-starter` verbatim and edits four values. Writing files from memory is exactly how a scaffold stops matching the reference the audit keeps clean; if the link is missing it says "re-run ./install.sh" and stops.
 
 ## Install
 
-`./install.sh` symlinks `skills/rider/SKILL.md` → `~/.claude/skills/rider/SKILL.md` and `~/.claude/commands/rider.md`, and the tools → `~/.claude/rider-tools`. Idempotent. Re-run after `git pull`.
+`./install.sh` creates four symlinks: `skills/rider/` → `~/.claude/skills/rider` (a directory, so `references/` comes with it), `skills/rider/SKILL.md` → `~/.claude/commands/rider.md`, `tools/` → `~/.claude/rider-tools`, and `examples/starter/` → `~/.claude/rider-starter` (what create mode copies). Idempotent. Re-run after `git pull`.
 

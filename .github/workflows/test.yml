@@ -1,8 +1,13 @@
-# This repo's own gate. Runs the smoke test and audits the bundled fixture in
-# both severity modes — all offline and no API keys, so it works on forked PRs
-# where secrets are unavailable. The tool itself has no dependencies; the
-# fixture is a real Astro site and is installed + built so the dist/-reading
-# checks have an artifact to read.
+# This repo's own gate. Runs the smoke test and audits both bundled example
+# sites in both severity modes — all offline and no API keys, so it works on
+# forked PRs where secrets are unavailable. The tool itself has no dependencies;
+# the examples are real Astro sites and are installed + built so the
+# dist/-reading checks have an artifact to read.
+#
+# Two example sites is the deliberate cost of shipping a starter: the checks
+# define the baseline, and `examples/starter/` is its existence proof. If a
+# check changes and the starter stops complying, this goes red on the same
+# commit rather than months later when someone scaffolds from it.
 #
 # (The copy-paste workflow for auditing YOUR Astro site lives in
 # examples/ci/audit.yml — it is deliberately not here, because GitHub would run
@@ -18,7 +23,8 @@ permissions:
   contents: read
 
 jobs:
-  test:
+  # The engine: fires on known-bad projects, stays quiet on compliant ones.
+  smoke:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -27,28 +33,8 @@ jobs:
         with:
           node-version: 22
 
-      # Asserts both halves: checks stay quiet on the compliant fixture, and
-      # each one fires on a purpose-built known-bad project.
       - name: Smoke test
         run: node tools/test.mjs
-
-      # Several checks read dist/ — robots.txt, sitemap lastmod, the emitted
-      # JSON-LD, the built feed. Without a build they all ⏭ and the fixture
-      # proves nothing about them, so build it before auditing.
-      - name: Build the fixture
-        working-directory: examples/_fixture-i18n
-        run: |
-          npm ci
-          npm run build
-
-      # The fixture is fully compliant, so it must be clean in both modes.
-      - name: Audit the fixture (default)
-        working-directory: examples/_fixture-i18n
-        run: node ../../tools/audit.mjs
-
-      - name: Audit the fixture (--strict)
-        working-directory: examples/_fixture-i18n
-        run: node ../../tools/audit.mjs --strict
 
       # A non-Astro directory must be rejected with exit 2, not audited.
       - name: Reject a non-Astro directory
@@ -56,3 +42,40 @@ jobs:
           if node tools/audit.mjs -s modules; then
             echo "expected exit 2 in a non-Astro directory, got 0"; exit 1
           fi
+
+  # Both example sites are compliant by construction, so any required finding
+  # (🔧/🛑) on either means the TOOL has a bug — or the example stopped being
+  # the baseline it claims to demonstrate.
+  examples:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        site: [_fixture-i18n, starter]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          # Two sites means two dependency installs per run. Caching the npm
+          # store roughly halves the cost of the second one.
+          cache: npm
+          cache-dependency-path: examples/${{ matrix.site }}/package-lock.json
+
+      # Several checks read dist/ — robots.txt, sitemap lastmod, the emitted
+      # JSON-LD, the built feed, image bytes. Without a build they all ⏭ and the
+      # example proves nothing about them, so build it before auditing.
+      - name: Build examples/${{ matrix.site }}
+        working-directory: examples/${{ matrix.site }}
+        run: |
+          npm ci
+          npm run build
+
+      - name: Audit examples/${{ matrix.site }} (default)
+        working-directory: examples/${{ matrix.site }}
+        run: node ../../tools/audit.mjs
+
+      - name: Audit examples/${{ matrix.site }} (--strict)
+        working-directory: examples/${{ matrix.site }}
+        run: node ../../tools/audit.mjs --strict

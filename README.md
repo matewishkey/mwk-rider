@@ -2,7 +2,7 @@
 
 <sub>`rider`</sub>
 
-An on-demand best-practices auditor for **Astro** sites. One slash command (`/rider`), one zero-dependency script, ten domains (seven offline + three live). No framework, no contract, nothing installed into the sites it audits — it reports, you decide.
+An on-demand best-practices auditor for **Astro** sites — and a compliant site to start from. One slash command (`/rider`), one zero-dependency script, ten domains (seven offline + three live). No framework, no contract, nothing installed into the sites it audits — it reports, you decide.
 
 ```
 ✅ modules: astro:version — ^7.1.6
@@ -81,7 +81,7 @@ A few checks report a *fact* rather than a verdict and are `[advisory]` in **bot
 
 | Domain | What it looks for |
 |---|---|
-| **modules** | Baseline stack present + wired: Astro 7+, Node ≥ 22.12, the expected integrations, `output: 'static'`, strict TS (≤ 6.x, the `@astrojs/check` peer ceiling), `@astrojs/cloudflare` iff `<Image>` is used under SSR; search is optional, but two search engines at once is a finding. Plus Astro 7 migration residue — stabilized `experimental` flags, unified()-only markdown options without `@astrojs/markdown-remark`, `@astrojs/db`, removed `astro:transitions` internals. |
+| **modules** | Baseline stack present + wired: Astro 7+, Node ≥ 22.12, the expected integrations, `output: 'static'`, strict TS (≤ 6.x, the `@astrojs/check` peer ceiling), an adapter iff any route renders on demand (`output: 'server'` **or** a single `prerender = false` page) and an explicit `imageService` so the Cloudflare adapter can't opt you into paid image billing; search is optional, but two search engines at once is a finding. Plus Astro 7 migration residue — stabilized `experimental` flags, unified()-only markdown options without `@astrojs/markdown-remark`, `@astrojs/db`, removed `astro:transitions` internals. |
 | **seo** | A canonical SEO component emitting canonical URL + OG meta; no `keywords` anti-pattern; sitemap lastmod; one `<h1>` per content page (no skipped heading levels — advisory). |
 | **images** | Content images routed through an image transform (resized/reformatted, not full-size) and not oversized in `src/assets/` or the built `dist/`. On built HTML, flags Cloudflare transform params (`format=auto` instead of an explicit format; explicit `quality=`) and content `<img>` missing `alt`. |
 | **perf** | `/_astro/*` marked immutable in `public/_headers`; content `<img>` carry width/height (no layout shift); render-blocking CSS on the heaviest page and total webfont weight stay in budget, in woff2. |
@@ -117,6 +117,18 @@ From inside any Astro project, in [Claude Code](https://claude.com/claude-code):
 /rider                 # offline: source + dist checks
 /rider https://example.com    # also check the live/served site
 ```
+
+In an **empty** directory the same command scaffolds instead. It asks three
+questions — site name and domain, contact email, a one-line tagline — then copies
+[`examples/starter/`](examples/starter), edits those four values, builds, and runs
+the audit on what it just made. That last step is the point: the starter is kept
+at `0 🔧 / 0 🛑` under `--strict` by this repo's own CI, so a scaffolded site is
+compliant by construction rather than by intention.
+
+You get a working blog, a contact form that sends real email through Cloudflare
+Email Service (free to a verified address, no API key to store), cookieless
+analytics, a media kit, a design reference page, RSS, `/llms.txt` and a sitemap
+with real `<lastmod>`. Two dashboard steps are left for you, and it says which.
 
 Or call the script directly — it's a plain CLI, Claude Code is optional:
 
@@ -164,21 +176,28 @@ The tool only ever *reads* through this API. It never provisions, never writes.
 ## Layout
 
 ```
-skills/rider/SKILL.md   how an agent should run and report an audit
-                           (install.sh links it as BOTH the skill and the
-                           /rider command — one file, no drift)
+skills/rider/
+  SKILL.md                   how an agent picks a mode, then runs and reports an
+                             audit (install.sh links it as BOTH the skill and the
+                             /rider command — one file, no drift)
+  references/CREATE.md       the steps for create mode, kept out of SKILL.md so
+                             the file an agent always loads stays short
 tools/
   audit.mjs                  entry: detect project, run domains, report
   test.mjs                   the gate: fixture + known-bad synthetic projects
   checks/{modules,seo,images,perf,data,analytics,content,live,lighthouse,browser}.mjs
   lib/{project,reporter,policy,rules,cf-image,html,dist,jsonld,image-size,
        src-scan,untrusted,analytics-signals,search-engines}.mjs
-examples/_fixture-i18n/      a compliant multi-locale Astro site — the test target
+examples/starter/            the reference site: single-locale, compliant under
+                             --strict, and what `/rider` copies to create a site
+examples/_fixture-i18n/      a compliant multi-locale Astro site — the harder
+                             test target (i18n, search, preview routes)
 examples/ci/audit.yml        copy-paste GitHub Actions job for your own site
 BEST-PRACTICES.md            the why behind every check + the practice/check registry
 docs/DEVELOPING.md           testing discipline and design decisions
 .env.example                 the optional API keys
-install.sh                   symlink the skill, the command and the tools into ~/.claude
+install.sh                   symlink the skill, the command, the tools and the
+                             starter into ~/.claude
 ```
 
 ## Contributing

@@ -1,6 +1,16 @@
 ---
 name: rider
-description: Audit an Astro site against baseline best practices — the stack, SEO, images, page speed, and the machine-readable surface (JSON-LD, llms.txt, RSS, search index). Run on demand from inside any Astro project. Optional argument is a live URL to also check the served site.
+description: Create a new Astro site from a compliant starter, or audit an existing one against baseline best practices — the stack, SEO, images, page speed, contact form, analytics, and the machine-readable surface (JSON-LD, llms.txt, RSS). Use it to build a site, scaffold a blog, or run a compliance check from inside any Astro project. Optional argument is a live URL to also check the served site.
+---
+
+## Which mode
+
+**Create** — the user wants a *new* site ("build me a site", "scaffold a blog", "set up an Astro project"), or the current directory is empty / not an Astro project and they are not asking for an audit. Read `references/CREATE.md` (next to this file) and follow it. Stop reading here.
+
+**Audit** — everything else: the current directory is an Astro project and the user wants to know what is wrong with it. That is the rest of this file.
+
+If it is genuinely ambiguous, ask — one question, then commit to a mode.
+
 ---
 
 You are running an on-demand best-practices audit of the Astro project in the current directory. This is a compliance check, not a migration — surface findings and suggest fixes; **never auto-edit** the project unless the user asks.
