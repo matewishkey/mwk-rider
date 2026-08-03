@@ -399,6 +399,37 @@ thing a version bump leaves behind. Each maps to a documented v7 breaking change
 - **woff2, not ttf/otf.** Universally supported for years and roughly half the
   bytes. Serving a raw font format to browsers is a defect on anyone's site, so
   this one is universal. → `perf: font:format`
+- **Every declared family is one that can actually paint.** A family in
+  `fonts[]` whose `cssVariable` never *leads* a `font-family` stack can only
+  render if the font ahead of it fails to load — which, for a self-hosted,
+  preloaded webfont, means never. It is downloaded eagerly on every page anyway.
+  tasmanvisa-web had `Inter` sitting second behind `Sora`: **277 KB**, 143 KB of
+  it italic faces nothing referenced. → `perf: font:unused-family`
+
+  Neither this nor the next one shows up in a byte total, which is why
+  `font:bytes` passed the whole time: the total was correct, the *composition*
+  was wrong. The correct fallback is the metric-adjusted local one Astro already
+  generates (`optimizedFallbacks`, on by default), not a second webfont.
+
+  A variable that appears in no stack at all is `💡` rather than `🔧` — the
+  weaker evidence of the two, since it could equally be a gap in how the tool
+  reads the CSS.
+- **A family that never renders italic says so.** `styles` defaults to
+  `['normal', 'italic']` — read off `astro/dist/assets/fonts/constants.js` in
+  astro@7.1.6, not recalled — so declaring a family without it silently doubles
+  its file count. Three of tasmanvisa's four families were shipping italic files
+  for nothing. → `perf: font:styles`
+
+  `🔧` only when the built output renders no italic *at all*. `<em>`, `<i>` and
+  `<cite>` are italic from the UA stylesheet with no CSS involved, so testing for
+  `font-style: italic` alone would flag every blog with emphasis in its prose;
+  when any of those is present the finding drops to `💡`.
+
+  **The fix hints name family × style × subset, never "drop unused weights".**
+  Weights are free with a variable font — Sora 300–700 is one file — so pruning
+  them is wasted effort, and advice to do it would be actively misleading. Nor is
+  `subsets` safe to trim on a bilingual site: `latin-ext` is mandatory for
+  Hungarian ő/ű.
 - **Heavy third-party embeds sit behind a facade.** A Maps, YouTube, Vimeo,
   Spotify, Calendly or Typeform `<iframe>` pulls hundreds of kilobytes over
   dozens of requests from an origin you don't control, and it starts the moment

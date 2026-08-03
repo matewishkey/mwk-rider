@@ -614,6 +614,50 @@ check('font-CDN usage is flagged under --strict', fontRow?.outcome === 'fix', JS
 const fontLoose = runJson(fontDir, ['-s', 'modules']).json?.results.find(r => r.name === 'fonts');
 check('  …and is advisory by default', fontLoose?.outcome === 'suggest');
 
+// A declared family that can never paint. tasmanvisa-web put Inter second in
+// the --font-sans stack behind a preloaded Sora: it could only render if Sora
+// failed, and shipped eagerly on every page — 277 KB, 143 KB of it italic faces
+// nothing referenced. Neither shows up in a byte total, because the total is
+// right and the composition is wrong.
+console.log('a declared family has to be one that can actually paint:');
+const FONTS_CFG = (families) => `export default { output: 'static', fonts: [${families}] };\n`;
+const SORA = `{ name: 'Sora', cssVariable: '--font-sans', styles: ['normal'] }`;
+const INTER = `{ name: 'Inter', cssVariable: '--font-inter', styles: ['normal'] }`;
+const fontProject = (config, css) => {
+  const dir = tmpProject('rider-fam-');
+  writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'fx', type: 'module', dependencies: { astro: '^7.1.6' } }));
+  writeFileSync(join(dir, 'astro.config.mjs'), config);
+  mkdirSync(join(dir, 'dist'), { recursive: true });
+  writeFileSync(join(dir, 'dist', 'index.html'), `<html><head><style>${css}</style></head><body><p>x</p></body></html>`);
+  return dir;
+};
+const declaredFamRow = (config, css, id = 'perf/font-unused-family') =>
+  runJson(fontProject(config, css), ['-s', 'perf', '--strict']).json?.results.find(r => r.id === id) ?? null;
+
+const behind = declaredFamRow(FONTS_CFG(`${SORA}, ${INTER}`), 'body { font-family: var(--font-sans), var(--font-inter), sans-serif; }');
+check('a family that only ever sits second in a stack → fix, naming it',
+  behind?.outcome === 'fix' && /Inter/.test(behind.message ?? ''), JSON.stringify(behind));
+check('  …while both leading their own stack → pass',
+  declaredFamRow(FONTS_CFG(`${SORA}, ${INTER}`),
+    'body { font-family: var(--font-sans), sans-serif; } code { font-family: var(--font-inter), monospace; }')?.outcome === 'pass');
+check('  …and one declared but never referenced at all → suggest',
+  declaredFamRow(FONTS_CFG(SORA), 'body { color: red; }')?.outcome === 'suggest');
+
+// styles defaults to ['normal','italic'] — read off
+// astro/dist/assets/fonts/constants.js, not recalled.
+const implicitStyles = `{ name: 'Sora', cssVariable: '--font-sans' }`;
+const noItalic = declaredFamRow(FONTS_CFG(implicitStyles), 'body { font-family: var(--font-sans), sans-serif; }', 'perf/font-styles');
+check('a family with no styles, on a build that renders no italic → fix',
+  noItalic?.outcome === 'fix' && /normal, italic/.test(noItalic.message ?? ''), JSON.stringify(noItalic));
+// <em> renders italic from the UA stylesheet with no CSS at all, so asserting
+// "no font-style: italic" would flag any blog with emphasis in its prose.
+const emUsed = fontProject(FONTS_CFG(implicitStyles), 'body { font-family: var(--font-sans), sans-serif; }');
+writeFileSync(join(emUsed, 'dist', 'index.html'), '<html><head><style>body { font-family: var(--font-sans), sans-serif; }</style></head><body><p>an <em>emphasis</em></p></body></html>');
+check('  …but <em> in the built HTML makes it advisory, not a finding',
+  runJson(emUsed, ['-s', 'perf', '--strict']).json?.results.find(r => r.id === 'perf/font-styles')?.outcome === 'suggest');
+check('  …and declaring styles explicitly → pass',
+  declaredFamRow(FONTS_CFG(SORA), 'body { font-family: var(--font-sans), sans-serif; }', 'perf/font-styles')?.outcome === 'pass');
+
 console.log('the new practices fire on a known-bad build and stay quiet on a good one:');
 // House style: advisory by default, binding under --strict. Both halves matter —
 // a check that can only ever suggest never binds, and one that always binds

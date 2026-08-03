@@ -97,6 +97,8 @@ const RULES = [
   ['perf/font-bytes', 'perf', 'font:bytes', 'Webfonts are render-blocking weight that subsetting or a variable font usually halves.'],
   ['perf/font-families', 'perf', 'font:families', 'Two families — headings and body — is enough for almost any content site.'],
   ['perf/font-faces', 'perf', 'font:faces', 'Each @font-face is a separate file to download; a variable font covers a weight range in one.'],
+  ['perf/font-unused-family', 'perf', 'font:unused-family', 'A declared family that never leads a font-family stack is a webfont downloaded on every page that can only render if the one ahead of it fails.'],
+  ['perf/font-styles', 'perf', 'font:styles', "The Fonts API `styles` default is ['normal','italic'], so a family declared without it silently doubles its file count."],
   ['perf/font-format', 'perf', 'font:format', 'woff2 has been universally supported for years and is roughly half the bytes of ttf/otf.'],
   ['perf/embed-eager', 'perf', 'embed:eager', 'A heavy third-party iframe in the built HTML loads with the page; loading="lazy" does not defer one high on it. A facade does.'],
   ['images/background-image-fixed-width', 'images', 'background-image:fixed-width', 'A CSS background can use neither srcset nor lazy loading, so a pinned width is what every device downloads.'],

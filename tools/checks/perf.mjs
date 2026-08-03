@@ -13,6 +13,7 @@ import { attrValue, hasAttr, eachDistHtml } from '../lib/html.mjs';
 import { SKIP_DIST, distDir, distRelative } from '../lib/dist.mjs';
 import { astroBlock, MIN_IMMUTABLE_MAXAGE, CANONICAL_MAXAGE } from '../lib/headers.mjs';
 import { embedProduct, fetchableMarkup } from '../lib/embed-hosts.mjs';
+import { fontFamilies } from '../lib/fonts-config.mjs';
 
 const SEC = 'perf';
 
@@ -157,6 +158,96 @@ export function checkWeight(project, reporter) {
   const files = distTree(distDir(project.root));
   checkCssWeight(project, reporter, files);
   checkFontWeight(project, reporter, files);
+  checkDeclaredFamilies(project, reporter, files);
+}
+
+/**
+ * A declared family that can never paint, and one that ships italic for nothing.
+ *
+ * Both cost real bytes and neither shows up in a byte total, because the total
+ * is correct — it is the *composition* that is wrong. tasmanvisa-web declared
+ * `Inter` in `fonts[]` and put it second in the `--font-sans` stack, behind a
+ * self-hosted, preloaded `Sora`. It could only ever render if Sora failed to
+ * load, and it was downloaded eagerly on every page: 277 KB, 143 KB of it italic
+ * faces nothing referenced.
+ */
+function checkDeclaredFamilies(project, reporter, files) {
+  const families = fontFamilies(project.astroConfig);
+  if (families.length === 0) {
+    // Both, not just the first: a check that emits nothing is indistinguishable
+    // from one that did not run.
+    reporter.skip(SEC, 'font:unused-family', 'no fonts[] in astro.config — nothing declared to trace into the CSS');
+    reporter.skip(SEC, 'font:styles', 'no fonts[] in astro.config — nothing declared whose styles could default to [normal, italic]');
+    return;
+  }
+
+  const css = files.filter((f) => /\.(css|html)$/i.test(f))
+    .map((f) => { try { return readFileSync(f, 'utf8'); } catch { return ''; } })
+    .join('\n');
+
+  const dead = [];
+  const fallbackOnly = [];
+  for (const fam of families) {
+    if (!fam.cssVariable) continue;
+    const positions = stackPositions(css, fam.cssVariable);
+    if (positions.length === 0) dead.push(fam);
+    else if (!positions.includes(0)) fallbackOnly.push(fam);
+  }
+
+  const named = (f) => `${f.name ?? '(unnamed)'} (${f.cssVariable})`;
+  if (fallbackOnly.length === 0 && dead.length === 0) {
+    reporter.pass(SEC, 'font:unused-family', `all ${families.length} declared famil${families.length === 1 ? 'y leads a' : 'ies lead a'} font-family stack`);
+  }
+  for (const f of fallbackOnly) {
+    reporter.fix(SEC, 'font:unused-family', `${named(f)} never leads a font-family stack — it is a webfont downloaded on every page that can only render if the font ahead of it fails`, "drop it from fonts[] and let Astro's metric-adjusted local fallback do that job, or move it to the front of the stack if it is the font you meant");
+  }
+  for (const f of dead) {
+    reporter.suggest(SEC, 'font:unused-family', `${named(f)} is declared in fonts[] but its variable appears in no font-family stack in the built CSS`, 'remove it from fonts[], or apply it — as declared it is downloaded and never used');
+  }
+
+  // `styles` defaults to ['normal','italic'] (astro/dist/assets/fonts/constants.js),
+  // so a family declared without it silently doubles its file count.
+  const implicit = families.filter((f) => !f.hasStyles);
+  if (implicit.length === 0) {
+    reporter.pass(SEC, 'font:styles', `all ${families.length} declared famil${families.length === 1 ? 'y sets' : 'ies set'} styles explicitly`);
+    return;
+  }
+  // <em>, <i> and friends render italic from the UA stylesheet with no CSS at
+  // all, so "no font-style: italic in the CSS" is not evidence on its own —
+  // asserting it would flag a blog with emphasis in its prose.
+  const italicUsed = /font-style\s*:\s*(italic|oblique)/i.test(css)
+    || /<(?:em|i|cite|dfn|var|address)\b/i.test(css);
+  if (italicUsed) {
+    reporter.suggest(SEC, 'font:styles', `${implicit.length} declared famil${implicit.length === 1 ? 'y omits' : 'ies omit'} styles, so italic faces are built for ${implicit.length === 1 ? 'it' : 'them'} too (the default is [normal, italic]) — ${implicit.map(named).join(', ')}`, 'set styles: ["normal"] on the families that never render italic; the axis that costs bytes is family × style × subset, not weight (a variable font covers a whole weight range in one file)');
+  } else {
+    reporter.fix(SEC, 'font:styles', `${implicit.length} declared famil${implicit.length === 1 ? 'y omits' : 'ies omit'} styles, so italic faces ship (the default is [normal, italic]) — and nothing in the built output renders italic: no font-style: italic, no <em>/<i>/<cite> — ${implicit.map(named).join(', ')}`, 'set styles: ["normal"] on them; the axis that costs bytes is family × style × subset, not weight (a variable font covers a whole weight range in one file)');
+  }
+}
+
+/**
+ * Where `var(--x)` sits in each comma-separated stack it appears in.
+ *
+ * Index 0 means it leads a stack — the font that actually paints. Anything else
+ * means it only renders if everything before it fails to load, which for a
+ * self-hosted webfont means never.
+ */
+function stackPositions(css, cssVariable) {
+  const out = [];
+  const useRe = new RegExp(`var\\(\\s*${cssVariable.replace(/[-]/g, '\\-')}\\s*[,)]`, 'g');
+  for (const m of css.matchAll(useRe)) {
+    // Back up to the start of this declaration's value, then count the commas
+    // that are not inside a var()/quotes before our position.
+    const declStart = Math.max(css.lastIndexOf(':', m.index), css.lastIndexOf(';', m.index), css.lastIndexOf('{', m.index));
+    const value = css.slice(declStart + 1, m.index);
+    let depth = 0, commas = 0;
+    for (const ch of value) {
+      if (ch === '(') depth++;
+      else if (ch === ')') depth--;
+      else if (ch === ',' && depth === 0) commas++;
+    }
+    out.push(commas);
+  }
+  return out;
 }
 
 function checkCssWeight(project, reporter, files) {
