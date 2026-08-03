@@ -286,7 +286,7 @@ export async function run({ project, reporter }) {
     const strict = typeof ext === 'string'
       ? ext.includes('astro/tsconfigs/strict')
       : Array.isArray(ext) && ext.some((e) => e.includes('astro/tsconfigs/strict'));
-    if (strict) reporter.pass(SEC, 'tsconfig:strict');
+    if (strict) reporter.pass(SEC, 'tsconfig:strict', `tsconfig.json extends "${Array.isArray(ext) ? ext.join('", "') : ext}"`);
     else reporter.fix(SEC, 'tsconfig:strict', `extends "${ext ?? 'nothing'}"`, 'extend "astro/tsconfigs/strict" in tsconfig.json');
   } else {
     reporter.fix(SEC, 'tsconfig:strict', 'tsconfig.json missing', 'create tsconfig.json extending astro/tsconfigs/strict');
@@ -306,7 +306,7 @@ export async function run({ project, reporter }) {
 
   // Custom 404
   if (existsSync(join(project.root, 'src/pages/404.astro'))) {
-    reporter.pass(SEC, '404:custom');
+    reporter.pass(SEC, '404:custom', 'src/pages/404.astro');
   } else {
     reporter.fix(SEC, '404:custom', 'src/pages/404.astro missing', 'create a branded 404 page');
   }

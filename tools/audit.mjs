@@ -189,7 +189,9 @@ if (values.url) {
   if (!wanted || wanted.has('live')) {
     try {
       const mod = await import('./checks/live.mjs');
-      await mod.run({ base, reporter, post: values.post });
+      // `project` may be null (--url from anywhere). live.mjs uses it only to
+      // tell a broken cache config from a local server that ignores _headers.
+      await mod.run({ base, reporter, post: values.post, project });
     } catch (err) {
       reporter.error(`live check crashed: ${err.message}`);
     }

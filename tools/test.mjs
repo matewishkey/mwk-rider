@@ -506,6 +506,7 @@ const head = (canonical, ld) => '<link rel="canonical" href="' + canonical + '">
   + '<meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">'
   + '<script type="application/ld+json">' + ld + '<\\/script>';
 const home = '<!doctype html><html><head>' + head('/', '{"@type":"WebSite"}')
+  + '<script src="/_astro/app.Ab12Cd34.js"><\\/script>'
   + '</head><body><h1>Home</h1><a href="/wiki">Wiki</a><a href="/wiki/kettle-clock">An entry</a></body></html>';
 const entry = '<!doctype html><html><head>' + head('/wiki/kettle-clock', '{"@type":"TechArticle"}')
   + '</head><body><h1>Kettle clock</h1></body></html>';
@@ -520,6 +521,12 @@ const srv = createServer((req, res) => {
     res.end(req.method === 'HEAD' ? undefined : buf);
   };
   const url = req.url.replace(/\\/$/, '') || '/';
+  // Served no-cache, exactly as \`astro preview\` serves a hashed asset (measured).
+  if (url.startsWith('/_astro/')) {
+    const buf = Buffer.from('console.log(1)');
+    res.writeHead(200, { 'content-type': 'text/javascript', 'content-length': String(buf.length), 'cache-control': 'no-cache' });
+    return res.end(req.method === 'HEAD' ? undefined : buf);
+  }
   if (url.startsWith('/og/')) return send(png, 'image/png');
   if (url === '/sitemap-index.xml') return send(sitemapIndex.split('HOST').join(host), 'application/xml');
   if (url === '/sitemap-0.xml') return send(sitemap.split('HOST').join(host), 'application/xml');
@@ -560,6 +567,24 @@ check('  …so the post-only checks run on it',
 check('  …and TechArticle satisfies the Article-family shape',
   liveRows.find(r => r.id === 'data/post-jsonld')?.outcome === 'pass',
   JSON.stringify(liveRows.find(r => r.id === 'data/post-jsonld')));
+
+// perf:cache:_astro against a local server that ignores _headers. Measured:
+// `astro dev` and `astro preview` serve /_astro/* no-cache whatever the file
+// says, while `wrangler dev` of the same build returns the immutable header —
+// so the verdict must turn on the SERVER, not on being local. Reported as a
+// finding that could not have gone any other way.
+const IMMUTABLE_HEADERS = '/_astro/*\n  Cache-Control: public, max-age=31536000, immutable\n';
+const withHeaders = mkBuilt({ 'public/_headers': IMMUTABLE_HEADERS });
+const localCache = runJson(withHeaders, ['-s', 'live', '--strict', '--url', `http://127.0.0.1:${port}`])
+  .json?.results.find(r => r.id === 'perf/cache-astro');
+check('a local server serving /_astro/* no-cache, with _headers correct → skip, not a finding',
+  localCache?.outcome === 'skip', JSON.stringify(localCache));
+
+const noHeaders = mkBuilt({});
+const noHeadersCache = runJson(noHeaders, ['-s', 'live', '--strict', '--url', `http://127.0.0.1:${port}`])
+  .json?.results.find(r => r.id === 'perf/cache-astro');
+check('  …while the same response with no _headers to explain it still fires',
+  noHeadersCache?.outcome === 'fix', JSON.stringify(noHeadersCache));
 
 // When discovery genuinely fails, the ⏭ must name what did not run — "clean"
 // and "didn't check" have to be distinguishable in the output.
@@ -663,6 +688,52 @@ const altMix = mkBuilt({
 const altRow = runJson(altMix, ['-s', 'images']).json?.results.find(r => r.id === 'images/alt' && r.outcome === 'fix');
 check('an image with alt on one page and without on another is still caught',
   altRow != null && altRow.file === 'dist/post/index.html', JSON.stringify(altRow));
+
+// dist:size judges a responsive image as a LADDER. Reported by tasmanvisa-web:
+// the top rung of a srcset is flagged though no phone downloads it, and Astro
+// emits the intrinsic width unconditionally — so the only way to comply was to
+// downscale the source and degrade retina desktop.
+console.log('dist:size judges the ladder, not the rung:');
+const KB = (n) => 'x'.repeat(n * 1024);
+const sizeRows = (dir) => runJson(dir, ['-s', 'images', '--strict']).json?.results
+  .filter(r => r.id === 'images/dist-size') ?? [];
+
+// The real numbers from the report: 67 / 138 / 227 / 333 KB, only the top over.
+const ladder = mkBuilt({
+  'dist/_astro/i_640.webp': KB(67),
+  'dist/_astro/i_960.webp': KB(138),
+  'dist/_astro/i_1280.webp': KB(227),
+  'dist/_astro/i_1600.webp': KB(333),
+  'dist/index.html': PAGE('<img src="/_astro/i_1600.webp" srcset="/_astro/i_640.webp 640w, /_astro/i_960.webp 960w, /_astro/i_1280.webp 1280w, /_astro/i_1600.webp 1600w" alt="a">'),
+});
+check('a srcset whose top rung is over budget → pass (the phone gets 67 KB)',
+  sizeRows(ladder).every(r => r.outcome === 'pass'), JSON.stringify(sizeRows(ladder)));
+
+const fatLadder = mkBuilt({
+  'dist/_astro/f_800.webp': KB(420),
+  'dist/_astro/f_1600.webp': KB(780),
+  'dist/index.html': PAGE('<img src="/_astro/f_1600.webp" srcset="/_astro/f_800.webp 800w, /_astro/f_1600.webp 1600w" alt="a">'),
+});
+const fatRow = sizeRows(fatLadder).find(r => r.outcome === 'fix');
+check('  …while a ladder whose SMALLEST rung is over budget → fix, pointing at that rung',
+  fatRow != null && /420 KB/.test(fatRow.message ?? '') && fatRow.file === 'dist/_astro/f_800.webp',
+  JSON.stringify(fatRow));
+
+const solo = mkBuilt({
+  'dist/_astro/solo.webp': KB(900),
+  'dist/index.html': PAGE('<img src="/_astro/solo.webp" alt="a">'),
+});
+check('  …and a single image in no srcset is still judged on its own bytes',
+  sizeRows(solo).some(r => r.outcome === 'fix' && r.file === 'dist/_astro/solo.webp'),
+  JSON.stringify(sizeRows(solo)));
+
+// A pass with no message is indistinguishable from a check that never ran —
+// the failure mode this tool cares most about. Asserted as an invariant rather
+// than per-check, so a new check cannot reintroduce it.
+const fixturePasses = fix.json?.results.filter(r => r.outcome === 'pass') ?? [];
+const mute = fixturePasses.filter(r => !r.message).map(r => `${r.section}:${r.name}`);
+check(`every one of the ${fixturePasses.length} passes on the fixture says what it looked at`,
+  mute.length === 0, mute.join(', '));
 
 // A whole-file /z\.object\(/ passed two collections where only one had a schema,
 // and passed a file whose only mention of Zod was in a comment.

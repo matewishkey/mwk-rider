@@ -11,6 +11,7 @@ import { headingLevels, headingAudit, attrValue, hasAttr } from '../lib/html.mjs
 import { imageSize } from '../lib/image-size.mjs';
 import { collectJsonLd, ldTypes, hasArticleType } from '../lib/jsonld.mjs';
 import { untrusted, capped, UNTRUSTED_NOTE } from '../lib/untrusted.mjs';
+import { declaresImmutableAssets } from '../lib/headers.mjs';
 import {
   BEACON_SIGNALS, RUM_SIGNALS, ZARAZ_SIGNALS, GA_THIRD_PARTY_SIGNALS,
   matchSignals, hasSignal,
@@ -22,7 +23,9 @@ const MAX_IMAGE_FINDINGS = 25;
 
 // Neither `astro dev` nor `astro preview` applies _headers (measured), so a
 // cache verdict against one says nothing about the deploy — in either
-// direction. The sibling check carried this caveat and the other did not.
+// direction. `wrangler dev` of the same build DOES apply it (also measured:
+// /_astro/* came back `public, max-age=31536000, immutable`), which is why the
+// caveat is about the server, never about being on localhost.
 const LOCAL_CAVEAT = ' — NB against `astro dev`/`astro preview` this proves nothing: neither applies _headers. Judge it on `wrangler dev` of dist/ or the deployed site';
 
 // A host that accepts the connection and never answers used to hang the audit
@@ -60,7 +63,7 @@ const NAV_HEADERS = {
   'Upgrade-Insecure-Requests': '1',
 };
 
-export async function run({ base, reporter, post }) {
+export async function run({ base, reporter, post, project = null }) {
   const get = mkGet(base);
   const head = mkHead(base);
 
@@ -77,7 +80,7 @@ export async function run({ base, reporter, post }) {
   reporter.pass('live', 'reachability', `${base}/ → 200`);
   reporter.skip('live', 'untrusted-input', UNTRUSTED_NOTE);
 
-  await auditCache(home, head, reporter);
+  await auditCache(home, head, reporter, project, base);
   const postPath = await resolveSlash(post ?? (await discoverPost(home, base, get)), get);
   await auditSeo(home, postPath, base, get, head, reporter);
   await auditImages(home, postPath, base, get, head, reporter);
@@ -143,7 +146,14 @@ function auditAnalytics(home, reporter) {
 
 // Cache — hashed assets immutable, HTML revalidates --------------------------
 
-async function auditCache(home, head, reporter) {
+async function auditCache(home, head, reporter, project, base) {
+  // Whether the server honoured _headers at all, as MEASURED on the asset —
+  // null when there was nothing to measure. It decides what the HTML verdict
+  // below is worth: an immutable asset response is something only a server that
+  // applied the file can produce, so on the same server the HTML result is
+  // meaningful too.
+  let appliesHeaders = null;
+
   const asset = firstHashedAsset(home.text);
   if (!asset) {
     reporter.skip('perf', 'cache:_astro', 'no /_astro/* asset referenced on homepage — nothing to check');
@@ -155,14 +165,28 @@ async function auditCache(home, head, reporter) {
       const cc = (r.headers.get('cache-control') || '').toLowerCase();
       const immutable = /\bimmutable\b/.test(cc);
       const maxAge = Number(cc.match(/max-age=(\d+)/)?.[1] ?? 0);
-      if (immutable && maxAge >= 86400) {
-        reporter.pass('perf', 'cache:_astro', `${untrusted(cc || '(none)', 80)}${LOCAL_CAVEAT}`);
+      appliesHeaders = immutable && maxAge >= 86400;
+      if (appliesHeaders) {
+        // No caveat here, deliberately. An immutable response is something only
+        // a server that applied the rule can produce — `wrangler dev` returns it,
+        // `astro preview` cannot — so this pass is proof wherever it came from.
+        reporter.pass('perf', 'cache:_astro', untrusted(cc || '(none)', 80));
+      } else if (ignoresHeadersFile(project, base)) {
+        // The project's own _headers declares /_astro/* immutable and this is a
+        // local server that served it otherwise — so the server is ignoring the
+        // file, which is what `astro dev`/`astro preview` do. Explaining a
+        // finding that could not have gone any other way is not a finding.
+        reporter.skip(
+          'perf',
+          'cache:_astro',
+          `served ${untrusted(cc || '(none)', 60)} by a local server that does not apply _headers — public/_headers marks /_astro/* immutable, so there is nothing here to judge. Re-run against \`wrangler dev\` of dist/ (measured: it does apply the file) or the deployed site`,
+        );
       } else {
         reporter.fix(
           'perf',
           'cache:_astro',
           `Cache-Control ${untrusted(cc || '(none)', 80)} — hashed asset not immutable (repeat visits re-validate)`,
-          'ship public/_headers marking /_astro/* "public, max-age=31536000, immutable". NB: neither `astro dev` nor `astro preview` applies _headers — both serve /_astro/* as no-cache regardless (measured), so this fires against them even when the file is correct and the offline perf:_headers check passes on the same tree. Run against `wrangler dev` of dist/ or the deployed site to judge it',
+          'ship public/_headers marking /_astro/* "public, max-age=31536000, immutable". NB: neither `astro dev` nor `astro preview` applies _headers — both serve /_astro/* as no-cache regardless (measured), so run against `wrangler dev` of dist/ or the deployed site to judge it',
         );
       }
     }
@@ -172,8 +196,34 @@ async function auditCache(home, head, reporter) {
   if (/\bimmutable\b/.test(htmlCC)) {
     reporter.fix('perf', 'cache:html', `homepage Cache-Control ${untrusted(htmlCC, 80)} is immutable — deploys won't show until cache expires`, 'do not list HTML routes in _headers; let them revalidate');
   } else {
-    reporter.pass('perf', 'cache:html', `homepage revalidates (${untrusted(htmlCC || 'default', 80)})${LOCAL_CAVEAT}`);
+    // The caveat belongs here only when the server was shown NOT to apply
+    // _headers: "not immutable" is what a dev server returns by default, so
+    // passing on one proves nothing. On a server measured to apply the file
+    // (wrangler dev, the deploy) the same pass is real, and the caveat would be
+    // the misleading half.
+    reporter.pass('perf', 'cache:html', `homepage revalidates (${untrusted(htmlCC || 'default', 80)})${appliesHeaders === false ? LOCAL_CAVEAT : ''}`);
   }
+}
+
+/**
+ * Is this a local server that demonstrably ignores `public/_headers`?
+ *
+ * Both halves are required. Being on localhost is not enough — `wrangler dev`
+ * is local too and applies the file correctly (measured), so skipping on host
+ * alone would hide a real finding on the one local server that can produce it.
+ * And a correct `_headers` is not enough either: a deployed site whose host
+ * ignores the file is exactly the bug this check exists to catch.
+ *
+ * Without a project in cwd (`--url` from anywhere) there is no file to read, so
+ * this is false and the finding stands.
+ */
+function ignoresHeadersFile(project, base) {
+  if (!project) return false;
+  let host;
+  try { host = new URL(base).hostname; } catch { return false; }
+  const local = host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]'
+    || /^192\.168\./.test(host) || /^10\./.test(host) || /^172\.(1[6-9]|2\d|3[01])\./.test(host);
+  return local && declaresImmutableAssets(project.root);
 }
 
 // SEO — real HTML on home + a content page -----------------------------------

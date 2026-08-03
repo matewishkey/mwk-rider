@@ -7,13 +7,14 @@
 //   2. CSS background-image: url(...) for a >200 KB raster not going through a transform
 //   3. PNG/JPG over ~500 KB sitting in src/assets/
 //   4. (if dist/ present) built content images over the byte budget — "big images
-//      that never got resized"
+//      that never got resized". A responsive image is judged as a LADDER, not as
+//      individual files: see judgeDistSizes.
 
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, extname, relative } from 'node:path';
 import { transformSmells } from '../lib/cf-image.mjs';
 import { eachDistHtml, contentImgs, attrValue } from '../lib/html.mjs';
-import { SKIP_DIST } from '../lib/dist.mjs';
+import { SKIP_DIST, distDir } from '../lib/dist.mjs';
 
 const SEC = 'images';
 
@@ -33,6 +34,13 @@ export async function run({ project, reporter }) {
     bgNotRouted: [],
     oversizedAssets: [],
     oversizedDist: [],
+    oversizedLadders: [],
+    // Every built content image and its size, plus the responsive ladders the
+    // built HTML actually references. `dist:size` needs both: a file's size
+    // alone can't tell an oversized hero from the top rung of a srcset that no
+    // phone ever requests.
+    distSizes: new Map(),
+    ladders: [],
     transformParams: [],
     transformTotal: 0,
     altMissing: [],
@@ -60,6 +68,7 @@ export async function run({ project, reporter }) {
   if (project.hasDist) {
     scanDist(project.root, findings);
     scanDistHtml(project.root, findings);
+    judgeDistSizes(findings);
   }
 
   // Report
@@ -105,13 +114,20 @@ export async function run({ project, reporter }) {
   }
 
   if (project.hasDist) {
+    const ladderNote = findings.ladders.length
+      ? `; ${findings.ladders.length} srcset ladder(s) judged by their smallest rung`
+      : '';
     if (findings.distImgTotal === 0) {
       reporter.skip(SEC, 'dist:size', 'no content images in dist/ — nothing to check');
-    } else if (findings.oversizedDist.length === 0) {
-      reporter.pass(SEC, 'dist:size', `none of the ${findings.distImgTotal} built content image(s) is over ${humanSize(SIZE_WARN_DIST)}`);
+    } else if (findings.oversizedDist.length === 0 && findings.oversizedLadders.length === 0) {
+      reporter.pass(SEC, 'dist:size', `none of the ${findings.distImgTotal} built content image(s) is over ${humanSize(SIZE_WARN_DIST)}${ladderNote}`);
     } else {
       for (const f of findings.oversizedDist) {
         reporter.fix(SEC, 'dist:size', `${humanSize(f.sizeBytes)} shipped — over ${humanSize(SIZE_WARN_DIST)}`, 'resize at build (<Image> width=) or serve via an image transform; a hero should be 50–250 KB', { file: f.path });
+      }
+      for (const l of findings.oversizedLadders) {
+        const rungs = l.rungs.map((r) => humanSize(r.sizeBytes)).join(', ');
+        reporter.fix(SEC, 'dist:size', `every rung of a srcset ladder is over ${humanSize(SIZE_WARN_DIST)} — smallest is ${humanSize(l.rungs[0].sizeBytes)} (${l.rungs.length} rungs: ${rungs})`, 'the smallest rung is what a phone downloads — add narrower widths (<Image widths={[...]}> or image.breakpoints), or downscale the source', { file: l.rungs[0].path });
       }
     }
 
@@ -221,23 +237,60 @@ function scanOversizedAssets(projectRoot, findings) {
   }
 }
 
+// Every built content image and its size. The oversize *verdict* is deferred to
+// judgeDistSizes, which needs the srcset ladders that scanDistHtml collects.
+//
+// Walks the static root (dist/client on an adapter build), not dist/ — the
+// server bundle's copy of an asset is compute, never bytes a visitor downloads,
+// and counting it inflates the denominator of the pass message.
 function scanDist(projectRoot, findings) {
-  const dist = join(projectRoot, 'dist');
-  walkDir(dist, (rel) => {
+  walkDir(distDir(projectRoot), (rel) => {
     const ext = extname(rel).toLowerCase();
     if (!CONTENT_IMAGE_EXTS.has(ext)) return;
     findings.distImgTotal++;
-    try {
-      const sz = statSync(join(projectRoot, rel)).size;
-      if (sz > SIZE_WARN_DIST) findings.oversizedDist.push({ path: rel, sizeBytes: sz });
-    } catch {}
+    try { findings.distSizes.set(rel, statSync(join(projectRoot, rel)).size); }
+    catch {}
   }, projectRoot);
 }
 
-// One pass over built HTML: transform-param anti-patterns + content <img> alt.
+/**
+ * Oversize, judged per delivery unit rather than per file.
+ *
+ * A responsive image is a LADDER, and the browser downloads exactly one rung of
+ * it. Astro emits the intrinsic-size rung unconditionally — `image.breakpoints`
+ * only adds widths *below* it — so flagging the top rung asks a site to
+ * downscale its source and degrade retina desktop to fix a number no user ever
+ * experiences. A ladder is only a defect when its SMALLEST rung is over budget,
+ * because then even a phone is over budget.
+ *
+ * An image in no ladder is a single delivered file, and keeps the plain rule.
+ */
+function judgeDistSizes(findings) {
+  const inLadder = new Set();
+  for (const rungs of findings.ladders) for (const p of rungs) inLadder.add(p);
+
+  for (const [path, sizeBytes] of findings.distSizes) {
+    if (inLadder.has(path)) continue;
+    if (sizeBytes > SIZE_WARN_DIST) findings.oversizedDist.push({ path, sizeBytes });
+  }
+
+  for (const rungs of findings.ladders) {
+    const sized = rungs
+      .map((path) => ({ path, sizeBytes: findings.distSizes.get(path) }))
+      .filter((r) => r.sizeBytes != null)
+      .sort((a, b) => a.sizeBytes - b.sizeBytes);
+    if (sized.length === 0) continue;
+    if (sized[0].sizeBytes > SIZE_WARN_DIST) findings.oversizedLadders.push({ rungs: sized });
+  }
+}
+
+// One pass over built HTML: transform-param anti-patterns + content <img> alt +
+// the responsive ladders dist:size judges by.
 function scanDistHtml(projectRoot, findings) {
   const seenUrl = new Set();
+  const seenLadder = new Set();
   eachDistHtml(projectRoot, (rel, html) => {
+    collectLadders(html, projectRoot, findings, seenLadder);
     const re = /\/cdn-cgi\/image\/[^"'`)\s>]+/g;
     let m;
     while ((m = re.exec(html)) !== null) {
@@ -266,6 +319,59 @@ function scanDistHtml(projectRoot, findings) {
       }
     }
   });
+}
+
+/**
+ * The responsive ladders a document references, as arrays of dist-relative paths.
+ *
+ * One ladder = one set of files the browser picks exactly one of. For an <img>
+ * that is its `srcset` plus its `src` (the fallback is a rung: it is what a
+ * client with no srcset support downloads, and Astro's intrinsic-width output
+ * usually lives there). For a <source> inside <picture> it is that tag's own
+ * srcset.
+ *
+ * An <img> with no srcset is NOT a ladder — it is a single delivered file, and
+ * dist:size judges it as one.
+ *
+ * Deduped across pages: the same component rendered on 400 pages emits the same
+ * ladder 400 times, and one edit fixes all of them.
+ */
+function collectLadders(html, projectRoot, findings, seenLadder) {
+  const add = (urls) => {
+    const paths = [...new Set(urls.map((u) => distPathOf(u, projectRoot)).filter(Boolean))];
+    if (paths.length === 0) return;
+    const key = paths.slice().sort().join('|');
+    if (seenLadder.has(key)) return;
+    seenLadder.add(key);
+    findings.ladders.push(paths);
+  };
+
+  for (const m of html.matchAll(/<img\b((?:"[^"]*"|'[^']*'|[^>])*)>/gi)) {
+    const srcset = attrValue(m[1], 'srcset');
+    if (!srcset) continue;
+    const src = attrValue(m[1], 'src');
+    add([...srcsetUrls(srcset), ...(src ? [src] : [])]);
+  }
+  for (const m of html.matchAll(/<source\b((?:"[^"]*"|'[^']*'|[^>])*)>/gi)) {
+    const srcset = attrValue(m[1], 'srcset');
+    if (srcset) add(srcsetUrls(srcset));
+  }
+}
+
+// "a.webp 480w, b.webp 800w" → ["a.webp", "b.webp"]. Commas inside a URL are
+// legal but vanishingly rare in built output; splitting on ", " would break on
+// the descriptor-less form, so split on comma and take the first token.
+function srcsetUrls(srcset) {
+  return srcset.split(',').map((s) => s.trim().split(/\s+/)[0]).filter(Boolean);
+}
+
+// A root-relative built asset URL → the path walkDir reports it under, or null
+// for anything not a local file in this build (remote hosts, data:, transforms).
+function distPathOf(url, projectRoot) {
+  if (!url.startsWith('/') || url.startsWith('//')) return null;
+  const clean = url.split(/[?#]/)[0];
+  if (!CONTENT_IMAGE_EXTS.has(extname(clean).toLowerCase())) return null;
+  return relative(projectRoot, join(distDir(projectRoot), clean.slice(1)));
 }
 
 // Helpers --------------------------------------------------------------------

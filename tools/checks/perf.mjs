@@ -9,18 +9,13 @@ import { join, extname, relative } from 'node:path';
 
 import { attrValue } from '../lib/html.mjs';
 import { SKIP_DIST, distDir } from '../lib/dist.mjs';
+import { astroBlock, MIN_IMMUTABLE_MAXAGE, CANONICAL_MAXAGE } from '../lib/headers.mjs';
 
 const SEC = 'perf';
-// The hashed-asset rule, as written by any of the common conventions:
-// `/_astro/*`, a renamed build.assets dir, or the full-URL Pages rule form.
-const IMMUTABLE_PATH_RE = /(?:^|\/)_astro\/\*$/;
 
 const SCAN_EXTS = new Set(['.astro', '.tsx', '.jsx', '.html', '.md', '.mdx']);
 const CONTENT_IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.avif']);
 const SVG_OR_FAVICON_RE = /\.(svg|ico)$|\bfavicon\b/i;
-
-const MIN_IMMUTABLE_MAXAGE = 86400;
-const CANONICAL_MAXAGE = 31536000;
 
 export async function run({ project, reporter }) {
   checkHeaders(project, reporter);
@@ -37,21 +32,13 @@ function checkHeaders(project, reporter) {
     return;
   }
 
-  let headersRaw;
-  try { headersRaw = readFileSync(path, 'utf8'); }
-  catch { return null; }
-  const blocks = parseHeaders(headersRaw);
-  // Exact-string matching missed correct configs: a site that renamed the asset
-  // dir (build.assets) or wrote the full-URL Cloudflare Pages rule form was told
-  // it had no rule at all. Match the hashed-asset directory however it's spelled.
-  const astroBlock = blocks.find((b) => IMMUTABLE_PATH_RE.test(b.path))
-                  ?? blocks.find((b) => /\/(?:_astro|assets|chunks|_?build)\/\*/.test(b.path));
-  if (!astroBlock) {
+  const block = astroBlock(project.root);
+  if (!block) {
     reporter.fix(SEC, '_headers:/_astro/*', 'no /_astro/* rule — content-hashed bundles not marked immutable', 'add a /_astro/* block to public/_headers');
     return;
   }
 
-  const cc = astroBlock.headers['cache-control'] ?? '';
+  const cc = block.headers['cache-control'] ?? '';
   const hasImmutable = /\bimmutable\b/.test(cc);
   const maxAge = Number(cc.match(/max-age=(\d+)/)?.[1] ?? 0);
   if (hasImmutable && maxAge >= MIN_IMMUTABLE_MAXAGE) {
@@ -63,23 +50,6 @@ function checkHeaders(project, reporter) {
     ].filter(Boolean).join(' + ');
     reporter.fix(SEC, '_headers:/_astro/*', `Cache-Control missing ${missing}`, 'set "Cache-Control: public, max-age=31536000, immutable" on /_astro/*');
   }
-}
-
-function parseHeaders(text) {
-  const blocks = [];
-  let current = null;
-  for (const raw of text.split('\n')) {
-    const line = raw.replace(/\s+$/, '');
-    if (!line.trim() || line.trim().startsWith('#')) continue;
-    if (!/^\s/.test(raw)) {
-      current = { path: line.trim(), headers: {} };
-      blocks.push(current);
-    } else if (current) {
-      const idx = line.indexOf(':');
-      if (idx > 0) current.headers[line.slice(0, idx).trim().toLowerCase()] = line.slice(idx + 1).trim();
-    }
-  }
-  return blocks;
 }
 
 // 2. CLS — content <img> tags need width + height ----------------------------

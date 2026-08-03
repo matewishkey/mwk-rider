@@ -25,14 +25,18 @@ export async function run({ project, reporter }) {
   //  - inline: a negated draft AND a negated previewOnly, allowing any dotted
   //    accessor before the field (e.g. `!p.data.draft`, `!entry.data.previewOnly`)
   //  - a shared publish predicate factored into a helper (e.g. `isPublished(data)`)
-  const hasFilter = (rel) => {
+  // Returns WHICH form was found, not just that one was: a pass that names the
+  // evidence is the difference between "checked and clean" and "never ran".
+  const filterForm = (rel) => {
     const t = read(rel);
     const inline = /!\s*[\w.]*\bdraft\b/.test(t) && /!\s*[\w.]*\bpreviewOnly\b/.test(t);
+    if (inline) return 'inline !draft && !previewOnly';
     // `.filter(isPublished)` passes the predicate by reference — the idiomatic
     // form, and the one the comment above already claims to accept.
-    const helper = /\b\w*[Pp]ublished\s*[(,)\]]/.test(t) || /\bfilter\(\s*\w*[Pp]ublished\s*\)/.test(t);
-    return inline || helper;
+    const helper = t.match(/\b(\w*[Pp]ublished)\s*[(,)\]]/) ?? t.match(/\bfilter\(\s*(\w*[Pp]ublished)\s*\)/);
+    return helper ? `${helper[1]}() predicate` : null;
   };
+  const hasFilter = (rel) => filterForm(rel) !== null;
 
   checkJsonLd(project, reporter);
 
@@ -45,7 +49,8 @@ export async function run({ project, reporter }) {
     const driven = llms.filter(contentDriven);
     if (driven.length === 0) reporter.fix(SEC, 'llms.txt', `endpoint(s) exist but none call getCollection() (${llms.map(short).join(', ')})`, 'build the index from getCollection() so it tracks published content');
     else reporter.pass(SEC, 'llms.txt', `content-driven (${driven.map(short).join(', ')})`);
-    if (driven.some(hasFilter)) reporter.pass(SEC, 'llms.txt:filter');
+    const filtered = driven.filter(hasFilter);
+    if (filtered.length) reporter.pass(SEC, 'llms.txt:filter', `${filterForm(filtered[0])} in ${short(filtered[0])}`);
     else if (driven.length) reporter.fix(SEC, 'llms.txt:filter', 'no draft/preview filter on the content endpoint', 'exclude drafts/preview-only (!draft && !previewOnly)');
   }
 

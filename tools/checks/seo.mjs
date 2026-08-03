@@ -51,19 +51,23 @@ export async function run({ project, reporter }) {
   // Anti-pattern: <meta name="keywords"> (ignored by search engines, signals spam)
   const kw = srcFiles.find((f) => /name=["']keywords["']/.test(f.code));
   if (kw) reporter.fix(SEC, 'no-keywords', `<meta name="keywords"> in ${kw.path} (anti-pattern)`, 'remove the keywords meta');
-  else    reporter.pass(SEC, 'no-keywords');
+  else    reporter.pass(SEC, 'no-keywords', `not emitted by any of the ${srcFiles.length} source file(s) under src/`);
 
   // Brand fields (only checkable when scripts/og.config.mjs declares them)
   const brand = project.ogConfig?.brand ?? project.ogConfig;
   if (brand) {
     const required = ['siteName', 'siteUrl', 'tagline'];
     for (const k of required) {
-      if (brand[k]) reporter.pass(SEC, `brand.${k}`);
+      // The value, not a bare tick: these render straight into head meta, so
+      // "set" and "set to something sensible" are different verdicts and only
+      // the reader can tell them apart.
+      if (brand[k]) reporter.pass(SEC, `brand.${k}`, truncate(String(brand[k]), 60));
       else          reporter.fix(SEC, `brand.${k}`, 'missing (used by SEO meta)', `set brand.${k} in scripts/og.config.mjs`);
     }
     const optional = ['authorName', 'authorUrl', 'twitterSite', 'twitterCreator'];
     const missing = optional.filter((k) => !brand[k]);
     if (missing.length) reporter.suggest(SEC, 'brand:optional', `missing: ${missing.join(', ')}`, 'set for richer SEO/social cards (optional)');
+    else reporter.pass(SEC, 'brand:optional', `all set: ${optional.join(', ')}`);
   }
 
   checkRobots(project, reporter);
@@ -255,4 +259,8 @@ function checkHeadings(project, reporter) {
 
 function sampleOf(list, n = 3) {
   return list.slice(0, n).join('; ') + (list.length > n ? ' …' : '');
+}
+
+function truncate(s, n) {
+  return s.length > n ? s.slice(0, n - 1) + '…' : s;
 }

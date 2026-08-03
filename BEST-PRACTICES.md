@@ -77,6 +77,13 @@ worst things a check can do are miss a real violation and flag a compliant site;
 both erode trust in the tool, so a new practice isn't done until it's been run
 against a known-good site and a known-bad one.
 
+**Every outcome names its evidence — passes included.** `✅ seo: no-keywords`
+with nothing after it is indistinguishable from a check that ran over zero files
+and reported success, which is this tool's worst failure mode wearing a tick.
+Say what was looked at and how much of it (`not emitted by any of the 23 source
+file(s) under src/`). `tools/test.mjs` asserts this as an invariant over the
+whole fixture run, so a new check cannot quietly reintroduce a mute pass.
+
 ---
 
 ## modules — the baseline stack is present and wired
@@ -295,6 +302,18 @@ thing a version bump leaves behind. Each maps to a documented v7 breaking change
 - **No oversized rasters at the source or in the build.** A >500 KB PNG/JPG in
   `src/assets/`, or a >300 KB content image in `dist/`, means something never got
   resized. → `images: assets:size`, `images: dist:size`
+
+  **A responsive image is judged as a ladder, not as files.** The browser
+  downloads exactly one rung of a `srcset`, so the budget applies to the
+  *smallest* rung — what a phone actually gets — not to the largest. Flagging the
+  top rung was a false positive with no legal fix: Astro emits the intrinsic
+  width unconditionally (`image.breakpoints` only adds widths *below* it), so the
+  only way to satisfy it was to downscale the source and degrade retina desktop
+  to improve a number no user experiences. A ladder is a defect when even its
+  smallest rung is over budget; a single image referenced by no `srcset` is still
+  judged on its own bytes. Ladders are read out of the built HTML — an `<img>`'s
+  `srcset` plus its `src` fallback, and each `<source>` in a `<picture>`.
+  Reported by `tasmanvisa-web`, 2026-08-02.
 - **Transforms use `format=auto`, not an explicit format.** `format=auto` lets
   Cloudflare negotiate AVIF/webp per the browser's `Accept`; an explicit
   `format=webp` (the default Astro emits for bare markdown `![]()`) means no AVIF
@@ -612,6 +631,22 @@ the cache headers.
 - **A skip names what it skipped.** When no content page can be found, the `⏭`
   lists the rule ids that did not run. Silence must never be indistinguishable
   from a pass. → `seo: post`
+- **A finding that could not have gone the other way is not a finding.** Neither
+  `astro dev` nor `astro preview` applies `public/_headers` — both serve
+  `/_astro/*` as `no-cache` whatever the file says — so `perf: cache:_astro`
+  against one was guaranteed, unactionable, and (under `--strict`) run-failing.
+  It now `⏭`s when the project's own `_headers` declares hashed assets immutable
+  *and* the server is local *and* it returned otherwise: three facts that
+  together mean "this server ignores the file", not "this site is misconfigured".
+
+  Being local is deliberately not sufficient. `wrangler dev` of the same build
+  returns `public, max-age=31536000, immutable` (measured, 2026-08-03, wrangler
+  4.118.0 against `examples/starter`), so skipping on host alone would hide the
+  finding on the one local server able to produce it. For the same reason the
+  *pass* carries no dev-server caveat: an immutable response is something only a
+  server that applied the rule can return, so it is proof wherever it came from.
+  The caveat now attaches to `perf: cache:html` only when the asset probe showed
+  the server ignoring `_headers`.
 
 ## lighthouse (`--url`) — the measured score
 
