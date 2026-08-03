@@ -578,7 +578,7 @@ check('  …and TechArticle satisfies the Article-family shape',
 
 // A glossary entry is a DefinedTerm and rewriting it as an Article would make
 // the page worse — so reporting one as a *missing* Article is the check assuming
-// every content page wants to be a blog post. Reported by wishbusterz-web, whose
+// every content page wants to be a blog post. Reported by matewishkey-web, whose
 // /glossary/* pages were flagged while their /projects/* carried BlogPosting.
 const glossary = runJson(tmpdir(), ['-s', 'live', '--url', `http://127.0.0.1:${port}`, '--post', '/glossary/agent'])
   .json?.results.find(r => r.id === 'data/post-jsonld');

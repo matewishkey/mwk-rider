@@ -72,7 +72,7 @@ the alternative is a starter that quietly stops complying with the tool that shi
   the thing that actually goes wrong, which is a check firing on correct code in a shape
   nobody anticipated.
 
-  Round 3 (2026-08-03, against `wishbusterz-web` and `cypruspokerbrisbane-web`) is the
+  Round 3 (2026-08-03, against `matewishkey-web` and `cypruspokerbrisbane-web`) is the
   example: the new quote lint put 19 findings on one site, and every one was a possessive
   apostrophe inside a quoted YAML description — frontmatter is not prose, and `’` is not
   a quotation mark. Both fixed, both now regression-tested. Nothing in the fixture, the

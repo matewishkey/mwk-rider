@@ -68,7 +68,7 @@ export function hasArticleType(types) {
  * `Recipe`. Each is the *correct* markup for that page, and rewriting it as an
  * Article would make the page worse. Reporting one as a missing Article is the
  * check assuming every content page wants to be a blog post — reported by
- * wishbusterz-web, whose `/glossary/*` pages were flagged while their project
+ * matewishkey-web, whose `/glossary/*` pages were flagged while their project
  * and update pages carried BlogPosting all along.
  *
  * Deliberately excludes the generic wrappers — `WebPage`, `WebSite`,
