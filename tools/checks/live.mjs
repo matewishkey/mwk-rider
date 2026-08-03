@@ -11,6 +11,10 @@ import { headingLevels, headingAudit, attrValue, hasAttr } from '../lib/html.mjs
 import { imageSize } from '../lib/image-size.mjs';
 import { collectJsonLd, ldTypes, hasArticleType } from '../lib/jsonld.mjs';
 import { untrusted, capped, UNTRUSTED_NOTE } from '../lib/untrusted.mjs';
+import {
+  BEACON_SIGNALS, RUM_SIGNALS, ZARAZ_SIGNALS, GA_THIRD_PARTY_SIGNALS,
+  matchSignals, hasSignal,
+} from '../lib/analytics-signals.mjs';
 
 // One image loop can otherwise emit a finding per <img> on a page that has
 // hundreds — or that was built to have hundreds.
@@ -81,31 +85,59 @@ export async function run({ base, reporter, post }) {
   auditAnalytics(home, reporter);
 }
 
-// Analytics — Cloudflare Zaraz is the promoted delivery: it loads Google Analytics
-// (via GTM) at the edge behind its consent CMP (the cookie banner), and the loader
-// (/cdn-cgi/zaraz/) is the one signal present in served HTML. The banner render +
-// whether tags hold for consent are client-JS runtime, needing a headless browser
-// we don't run (tracked as a Gap). The anti-pattern is a THIRD-PARTY GA loader
-// (googletagmanager.com / google-analytics.com) — that fires outside Zaraz's consent
-// gate. A bare gtag() *call* is NOT flagged live: Zaraz injects the bootstrap into
-// the rendered HTML, so keying on the call (as the offline scan does for source)
-// would false-flag every compliant served page. NB the loader is only visible
-// because the page GET carries a browser navigation signature (NAV_HEADERS) — a
-// headerless probe is bot-scored and the edge suppresses the Zaraz injection.
+// Analytics — served HTML is the authoritative reader, because both supported
+// deliveries can be invisible offline. Cloudflare injects the Web Analytics
+// beacon at the edge for proxied sites (automatic install is on by default), and
+// Zaraz injects its loader (/cdn-cgi/zaraz/) at the edge always. Either one here
+// means the site is measured.
+//
+// NB both are only visible because the page GET carries a full browser
+// navigation signature (NAV_HEADERS) — a headerless probe is bot-scored and the
+// edge suppresses the Zaraz injection for it.
+//
+// Three rules, one meaning each:
+//   provider  what delivers analytics (advisory in both modes — see analytics.mjs)
+//   zaraz     the Zaraz loader specifically, with its consent caveat
+//   ga:raw    GA fetched straight from a Google origin, bypassing any consent gate
+//
+// A bare gtag() *call* is NOT flagged live: when Zaraz delivers GA it injects
+// that bootstrap into the rendered HTML, so keying on the call (as the offline
+// scan does for source) would flag every compliant served page.
 function auditAnalytics(home, reporter) {
   const html = home.text;
-  const zaraz = /\/cdn-cgi\/zaraz\//.test(html);
-  const thirdPartyGa = /googletagmanager\.com\/(?:gtag\/js|gtm\.js)|google-analytics\.com\/(?:analytics|ga)\.js/i.test(html);
+  const beacon = matchSignals(html, [...BEACON_SIGNALS, ...RUM_SIGNALS]);
+  const zaraz = hasSignal(html, ZARAZ_SIGNALS);
+  const thirdPartyGa = hasSignal(html, GA_THIRD_PARTY_SIGNALS);
 
-  if (zaraz) {
-    reporter.pass('analytics', 'zaraz', 'Cloudflare Zaraz loader present (/cdn-cgi/zaraz/) — analytics is Zaraz-managed at the edge. NB: confirms the loader only; the consent CMP actually rendering + tags holding for consent are client-side runtime, not checked here (see BEST-PRACTICES § Gaps)');
-    if (thirdPartyGa) {
-      reporter.fix('analytics', 'ga:raw', 'Google Analytics is ALSO loaded directly from googletagmanager.com — it bypasses Zaraz and fires outside consent', 'remove the hardcoded third-party GA loader; let Zaraz deliver it behind the consent banner');
-    }
-  } else if (thirdPartyGa) {
-    reporter.fix('analytics', 'zaraz', 'Google Analytics is loaded directly from googletagmanager.com and no Zaraz loader (/cdn-cgi/zaraz/) is present — it fires without consent', 'load GA through Cloudflare Zaraz so the consent CMP gates it');
+  // provider — what is delivering analytics here.
+  if (beacon.length && zaraz) {
+    reporter.pass('analytics', 'provider', `both Cloudflare Web Analytics (${beacon.join(', ')}) and Zaraz are on the page — deliberate if Zaraz carries other tools, duplicated measurement if not`);
+  } else if (beacon.length) {
+    reporter.pass('analytics', 'provider', `Cloudflare Web Analytics (${beacon.join(', ')}) — cookieless, so no consent banner is required`);
+  } else if (zaraz) {
+    reporter.pass('analytics', 'provider', 'Cloudflare Zaraz — analytics is edge-managed behind its consent CMP');
   } else {
-    reporter.skip('analytics', 'zaraz', 'no Zaraz loader and no third-party GA in served HTML — nothing to verify. The probe sends a browser navigation signature, so Zaraz is genuinely absent (not configured), or the edge blocks ALL bot traffic / a WAF rule strips the loader. Consent-banner render + pre-consent firing also need a real browser, not done here');
+    reporter.suggest('analytics', 'provider', 'no Cloudflare Web Analytics beacon and no Zaraz loader in the served HTML — this page is measuring nothing', 'turn on Cloudflare Web Analytics (free, cookieless, no banner): for a proxied site the dashboard injects the beacon for you, otherwise add the one <script> to the root layout');
+  }
+
+  // zaraz — the loader specifically, kept with its caveat.
+  if (zaraz) {
+    reporter.pass('analytics', 'zaraz', 'Zaraz loader present (/cdn-cgi/zaraz/). NB this confirms the loader only — the consent CMP actually rendering, and tags holding until consent, are client-side runtime and are not checked here (see BEST-PRACTICES § Gaps)');
+  } else {
+    reporter.skip('analytics', 'zaraz', 'no Zaraz loader in served HTML — either Zaraz is not configured for this zone (a legitimate choice; Web Analytics needs no tag manager), or the edge blocks all bot traffic / a WAF rule strips the loader. The probe does send a browser navigation signature, so the first is the likely reading');
+  }
+
+  // ga:raw — its own rule in both branches. Reporting the no-Zaraz case under
+  // the `zaraz` id gave one id three meanings, so nothing could be filtered on.
+  if (thirdPartyGa) {
+    reporter.fix(
+      'analytics',
+      'ga:raw',
+      `Google Analytics is loaded directly from a Google origin${zaraz ? ' as well as through Zaraz' : ''} — it fires outside any consent gate`,
+      zaraz
+        ? 'remove the third-party GA loader; let Zaraz deliver it behind the consent CMP'
+        : 'either deliver GA through Cloudflare Zaraz so its consent CMP gates it, or drop GA for Cloudflare Web Analytics, which is cookieless and needs no gate',
+    );
   }
 }
 

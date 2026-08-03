@@ -11,7 +11,9 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
 const SOURCE_EXT = /\.(astro|tsx?|jsx?|mdx?)$/;
-const CODE_EXT = /\.(astro|tsx?|jsx?)$/;
+// Prose, not syntax: in .md/.mdx a `//` or a slash-star is text, so the JS
+// comment rules must not run over it. Everything else may carry script.
+const MARKDOWN_EXT = /\.mdx?$/;
 const SKIP_DIR = new Set(['node_modules', 'dist', '.astro', '.git']);
 
 /**
@@ -40,8 +42,12 @@ export function stripComments(text, { js = true } = {}) {
  * Every source file under src/, as { path (project-relative), text, code }.
  *   text — verbatim, for reporting excerpts and counting lines
  *   code — comments blanked out; what a check should match against
+ *
+ * `exts` widens what counts as a source file. The default is what renders a
+ * page; `analytics` adds `.html`, because a script tag pasted into a static
+ * HTML file under src/ ships exactly like one pasted into a component.
  */
-export function readSrcFiles(root, { subdir = 'src' } = {}) {
+export function readSrcFiles(root, { subdir = 'src', exts = SOURCE_EXT } = {}) {
   const base = join(root, subdir);
   if (!existsSync(base)) return [];
   const out = [];
@@ -54,13 +60,13 @@ export function readSrcFiles(root, { subdir = 'src' } = {}) {
     for (const e of entries) {
       const full = join(dir, e.name);
       if (e.isDirectory()) { if (!SKIP_DIR.has(e.name)) stack.push(full); continue; }
-      if (!SOURCE_EXT.test(e.name)) continue;
+      if (!exts.test(e.name)) continue;
       try {
         const text = readFileSync(full, 'utf8');
         out.push({
           path: relative(root, full),
           text,
-          code: stripComments(text, { js: CODE_EXT.test(e.name) }),
+          code: stripComments(text, { js: !MARKDOWN_EXT.test(e.name) }),
         });
       }
       catch { /* unreadable file — skip, never fail the audit over it */ }

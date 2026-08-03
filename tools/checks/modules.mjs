@@ -4,6 +4,7 @@
 
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { BASELINE_SEARCH, installedEngines } from '../lib/search-engines.mjs';
 
 const SEC = 'modules';
 
@@ -12,20 +13,23 @@ const SEC = 'modules';
 // astro-robots-txt is deliberately NOT here: what matters is that the build
 // ships a robots.txt pointing at the sitemap, and a generated endpoint does that
 // at least as well (see seo:robots, which reads dist/robots.txt).
+//
+// @orama/orama is deliberately NOT here either, as of the 2026-08-03 baseline
+// shift. Search is now optional: most content sites are small enough that the
+// browser's own find-in-page beats a bundled index, and requiring the dependency
+// gave every searchless site a `dep:` finding for choosing not to have a
+// feature. What still binds is coherence — see `search:engine` below and
+// `data:search:index`, which fires when a search library ships with nothing to
+// feed it.
 const BASELINE_DEPS = [
   '@astrojs/mdx',
   '@astrojs/sitemap',
   '@astrojs/rss',
   '@astrojs/check',
-  '@orama/orama',
 ];
 
-// Search must be Orama — these indicate a custom/competing search solution.
-const COMPETING_SEARCH = [
-  'fuse.js', 'lunr', 'flexsearch', 'minisearch', 'js-search',
-  'algoliasearch', '@algolia/client-search', 'meilisearch', 'typesense',
-  'pagefind', 'astro-pagefind', '@docsearch/js',
-];
+// The engine list lives in lib/search-engines.mjs — data:search:index reasons
+// about the same set, and two lists is how they disagree.
 
 // Experimental flags Astro 7 stabilized — still present under `experimental:`
 // they are config errors, not no-ops. Each maps to its v7 home.
@@ -96,16 +100,23 @@ export async function run({ project, reporter }) {
     else           reporter.fix(SEC, `dep:${dep}`, 'not installed', `npm i ${dep}`, { id: 'modules/dep' });
   }
 
-  // Search is Orama. This used to pass whenever no competitor was installed —
-  // so a site with no search at all was reported as "Orama ✅", a pass for
-  // something that isn't there. Judge what IS present, and skip when nothing is.
-  const found = COMPETING_SEARCH.filter((d) => deps[d]);
-  if (found.length) {
-    reporter.fix(SEC, 'search:engine', `non-baseline search lib present: ${found.join(', ')}`, 'baseline search is @orama/orama (client-side, fed by a search-index endpoint) — migrate off the custom search lib');
-  } else if (deps['@orama/orama']) {
+  // Search: optional, but coherent.
+  //
+  // This used to demand Orama and flag anything else. That is house style being
+  // asserted as a defect — a site with Pagefind has search, and it works. What
+  // is a genuine defect is *two* client-side search engines: two indexes to
+  // build, two bundles to ship, and two different answers to the same query.
+  //
+  // So: none is fine, one is fine, two is a finding.
+  const engines = installedEngines(pkg);
+  if (engines.length === 0) {
+    reporter.skip(SEC, 'search:engine', 'no search library installed — search is optional in the baseline, so there is nothing to check here (data:search:index checks that a site which HAS one also feeds it)');
+  } else if (engines.length > 1) {
+    reporter.fix(SEC, 'search:engine', `${engines.length} search engines installed: ${engines.join(', ')} — two indexes to build, two bundles to ship, and two answers to the same query`, `pick one and drop the rest (the baseline's is ${BASELINE_SEARCH}, but any single client-side engine is fine)`);
+  } else if (engines[0] === BASELINE_SEARCH) {
     reporter.pass(SEC, 'search:engine', 'Orama');
   } else {
-    reporter.skip(SEC, 'search:engine', 'no search library installed — nothing to check (data:search:index reports whether an index endpoint exists)');
+    reporter.suggest(SEC, 'search:engine', `search is ${engines[0]}`, `a single client-side search engine is fine — the baseline happens to use ${BASELINE_SEARCH}, so only reach for it if you want the shared index-endpoint shape too`);
   }
 
   // @astrojs/cloudflare adapter is needed for <Image> only under SSR. On a static

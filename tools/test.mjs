@@ -271,13 +271,29 @@ check('  …while WebSite alone → fix', siteOnly?.outcome === 'fix', JSON.stri
 const brokenLd = row(mkBuilt({ 'dist/index.html': '<html><head><script type="application/ld+json">{"@type": "Article",}<\/script></head></html>' }), 'data', 'data/jsonld-parses');
 check('  …and JSON-LD that does not parse is its own finding', brokenLd?.outcome === 'fix', JSON.stringify(brokenLd));
 
-// search — a site with no search at all used to report "Orama ✅".
+// search — optional since 2026-08-03. A site with no search at all used to
+// report "Orama ✅"; then it reported a required finding for every dependency it
+// had chosen not to install. Neither was true.
 const noSearch = row(mkBuilt({}), 'modules', 'modules/search-engine');
 check('no search library → skip, not a pass for Orama', noSearch?.outcome === 'skip', JSON.stringify(noSearch));
 const orama = row(mkBuilt({}, { deps: { '@orama/orama': '^3.1.18' } }), 'modules', 'modules/search-engine');
 check('  …Orama installed → pass', orama?.outcome === 'pass', JSON.stringify(orama));
 const pagefind = row(mkBuilt({}, { deps: { pagefind: '^1.0.0' } }), 'modules', 'modules/search-engine');
-check('  …a competing lib → fix', pagefind?.outcome === 'fix', JSON.stringify(pagefind));
+check('  …one non-baseline engine → suggest, not fix', pagefind?.outcome === 'suggest', JSON.stringify(pagefind));
+const twoEngines = row(mkBuilt({}, { deps: { '@orama/orama': '^3.1.18', pagefind: '^1.0.0' } }), 'modules', 'modules/search-engine');
+check('  …but two engines at once → fix', twoEngines?.outcome === 'fix', JSON.stringify(twoEngines));
+// Dropping @orama/orama from BASELINE_DEPS must not lose the coverage: a site
+// that ships a search library and no index endpoint has a search box wired to
+// nothing, and that is still a finding.
+const oramaDeps = { '@orama/orama': '^3.1.18' };
+const searchNoIndex = row(mkBuilt({}, { deps: oramaDeps }), 'data', 'data/search-index');
+check('a search library with no index endpoint → fix', searchNoIndex?.outcome === 'fix', JSON.stringify(searchNoIndex));
+const noSearchNoIndex = row(mkBuilt({}), 'data', 'data/search-index');
+check('  …and no search library and no endpoint → skip, not a finding',
+  noSearchNoIndex?.outcome === 'skip', JSON.stringify(noSearchNoIndex));
+check('  …and @orama/orama is no longer a required baseline dep',
+  runJson(mkBuilt({}), ['-s', 'modules', '--strict']).json?.results
+    .every(r => !String(r.name).includes('@orama/orama')));
 
 // RSS — the built feed, not getCollection() in the endpoint file. Factoring the
 // query into a shared helper is good practice and used to fail the check.
@@ -653,13 +669,48 @@ writeFileSync(join(emptyProject, 'astro.config.mjs'), "export default { output: 
 check('analytics does not pass on a project with nothing to scan',
   runJson(emptyProject, ['-s', 'analytics']).json?.results.find(r => r.id === 'analytics/no-hardcoded-ga')?.outcome === 'skip');
 
+console.log('analytics is reported, never demanded:');
+// The invariant the 2026-08-03 softening rests on. `analytics/provider` answers
+// "what delivers analytics here" — including "nothing" — and must never fail a
+// run, in either mode. Assert it rather than trust it: reporter.suggest() has no
+// this.strict reference today, and a future refactor that gave it one would turn
+// every site with no analytics into a build failure without a single test going
+// red. Checked under --strict, which is the mode that would break it.
+const noAnalytics = mkBuilt({ 'dist/index.html': '<html><head><title>t</title></head><body><h1>t</h1></body></html>' });
+for (const mode of [[], ['--strict']]) {
+  const label = mode.length ? '--strict' : 'default';
+  const rows = runJson(noAnalytics, ['-s', 'analytics', ...mode]).json?.results ?? [];
+  const provider = rows.find(r => r.id === 'analytics/provider');
+  check(`a site with no analytics at all still gets 💡, not a finding (${label})`,
+    provider?.outcome === 'suggest', JSON.stringify(provider));
+}
+// The whole-suite version: nothing anywhere may promote this rule.
+const strictAnalytics = runJson(FIXTURE, ['--strict']).json?.results
+  .filter(r => r.id === 'analytics/provider') ?? [];
+check('  …and no analytics/provider row is ever fix/block under --strict',
+  strictAnalytics.length > 0 && strictAnalytics.every(r => r.outcome !== 'fix' && r.outcome !== 'block'),
+  JSON.stringify(strictAnalytics));
+// The fixture wires the beacon behind a null token, so it is the standing
+// example of "wired but no data flows" — a 💡 that is honest and permanent.
+check('  …and the fixture reports its beacon as wired-but-unset',
+  strictAnalytics.some(r => r.outcome === 'suggest' && /token/i.test(r.message ?? '')),
+  JSON.stringify(strictAnalytics));
+// Comments must not satisfy the positive check. This is the third time this
+// class of bug has been fixed in this repo (meta tags, then content schemas).
+const commentOnly = mkBuilt({}, { src: {
+  'src/pages/index.astro': '---\n// TODO: add the static.cloudflareinsights.com/beacon.min.js script\n---\n<p>hi</p>\n',
+} });
+const commented = row(commentOnly, 'analytics', 'analytics/provider');
+check('a beacon named only in a comment is not wiring',
+  commented?.outcome === 'suggest' && !/wired/.test(commented?.message ?? ''), JSON.stringify(commented));
+
 console.log('--rules is the catalogue, and it does not drift:');
 // The catalogue is what an agent reads to learn what this tool checks. If a
 // check can fire with an id the catalogue doesn't list, the catalogue is a lie.
 const { ruleCatalogue, knownRuleIds } = await import('./lib/rules.mjs');
 const catalogue = ruleCatalogue();
 check('--rules --json lists rules with id, severity and a reason',
-  catalogue.length > 50 && catalogue.every(r => r.id && r.why && ['universal', 'house'].includes(r.severity)));
+  catalogue.length > 50 && catalogue.every(r => r.id && r.why && ['universal', 'house', 'advisory'].includes(r.severity)));
 const rulesRun = spawnSync('node', [AUDIT, '--rules', '--json'], { cwd: tmpdir(), encoding: 'utf8' });
 check('  …and it runs outside an Astro project', rulesRun.status === 0, `exit ${rulesRun.status}`);
 const known = knownRuleIds();

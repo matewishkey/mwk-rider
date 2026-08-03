@@ -8,12 +8,12 @@ This repo is **rider**: a single on-demand slash command (`/rider`) that checks 
 - **One skill:** `skills/rider/SKILL.md` — orchestrates a run: load the project's details, run the tool, walk the findings. `install.sh` links that one file as both the skill and the `/rider` command, so the two cannot drift.
 - **One tool:** `tools/audit.mjs` — the entry. Detects an Astro project, runs the offline domain checks, and (with `--url`) the live ones. Reports `✅ / 🔧 / 🛑 / 💡 / ⏭` and exits non-zero on findings.
 - **Seven offline domains + three `--url` domains**, one module each under `tools/checks/`:
-  - `modules` — baseline stack present + wired (version, integrations, `output: 'static'`, strict TS, adapter-iff-`<Image>`); search is Orama (flags competing search libs).
+  - `modules` — baseline stack present + wired (version, integrations, `output: 'static'`, strict TS, adapter-iff-`<Image>`); search is optional, two engines at once is a finding.
   - `seo` — canonical SEO component (canonical URL, OG meta), no `keywords`, sitemap lastmod, one `<h1>` per content page (skipped levels = advisory).
   - `images` — content images routed through an image transform + not oversized (`src/assets/` and `dist/`); on built `dist/` HTML, flags Cloudflare transform params (`format=auto` not explicit; explicit `quality=`) + content `<img>` missing `alt`.
   - `perf` — `/_astro/*` immutable in `public/_headers`; `<img>` carry width/height (CLS).
-  - `data` — JSON-LD (BlogPosting + WebSite), `/llms.txt` from the content store, RSS, Orama search-index endpoint, Zod-validated content schema. Endpoints match by pattern (single + per-locale).
-  - `analytics` — flags a hardcoded Google Analytics / GTM snippet in `src/`+`dist/` (`gtag.js`/`gtm.js`/`analytics.js`/`gtag(`/`GTM-…`/`UA-…`); the baseline delivers analytics via Cloudflare Zaraz behind its consent CMP). The `/cdn-cgi/zaraz/` loader is edge-injected, so the positive check is live-only — see `live.mjs`.
+  - `data` — JSON-LD (BlogPosting + WebSite), `/llms.txt` from the content store, RSS, a search-index endpoint iff a search library is installed, Zod-validated content schema. Endpoints match by pattern (single + per-locale).
+  - `analytics` — `provider` reports what delivers analytics (Cloudflare Web Analytics by default — free, cookieless, no banner; Zaraz when you need a tag manager) and is **advisory by construction**: no 🔧/🛑 branch, in either mode. The finding is a hardcoded GA/GTM snippet in `src/`+`dist/`, which fires pre-consent. Both deliveries are edge-injectable, so `--url` is authoritative — see `live.mjs`. Patterns live in `tools/lib/analytics-signals.mjs`.
   - `content` — the pages a site is repeatedly asked for: a media kit and a design/styleguide page. Both house style, so `💡` unless `--strict`.
   - `live` (only with `--url`) — real headers, served bytes (browser-realistic `Accept`) + transform-param flags, rendered HTML — `tools/checks/live.mjs`.
   - `lighthouse` (only with `--url`) — measured PSI scores + Core Web Vitals — `tools/checks/lighthouse.mjs`. Needs a free PSI key in `$PAGESPEED_API_KEY`. Skips gracefully without one.

@@ -12,8 +12,20 @@ preventing everywhere becomes a permanent check.
 
 **Baseline assumed.** The baseline Astro stack: Astro 7+, `output: 'static'`,
 Cloudflare delivery (Image Transformations for R2 content, immutable hashed
-assets), Orama client-side search. The tool validates compliance against this —
-it never sets anything up or migrates.
+assets), and Cloudflare Web Analytics for measurement. The tool validates
+compliance against this — it never sets anything up or migrates.
+
+Two things left the baseline on **2026-08-03**, because both had become a wall
+between a new site and a working one:
+
+- **Search is optional.** It used to be a required dependency (`@orama/orama`),
+  so a site that had deliberately shipped no search collected a finding for it.
+  What binds now is coherence, not presence — see *Search* under `modules`.
+- **Analytics is Cloudflare Web Analytics by default, not Zaraz.** Web Analytics
+  is free, cookieless and needs no consent banner, so a site can be measured the
+  day it deploys. Zaraz remains fully supported and fully documented below; it is
+  the right answer when you need a tag *manager*, and it is a dashboard project
+  before it is anything else. Nothing about analytics fails a run in either mode.
 
 **Severities.** 🔧 fix = required, fails the run · 🛑 = needs a human decision ·
 💡 = advisory suggestion, never fails · ⏭ = not testable in this mode.
@@ -32,6 +44,13 @@ is the right mode once you've adopted the baseline deliberately. The
 classification is one table in `tools/lib/policy.mjs` — **when you add a
 practice, classify it there too**, or it silently defaults to universal and
 starts failing strangers' builds.
+
+There is a third, much smaller category: **advisory**. A handful of checks report
+a *fact* rather than a verdict and have no `🔧`/`🛑` branch at all — `--strict`
+does not promote them because there is nothing to promote. `analytics: provider`
+is the one that matters. They are listed separately in `policy.mjs` so
+`--rules` can label them `[advisory]` instead of `[universal]`, which would read
+as "required by default".
 
 ## How we add a practice
 
@@ -80,20 +99,32 @@ against a known-good site and a known-bad one.
   TS 7 breaks `astro check`, which is the type gate the baseline relies on. Pin
   `^6` until the peer range widens. → `modules: typescript:version`
 - **Baseline integrations installed:** `@astrojs/mdx`, `@astrojs/sitemap`,
-  `@astrojs/rss`, `@astrojs/check`, `@orama/orama`. Each backs a downstream
-  practice (RSS feed, sitemap, type-checking, search). → `modules: dep:<name>`
+  `@astrojs/rss`, `@astrojs/check`. Each backs a downstream practice (RSS feed,
+  sitemap, type-checking). → `modules: dep:<name>`
 
   `astro-robots-txt` was on this list and no longer is. The practice is that the
   build *ships* a robots.txt pointing at the sitemap — a generated endpoint does
   that at least as well as the package, and collides with it if you have both.
   Requiring the package tested our habit, not the outcome. → `seo: robots`
-- **Search is Orama, nothing else.** One client-side search engine fed by a
-  content-driven index keeps bundle size and behavior predictable; a competing
-  lib (Algolia, Pagefind, Fuse, Lunr, …) means two answers to the same question.
-  The check judges what's *present*: Orama → pass, a competitor → fix, no search
-  library at all → `⏭`. It used to pass on the mere absence of a competitor, so a
-  site with no search was reported as "Orama ✅" — a pass for something that
-  wasn't there. → `modules: search:engine` (pairs with `data: search:index`)
+
+  `@orama/orama` left the list on 2026-08-03 for a different reason: it was
+  requiring a *feature*, not an integration. See below.
+- **Search is optional; two search engines is not.** A content site of a few
+  dozen pages is served fine by the browser's own find-in-page, and shipping an
+  index it never uses is bundle weight for nothing. So no search library at all
+  is `⏭` — there is nothing to check. One is fine whichever it is: Orama is the
+  baseline's, and gets `✅`; Pagefind, Fuse, Lunr, Algolia and the rest get a
+  `💡` saying so and nothing more.
+
+  What is a defect on anyone's site is *two* engines installed at once — two
+  indexes to build, two bundles to ship, and two different answers to the same
+  query. That is the only branch that still reports `🔧`.
+  → `modules: search:engine` (pairs with `data: search:index`)
+
+  This is what "softening" has to mean if it is to be honest: the requirement
+  moved from *presence* to *coherence*. Dropping the dependency without moving
+  `data: search:index` to match would have removed the check entirely, so a site
+  could ship a search box wired to nothing and hear about it from nobody.
 - **A fully static build.** `output` defaults to `'static'` (Astro configuration
   reference, verified 2026-08-02), so *omitting* it is correct and only an
   explicit `output: 'server'` is a departure. The check used to flag any config
@@ -380,76 +411,155 @@ by **pattern**, so single-locale and per-locale naming both pass.*
   factoring the collection query into a shared helper. Without a `dist/` the
   endpoint's existence is reported, and the message says its output is unverified.
   → `data: rss`
-- **An Orama search-index endpoint.** A `search-index*.json` endpoint built from
-  `getCollection()` is the source the client-side Orama search loads. →
+- **A search-index endpoint, if the site has search.** A `search-index*.json`
+  endpoint built from `getCollection()` is what a client-side engine loads. Since
+  search became optional the check is dependency-aware: no endpoint *and* no
+  search library is `⏭`; no endpoint *with* a search library installed is a
+  finding, because the site ships a search UI with nothing to feed it. →
   `data: search:index` (pairs with `modules: search:engine`)
 
 **Shared invariant:** one publish predicate — `!draft && !previewOnly` — across
 llms, RSS, and search-index, so all three discovery surfaces agree on what's
 public.
 
-## analytics — measured privately, behind consent
+## analytics — measured privately, and measured at all
 
 *Check files: `tools/checks/analytics.mjs` (offline: source + built `dist/`) and
-the `analytics` checks in `tools/checks/live.mjs` (served HTML, `--url`).*
+the `analytics` checks in `tools/checks/live.mjs` (served HTML, `--url`). The
+patterns both read live in `tools/lib/analytics-signals.mjs`, so the two cannot
+drift.*
 
-- **Analytics ships through Cloudflare Zaraz, not a hardcoded snippet.** Zaraz is
-  the tag manager: it loads Google Analytics (and Cloudflare's own analytics) at
-  the edge and gates every tag behind its Consent Management Platform — the
-  cookie banner — so nothing fires before the visitor agrees. A Google
-  Analytics / GTM snippet pasted into the source fires immediately, outside
-  consent, and bypasses Zaraz. The offline check flags that snippet
-  (`gtag.js`/`gtm.js`/`analytics.js`/`gtag(`/`GTM-…`/`UA-…`) in `src/` or `dist/`.
-  → `analytics: no-hardcoded-ga`
-- **Zaraz loader present on the served page.** Because Zaraz injects at the edge,
-  the loader (`/cdn-cgi/zaraz/i.js`) only shows up at serve time. With `--url`,
-  its presence confirms analytics is Zaraz-managed. The flag is a GA tag loaded
-  *third-party* from `googletagmanager.com`/`google-analytics.com` (instead of, or
-  alongside, the loader) — that fires outside the consent gate. A bare `gtag()`
-  *call* is **not** flagged live: Zaraz injects the bootstrap into the rendered
-  HTML, so keying on the call (as the offline scan does for *source*) would
-  false-flag every compliant served page. → `analytics: zaraz`, `analytics: ga:raw`
+**Nothing in this section fails a run.** `analytics: provider` is *advisory by
+construction* — it has no `🔧`/`🛑` branch at all, in either mode, and
+`tools/lib/policy.mjs` lists it as such so `--rules` says `[advisory]` rather
+than implying `--strict` would promote it. Whether a site measures its traffic
+is a business decision. The tool reports what delivers analytics — including
+when the answer is nothing — and moves on. `tools/test.mjs` asserts the
+invariant under `--strict`, because a future refactor could otherwise turn every
+unmeasured site into a build failure without a single test going red.
+
+### The default: Cloudflare Web Analytics
+
+- **Cloudflare Web Analytics is the baseline's analytics layer.** It is free, it
+  is cookieless, and it does not require a consent banner — so a site can be
+  measured the day it deploys, with no dashboard project in front of it. One
+  script tag in the root layout:
+
+  ```html
+  <script type="module"
+          src="https://static.cloudflareinsights.com/beacon.min.js"
+          data-cf-beacon='{"token": "<SITE_TOKEN>"}'></script>
+  ```
+
+  (Cloudflare `web-analytics/faq`, verified 2026-08-03. A `?token=…` query-string
+  form exists too, for tag managers that cannot set attributes.) The beacon
+  reports to `/cdn-cgi/rum` on the site's own origin.
+  → `analytics: provider`
+- **Offline can only ever be advisory about its presence, and not because of the
+  severity.** For a proxied site Cloudflare injects the beacon *at the edge* —
+  automatic setup is on by default — so a correctly-measured site can have no
+  trace of it in `src/` or `dist/`. The served page is the authoritative reader.
+  The offline check therefore says what it saw and names `--url` as the thing
+  that settles it, rather than concluding.
+- **A beacon wired behind an unset token measures nothing.** The common shape is
+  a root layout that renders the script only when a token is configured. That is
+  correct — but it means "the code is there" and "data is flowing" are different
+  claims. When the beacon is in `src/` and in none of the built pages, the check
+  says so in those words. `examples/_fixture-i18n` is the standing example: it is
+  localhost-only, its token is genuinely `null`, and it carries this `💡`
+  permanently rather than being given a fake token to look clean.
+- **Auto-install does not reach a Worker.** Cloudflare's automatic injection
+  rewrites HTML for proxied *static* responses. A site served by a Worker — which
+  is what a Cloudflare Pages/Workers deploy of an Astro build is — is not
+  rewritten, so auto-install silently does nothing and the dashboard still shows
+  the site as set up. **On a Workers-served site the `<script>` in the root
+  layout is mandatory.** This is the single most expensive thing to get wrong
+  here, because every surface reports success: the dashboard says installed, the
+  build says fine, and no data arrives. Confirm it the only way that means
+  anything — `--url` against the deployed site, which reads the served HTML.
+  → `analytics: provider` (live)
+
+### The alternative, fully supported: Cloudflare Zaraz
+
+Zaraz is a tag *manager*. Reach for it when you need to run Google Analytics or
+other third-party tools and want them gated behind a consent CMP. It is not
+worse than Web Analytics; it is a bigger thing, and it is no longer what a site
+must set up before it measures anything.
+
+- **Zaraz loads tags at the edge, behind its own consent gate.** It loads Google
+  Analytics (and Cloudflare's own analytics) at the edge and holds every tag
+  behind its Consent Management Platform — the cookie banner — so nothing fires
+  before the visitor agrees. → `analytics: zaraz` (live)
+- **The Zaraz loader is only visible at serve time.** Because Zaraz injects at
+  the edge, the loader (`/cdn-cgi/zaraz/i.js`) shows up only in served HTML. With
+  `--url`, its presence confirms analytics is Zaraz-managed. Without `--url` the
+  check reports `⏭`, and says which.
 - **The live probe must look like a browser to see Zaraz.** Zaraz has a "Block
   bot initiated requests" setting (bot-score based: block none / automated /
   automated + likely) and Bot Fight Mode does the same — a headerless `fetch` is
-  bot-scored as automated, so the edge *correctly* suppresses the loader injection
-  for it. A curl-shaped probe therefore never sees Zaraz on a protected site, even
-  when it's configured right. So the live GET carries a full browser navigation
-  signature (`NAV_HEADERS` in `live.mjs`: Chrome UA, `Sec-Fetch-*`, `Sec-Ch-Ua`,
-  `Accept: text/html…`) to get the fully-injected page a real visitor receives.
-  Without this the check skips with a false negative. → drives `analytics: zaraz`
-- **The cookie banner is Zaraz's CMP — no custom banner in the site.** Zaraz ships
-  a built-in Consent Management Platform: enable it in the dashboard, assign each
-  tool a *purpose*, and Zaraz auto-renders the consent modal, gates every tag until
-  the visitor agrees, localises by `Accept-Language`, and is styleable via custom
-  CSS. So a baseline site should **not** hand-roll a cookie banner — that duplicates
-  what the CMP already does and risks tags firing outside consent. The Consent API
-  (`zaraz.consent.*`, the `cf_consent` cookie, the `zarazConsentAPIReady` event) is
-  the escape hatch *only* for advanced needs — region-scoped modals (e.g. EU-only)
-  or integrating a third-party CMP. (No enforcing check: a custom banner isn't
-  reliably detectable in static HTML, and the CMP render itself is the consent Gap
-  below — runtime, needs a browser.)
+  bot-scored as automated, so the edge *correctly* suppresses the loader
+  injection for it. A curl-shaped probe therefore never sees Zaraz on a protected
+  site, even when it is configured right. So the live GET carries a full browser
+  navigation signature (`NAV_HEADERS` in `live.mjs`: Chrome UA, `Sec-Fetch-*`,
+  `Sec-Ch-Ua`, `Accept: text/html…`) to get the fully-injected page a real
+  visitor receives. Without this the check skips with a false negative.
+  → drives `analytics: zaraz`
+- **The cookie banner is Zaraz's CMP — no custom banner in the site.** Zaraz
+  ships a built-in Consent Management Platform: enable it in the dashboard,
+  assign each tool a *purpose*, and Zaraz auto-renders the consent modal, gates
+  every tag until the visitor agrees, localises by `Accept-Language`, and is
+  styleable via custom CSS. So a site using Zaraz should **not** hand-roll a
+  cookie banner — that duplicates what the CMP already does and risks tags firing
+  outside consent. The Consent API (`zaraz.consent.*`, the `cf_consent` cookie,
+  the `zarazConsentAPIReady` event) is the escape hatch *only* for advanced needs
+  — region-scoped modals (e.g. EU-only) or integrating a third-party CMP. (No
+  enforcing check: a custom banner isn't reliably detectable in static HTML, and
+  the CMP render itself is a Gap below — runtime, needs a browser.)
+- **A site on Web Analytics needs no banner at all.** This is the practical
+  reason it is the default: cookieless measurement has nothing to consent to, so
+  the entire CMP question — build it, configure it, style it, test that tags
+  actually hold — does not arise.
+
+### The finding: a snippet that fires before consent
+
+- **No hardcoded Google Analytics / GTM snippet.** A GA or Tag Manager snippet
+  pasted into the source fires immediately, outside any consent gate, and
+  bypasses Zaraz entirely. The offline check flags it
+  (`gtag.js`/`gtm.js`/`analytics.js`/`gtag(`/`GTM-…`/`UA-…`) in `src/` or
+  `dist/`. It has two fixes, and the check names both: drop GA for cookieless Web
+  Analytics, or deliver GA through Zaraz so the CMP gates it.
+  → `analytics: no-hardcoded-ga`
+- **Live, only a third-party *loader* counts.** A bare `gtag()` call is not
+  flagged against served HTML: when Zaraz delivers GA it injects that bootstrap
+  into the rendered page itself, so keying on the call — as the offline scan
+  correctly does for *source* — would flag every compliant site. Only a script
+  fetched from a Google origin proves the site went around the edge. That is its
+  own rule in both branches: reporting the no-Zaraz case under the `zaraz` id
+  gave one id three meanings, so nothing could be filtered or suppressed by it.
+  → `analytics: ga:raw`
+- **Comments are blanked before matching.** A `{/* Cloudflare Web Analytics
+  beacon */}` note above an unwired block must not satisfy the *positive* check —
+  that would be the tool reporting verified-good where nothing is emitted, which
+  is the worst failure it has. The check reads `code` from `lib/src-scan.mjs`,
+  not raw text. This class of bug has now been fixed three times in this repo
+  (meta tags, then content schemas, then here), which is why it is written down.
+
 > **Not enforced: Google Tag Gateway.** Cloudflare's Google Tag Gateway (serving
 > the Google tag first-party from a reserved path instead of `googletagmanager.com`)
 > earns its keep when ad-spend measurement / ad-blocker signal recovery is the
-> point — paid acquisition, conversion optimisation. For a content/info
-> sites that signal isn't acted on, so the gateway is overkill: a per-zone moving
-> part to maintain for no payoff. The baseline is Zaraz loading GTM/GA behind
-> consent; first-party serving is a deliberate non-goal, not a gap. (Considered +
-> dropped 2026-05-30.)
+> point — paid acquisition, conversion optimisation. For a content/info site that
+> signal isn't acted on, so the gateway is overkill: a per-zone moving part to
+> maintain for no payoff. First-party serving is a deliberate non-goal, not a
+> gap. (Considered + dropped 2026-05-30.)
 
-> **Manual setup (operator step, not in the repo).** Zaraz itself and the Google
-> tag (GA4) it loads — the property ID, the consent CMP / cookie-banner config,
-> auto-inject, and the bot-request policy — are all configured in the Cloudflare
-> dashboard, per zone. None of it lives in the audited site's source, so the audit
-> can only *verify it is present and firing* at serve time (`--url`); it can never
-> provision it. Treat it like the PSI key: an operator manual setup the tool
-> checks, not one it owns.
+> **Manual setup (operator step, not in the repo).** Both deliveries are
+> configured in the Cloudflare dashboard, per zone: for Web Analytics, creating
+> the site and getting its token; for Zaraz, the tools it loads, the property ID,
+> the consent CMP config, auto-inject, and the bot-request policy. None of it
+> lives in the audited site's source, so the audit can only *verify it is present
+> and firing* at serve time (`--url`); it can never provision it. Treat it like
+> the PSI key: an operator manual setup the tool checks, not one it owns.
 
-*Why Zaraz over the old `cloudflareinsights` beacon / Partytown+GA escape-hatch:
-Zaraz unifies GA + Cloudflare analytics under one edge loader and one consent
-gate, which is what "promote Zaraz + GA + cookie banner" asks for. The CF Web
-Analytics beacon stays valid (and can itself run via Zaraz); see the Cloudflare Zaraz docs.*
 
 ## live (`--url`) — what only exists at serve time
 

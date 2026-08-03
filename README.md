@@ -35,7 +35,7 @@ That's the whole thing. You get findings like:
      fix: define a Zod schema in src/content.config.ts
 
 16 ✅   5 🔧   0 🛑   12 💡   0 ⏭
-12 of the 💡 are [baseline] — this project's house style (Cloudflare, Orama, llms.txt …),
+12 of the 💡 are [baseline] — this project's house style (Cloudflare delivery, llms.txt, RSS …),
 not universal practice. Re-run with --strict to treat them as required.
 audit complete — 5 findings to address (exit 1).
 ```
@@ -62,7 +62,7 @@ See [`.env.example`](.env.example) for every optional key, and [`examples/ci/aud
 
 ## Required vs suggested
 
-This tool ships an **opinionated baseline** — Cloudflare delivery, Orama search, Zaraz analytics, RSS + `llms.txt` endpoints, a particular file layout. Those are defensible choices, but your site isn't *broken* for making different ones.
+This tool ships an **opinionated baseline** — Cloudflare delivery, Cloudflare Web Analytics, RSS + `llms.txt` endpoints, a particular file layout. Those are defensible choices, but your site isn't *broken* for making different ones.
 
 So by default only **universal practice** is required (`🔧`): missing canonical/OG meta, images without dimensions, no structured data, oversized assets, unschema'd content collections, Astro 7 config that will break your build. Everything that's just house style reports as `💡 … [baseline]` and doesn't fail the run.
 
@@ -73,23 +73,28 @@ node audit.mjs --strict    # require the full baseline too — 17 🔧
 
 Use `--strict` when you've adopted the baseline deliberately and want it enforced. What counts as which — and why — is one readable table in [`tools/lib/policy.mjs`](tools/lib/policy.mjs); disagree with a call and it's a one-line edit.
 
+A few checks report a *fact* rather than a verdict and are `[advisory]` in **both** modes — `--strict` doesn't promote them, because they have no failing branch at all. `analytics: provider` is the one that matters: it tells you what's delivering analytics, including when the answer is nothing, and never fails a run. Whether you measure your traffic is your call.
+
+`node audit.mjs --rules --json` is the authoritative list of every rule and which of the three it is. Prefer it over any summary written down elsewhere, including this one.
+
 ## What it checks
 
 | Domain | What it looks for |
 |---|---|
-| **modules** | Baseline stack present + wired: Astro 7+, Node ≥ 22.12, the expected integrations, `output: 'static'`, strict TS (≤ 6.x, the `@astrojs/check` peer ceiling), `@astrojs/cloudflare` iff `<Image>` is used under SSR; search is Orama (flags competing search libs). Plus Astro 7 migration residue — stabilized `experimental` flags, unified()-only markdown options without `@astrojs/markdown-remark`, `@astrojs/db`, removed `astro:transitions` internals. |
+| **modules** | Baseline stack present + wired: Astro 7+, Node ≥ 22.12, the expected integrations, `output: 'static'`, strict TS (≤ 6.x, the `@astrojs/check` peer ceiling), `@astrojs/cloudflare` iff `<Image>` is used under SSR; search is optional, but two search engines at once is a finding. Plus Astro 7 migration residue — stabilized `experimental` flags, unified()-only markdown options without `@astrojs/markdown-remark`, `@astrojs/db`, removed `astro:transitions` internals. |
 | **seo** | A canonical SEO component emitting canonical URL + OG meta; no `keywords` anti-pattern; sitemap lastmod; one `<h1>` per content page (no skipped heading levels — advisory). |
 | **images** | Content images routed through an image transform (resized/reformatted, not full-size) and not oversized in `src/assets/` or the built `dist/`. On built HTML, flags Cloudflare transform params (`format=auto` instead of an explicit format; explicit `quality=`) and content `<img>` missing `alt`. |
-| **perf** | `/_astro/*` marked immutable in `public/_headers`; content `<img>` carry width/height (no layout shift). |
-| **data** | The machine-readable surface other tools consume: JSON-LD (BlogPosting + WebSite), `/llms.txt` built from the content store, RSS, an Orama search-index endpoint, a Zod-validated content schema. Endpoints match by pattern, so single- and per-locale naming both pass. |
-| **analytics** | No hardcoded Google Analytics / GTM snippet in `src/` or `dist/` — the baseline delivers analytics via Cloudflare Zaraz, which loads GA at the edge behind its consent banner (CMP). The Zaraz loader (`/cdn-cgi/zaraz/`) is edge-injected, so the positive "Zaraz present" check runs under `--url`. |
+| **perf** | `/_astro/*` marked immutable in `public/_headers`; content `<img>` carry width/height (no layout shift); render-blocking CSS on the heaviest page and total webfont weight stay in budget, in woff2. |
+| **content** | The pages a site is repeatedly asked for: a media kit (logo, paste-ready boilerplate, a contact route) and a design/styleguide page rendering the real tokens. Both house style, so `💡` unless `--strict`. |
+| **data** | The machine-readable surface other tools consume: JSON-LD (BlogPosting + WebSite), `/llms.txt` built from the content store, RSS, a search-index endpoint if the site ships a search library, a Zod-validated content schema. Endpoints match by pattern, so single- and per-locale naming both pass. |
+| **analytics** | What delivers analytics here — **advisory in every mode**, because whether you measure traffic is your call, not a defect. The baseline default is Cloudflare Web Analytics: free, cookieless, no consent banner. Zaraz is fully supported for when you need a tag manager, and its loader is edge-injected so `--url` is what confirms it. The one *finding* is a hardcoded GA/GTM snippet, which fires before consent. |
 | **live** | With `--url`: real Cache-Control headers, served image bytes (measured with a browser-realistic `Accept`) + transform-param flags, rendered SEO + JSON-LD, `/llms.txt` — against a running or deployed site. |
 | **browser** | With `--url`: what only a real browser sees — uncaught JS exceptions, requests that failed or 404'd, **measured** CLS, images downloaded far larger than they're displayed, heavy third-party origins. Needs `playwright` installed **in the site you're auditing**; skips cleanly without it. |
 | **lighthouse** | With `--url`: real **measured** scores via the PageSpeed Insights API — Performance/SEO/Accessibility/Best-Practices + Core Web Vitals (LCP/TBT/CLS). Needs a free PSI key (below); skips gracefully without one. |
 
 The static domains answer *"is it wired right?"*; `lighthouse` answers *"what's the real score?"* — complementary layers.
 
-**This tool assumes a specific baseline** (Astro 7+, static output, Cloudflare delivery, Orama search) and validates compliance against it. It does not set anything up or migrate. If your stack differs, the checks are small and readable — fork and adjust.
+**This tool assumes a specific baseline** (Astro 7+, static output, Cloudflare delivery, Cloudflare Web Analytics) and validates compliance against it. It does not set anything up or migrate. If your stack differs, the checks are small and readable — fork and adjust.
 
 **The *why* behind every check lives in [`BEST-PRACTICES.md`](BEST-PRACTICES.md)** — a living practice↔check registry. The governing rule: every practice there has an enforcing check, and a practice with no check is a tracked *gap*, not a practice.
 
@@ -166,7 +171,8 @@ tools/
   audit.mjs                  entry: detect project, run domains, report
   test.mjs                   the gate: fixture + known-bad synthetic projects
   checks/{modules,seo,images,perf,data,analytics,content,live,lighthouse,browser}.mjs
-  lib/{project,reporter,policy,rules,cf-image,html,dist,jsonld,image-size,src-scan,untrusted}.mjs
+  lib/{project,reporter,policy,rules,cf-image,html,dist,jsonld,image-size,
+       src-scan,untrusted,analytics-signals,search-engines}.mjs
 examples/_fixture-i18n/      a compliant multi-locale Astro site — the test target
 examples/ci/audit.yml        copy-paste GitHub Actions job for your own site
 BEST-PRACTICES.md            the why behind every check + the practice/check registry

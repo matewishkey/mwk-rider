@@ -27,7 +27,7 @@ node ~/.claude/rider-tools/audit.mjs --help
 | `images` | `<img>` + CSS `background-image` routed through an image transform; no oversized raster in `src/assets/`; no oversized built image in `dist/` |
 | `perf` | `public/_headers` marks `/_astro/*` immutable; content `<img>` carry width/height (CLS); render-blocking CSS on the heaviest page and total webfont weight stay inside budget; woff2 not ttf/otf |
 | `content` | A media-kit page (logo, paste-ready boilerplate, a contact route) and a design/styleguide page that renders the real tokens. Both house style — `💡` unless `--strict` |
-| `analytics` | Flags a hardcoded Google Analytics / GTM snippet in `src/` + `dist/`; the positive "Zaraz loader present" check is live-only |
+| `analytics` | What delivers analytics (Cloudflare Web Analytics by default; Zaraz when you need a tag manager) — advisory, never a finding. Plus a hardcoded GA/GTM snippet in `src/` + `dist/`, which fires before consent |
 | `data` | JSON-LD parsed out of `dist/` (an Article-family type + `WebSite`, and it must be valid JSON); `/llms.txt` from `getCollection()` with a draft/preview filter; the built RSS feed has items; Zod-validated content schema |
 | `live` | Only with `--url`: real Cache-Control, served image bytes, rendered SEO + JSON-LD, `/llms.txt`. The content page is discovered from the sitemap → homepage links → `/llms.txt`, or forced with `--post` |
 | `lighthouse` | Only with `--url`: measured PageSpeed Insights scores (perf/seo/a11y/best-practices) + Core Web Vitals. Needs a PSI key (see below); skips without one |
@@ -36,8 +36,8 @@ node ~/.claude/rider-tools/audit.mjs --help
 It **assumes a baseline stack** and validates compliance — it does not set anything up.
 
 "The baseline" throughout these docs means: Astro 7+, `output: 'static'`, Cloudflare
-delivery (Image Transformations, immutable hashed assets), Orama client-side search,
-analytics via Cloudflare Zaraz. Checks that only make sense on that stack report as
+delivery (Image Transformations, immutable hashed assets) and Cloudflare Web
+Analytics. Search is optional. Checks that only make sense on that stack report as
 `💡 [baseline]` by default and are required only under `--strict` — so a site built
 differently still gets useful answers. See `../BEST-PRACTICES.md`.
 
@@ -98,7 +98,7 @@ tools/
     perf.mjs             cache headers + CLS
     data.mjs             JSON-LD, llms.txt, RSS, content schema
     content.mjs          media-kit + design reference pages
-    analytics.mjs        no hardcoded GA/GTM snippet (delivered via Zaraz)
+    analytics.mjs        what delivers analytics + no pre-consent GA/GTM snippet
     live.mjs             HTTP checks against a served site (--url)
     lighthouse.mjs       measured PSI scores + Core Web Vitals (--url + key)
     browser.mjs          real-Chromium runtime checks (--url + playwright)

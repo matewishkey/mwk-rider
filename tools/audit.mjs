@@ -7,7 +7,8 @@
 //   images    content images routed through a transform + not oversized
 //   perf      immutable cache headers for hashed assets + no-CLS <img>
 //   data      machine-readable surface: JSON-LD, /llms.txt, RSS
-//   analytics no hardcoded Google Analytics/GTM snippet (delivered via Zaraz)
+//   analytics what delivers analytics (Cloudflare Web Analytics by default),
+//             and no hardcoded Google Analytics/GTM snippet firing pre-consent
 //   content   pages a site is repeatedly asked for: a media kit, a design reference
 //
 // Pass --url <base> to also run, against a running/deployed site:
@@ -86,8 +87,12 @@ Note: --url works from any directory — offline domains need an Astro project i
 but a live/lighthouse run only needs the URL.
 
 By default only universal Astro/SEO/perf practice is required. Checks that encode this
-project's baseline (Cloudflare delivery, Orama search, RSS/llms.txt, view transitions)
-report as 💡 [baseline] and don't fail the run — pass --strict to require them.
+project's baseline (Cloudflare delivery, RSS/llms.txt, view transitions) report as
+💡 [baseline] and don't fail the run — pass --strict to require them.
+
+Search is optional, and so is analytics: "analytics: provider" reports what delivers
+analytics (Cloudflare Web Analytics by default — free, cookieless, no consent banner;
+Zaraz when you need a tag manager) and never fails a run, in either mode.
 
 Outcomes:
   ✅  pass                    🔧  fix it (mechanical, required)
@@ -108,8 +113,9 @@ if (values.rules) {
   if (values.json) {
     console.log(JSON.stringify({ rules: catalogue }));
   } else {
-    for (const r of catalogue) console.log(`${r.severity === 'house' ? '[baseline]' : '[universal]'} ${r.id} — ${r.why}`);
-    console.log(`\n${catalogue.length} rules. [universal] is required by default; [baseline] reports 💡 unless --strict.`);
+    const LABEL = { house: '[baseline] ', advisory: '[advisory] ', universal: '[universal]' };
+    for (const r of catalogue) console.log(`${LABEL[r.severity]} ${r.id} — ${r.why}`);
+    console.log(`\n${catalogue.length} rules. [universal] is required by default; [baseline] reports 💡 unless --strict; [advisory] reports 💡 in every mode.`);
   }
   process.exit(0);
 }

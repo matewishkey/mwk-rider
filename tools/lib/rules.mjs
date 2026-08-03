@@ -12,7 +12,7 @@
 // tools/test.mjs asserts that every id a real run emits appears below, so a new
 // check can't ship uncatalogued.
 
-import { isHouseStyle } from './policy.mjs';
+import { isHouseStyle, isAdvisory } from './policy.mjs';
 
 // [id, section, name, why]
 // `name` is what the check passes to the reporter — it's what policy.mjs matches
@@ -25,8 +25,8 @@ const RULES = [
   ['modules/astro-version', 'modules', 'astro:version', 'The baseline is Astro 7+ — the Rust compiler, Sätteri markdown and Vite 8.'],
   ['modules/engines-node', 'modules', 'engines.node', "Astro 7's own floor is 22.12.0; a lower declared floor lets a build land on a runtime it won't start on."],
   ['modules/typescript-version', 'modules', 'typescript:version', '@astrojs/check peers on typescript ^5 || ^6, so TS 7 breaks `astro check`.'],
-  ['modules/dep', 'modules', 'dep:@astrojs/mdx', 'Each baseline integration backs a downstream practice (feed, sitemap, type-checking, search).'],
-  ['modules/search-engine', 'modules', 'search:engine', 'One search engine, not two answers to the same question. Skips when the site has no search.'],
+  ['modules/dep', 'modules', 'dep:@astrojs/mdx', 'Each baseline integration backs a downstream practice (feed, sitemap, type-checking).'],
+  ['modules/search-engine', 'modules', 'search:engine', 'Search is optional. One engine is fine whichever it is; two means two indexes, two bundles and two answers to the same query.'],
   ['modules/output-static', 'modules', 'output:static', "The baseline is a fully static build. `static` is Astro's default, so only an explicit 'server' is flagged."],
   ['modules/adapter-cloudflare', 'modules', 'adapter:cloudflare', "Under SSR, Sharp can't run on Workers, so <Image> needs the Cloudflare image service. On a static build it doesn't."],
   ['modules/tsconfig-strict', 'modules', 'tsconfig:strict', 'Strict TypeScript catches whole classes of content/schema bug at build time.'],
@@ -112,16 +112,17 @@ const RULES = [
   ['data/llms-txt-served', 'data', 'llms.txt:served', 'Live only: the endpoint must actually return 200.'],
   ['data/llms-txt-structure', 'data', 'llms.txt:structure', 'Live only: section groups or per-locale links, so the file is navigable.'],
   ['data/rss', 'data', 'rss', 'A feed with no items is indistinguishable from no feed for anyone subscribed to it.'],
-  ['data/search-index', 'data', 'search:index', 'The search-index endpoint is what client-side Orama loads; it has to be built from the collection.'],
+  ['data/search-index', 'data', 'search:index', 'A site that ships a search library needs an index endpoint to feed it; a site with no search needs neither.'],
   ['data/content-schema', 'data', 'content:schema', 'A Zod schema gives every consumer a validated, stable shape.'],
   ['data/home-jsonld-website', 'data', 'home:jsonld-website', 'Live only: the homepage should carry the site-wide WebSite shape.'],
   ['data/post-jsonld', 'data', 'post:jsonld', 'Live only: a content page should carry an Article-family shape.'],
   ['data/llms-txt-h1', 'data', 'llms.txt:h1', 'Live only: /llms.txt needs a heading to be readable as a document.'],
 
   // --- analytics -------------------------------------------------------------
+  ['analytics/provider', 'analytics', 'provider', 'What delivers analytics here — Cloudflare Web Analytics (the default: free, cookieless, no banner) or Zaraz. Advisory in every mode: whether a site measures anything is a business decision.'],
   ['analytics/no-hardcoded-ga', 'analytics', 'no-hardcoded-ga', 'A hardcoded GA/GTM snippet fires outside the consent gate.'],
-  ['analytics/zaraz', 'analytics', 'zaraz', 'Live only: the Zaraz loader is the one edge-injected signal that analytics is consent-gated.'],
-  ['analytics/ga-raw', 'analytics', 'ga:raw', 'Live only: GA loaded directly from googletagmanager.com bypasses Zaraz and fires without consent.'],
+  ['analytics/zaraz', 'analytics', 'zaraz', 'Live only: the Zaraz loader, when a site uses the tag manager rather than the cookieless beacon.'],
+  ['analytics/ga-raw', 'analytics', 'ga:raw', 'Live only: GA loaded straight from a Google origin fires without consent, whether or not Zaraz is also present.'],
 
   // --- live ------------------------------------------------------------------
   ['live/reachability', 'live', 'reachability', 'Nothing else in the live domain means anything if the homepage does not answer 200.'],
@@ -156,12 +157,18 @@ const RULES = [
   ['project/offline-domains', 'project', 'offline-domains', 'Reports that cwd is not an Astro project, so only the --url domains ran.'],
 ];
 
-/** The catalogue, with severity resolved from lib/policy.mjs. */
+/**
+ * The catalogue, with severity resolved from lib/policy.mjs.
+ *
+ *   universal  required by default
+ *   house      💡 by default, required under --strict
+ *   advisory   💡 in every mode — the check has no failing branch at all
+ */
 export function ruleCatalogue() {
   return RULES.map(([id, section, name, why]) => ({
     id,
     section,
-    severity: isHouseStyle(section, name) ? 'house' : 'universal',
+    severity: isAdvisory(section, name) ? 'advisory' : isHouseStyle(section, name) ? 'house' : 'universal',
     why,
   })).sort((a, b) => a.id.localeCompare(b.id));
 }

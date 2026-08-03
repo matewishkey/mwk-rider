@@ -12,6 +12,7 @@ import { readSrcFiles, stripComments } from '../lib/src-scan.mjs';
 import { eachDistHtml } from '../lib/html.mjs';
 import { distFiles, readDist, countMatches, sitemapPages } from '../lib/dist.mjs';
 import { collectJsonLd, ldTypes, hasArticleType } from '../lib/jsonld.mjs';
+import { installedEngines } from '../lib/search-engines.mjs';
 
 const SEC = 'data';
 
@@ -67,10 +68,19 @@ export async function run({ project, reporter }) {
     reporter.fix(SEC, 'rss', `endpoint(s) exist but not via @astrojs/rss (${rss.map(short).join(', ')})`, 'build the feed with @astrojs/rss');
   }
 
-  // Search — Orama index source. The @orama/orama dep is asserted in `modules`.
+  // Search — the index endpoint a client-side engine loads.
+  //
+  // Search is optional (see modules:search:engine), so a missing endpoint is
+  // only a finding when the site actually ships a search library. That is the
+  // coherence half of making search optional: dropping @orama/orama from the
+  // baseline deps without this would mean nobody is ever told their search box
+  // has nothing to search.
   const searchIdx = pages.filter((p) => /(^|\/)search-?index[-.a-z\[\]]*\.json\.(ts|js)$/i.test(p));
-  if (searchIdx.length === 0) {
-    reporter.fix(SEC, 'search:index', 'no search-index*.json endpoint — baseline search is Orama, fed by a content-driven index', 'add src/pages/search-index.json.ts (or per-locale) built from getCollection(); load it client-side with @orama/orama');
+  const searchLibs = installedEngines(project.packageJson);
+  if (searchIdx.length === 0 && searchLibs.length === 0) {
+    reporter.skip(SEC, 'search:index', 'no search-index endpoint and no search library installed — search is optional, so there is nothing to check');
+  } else if (searchIdx.length === 0) {
+    reporter.fix(SEC, 'search:index', `${searchLibs.join(', ')} installed but no search-index*.json endpoint — the search UI has nothing to load`, 'add src/pages/search-index.json.ts (or per-locale) built from getCollection(), or drop the search dependency if the site has no search');
   } else if (searchIdx.some(contentDriven)) {
     reporter.pass(SEC, 'search:index', `Orama index source present (${searchIdx.map(short).join(', ')})`);
   } else {

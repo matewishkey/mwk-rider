@@ -1,11 +1,11 @@
-// Policy — which checks are universal Astro/web best practice, and which encode
-// this project's house style.
+// Policy — which checks are universal Astro/web best practice, which encode this
+// project's house style, and which are advice in every mode.
 //
-// The tool ships an opinionated baseline (Cloudflare delivery, Orama search,
-// Zaraz analytics, a specific file layout). Those opinions are defensible, but
-// they are not things a stranger's Astro site is *wrong* for lacking. Reporting
-// them as required findings buries the handful of real problems in noise, and a
-// tool that cries wolf gets uninstalled.
+// The tool ships an opinionated baseline (Cloudflare delivery, a specific file
+// layout, a set of machine-readable endpoints). Those opinions are defensible,
+// but they are not things a stranger's Astro site is *wrong* for lacking.
+// Reporting them as required findings buries the handful of real problems in
+// noise, and a tool that cries wolf gets uninstalled.
 //
 // So by default, house-style checks are demoted from 🔧/🛑 to 💡 (advisory —
 // they never fail the run). `--strict` turns them back into required findings,
@@ -15,6 +15,12 @@
 // be well built. It's universal when ignoring it means a real defect: a broken
 // build, a measurable performance or accessibility problem, or missing SEO
 // fundamentals that every search engine and social preview depends on.
+//
+// A third, smaller category is ADVISORY: checks that report a fact rather than a
+// verdict, and never emit 🔧/🛑 in the first place. `--strict` does not promote
+// them, because there is nothing to promote — the check has no failing branch.
+// They are listed so `--rules` can say so instead of labelling them
+// "[universal]", which would read as "required by default".
 
 // Match on `section:name`. A trailing `*` matches any suffix — needed because
 // several checks append a location or subject (`routed (src/pages/x.astro:12)`,
@@ -22,7 +28,9 @@
 const HOUSE_STYLE = [
   // --- stack composition: which packages a site is built from -----------------
   'modules:dep:*',              // requiring these exact integrations is house style
-  'modules:search:engine',      // "search must be Orama, not Pagefind/Algolia"
+  'modules:search:engine',      // now only ever fires on TWO engines at once;
+                                // kept here so the severity is unchanged by the
+                                // 2026-08-03 softening rather than raised by it
   'modules:output:static',      // SSR is a legitimate choice, not a defect
   'modules:adapter:cloudflare', // only meaningful if you deploy to Cloudflare
   'modules:remotePatterns',     // R2 media-domain allowlisting
@@ -35,7 +43,9 @@ const HOUSE_STYLE = [
   'perf:_headers',              // the `_headers` file is a CF/Netlify convention
   'perf:_headers:/_astro/*',
   'images:transform:*',         // /cdn-cgi/image transform params
-  'analytics:no-hardcoded-ga',  // "use Zaraz instead of a GA snippet" is our call
+  'analytics:no-hardcoded-ga',  // the finding is real (a snippet firing before
+                                // consent), but "which delivery replaces it" is
+                                // still our call, so it stays advisory by default
 
   // --- pages that are ours to want -------------------------------------------
   // A stranger's Astro blog is not broken for having no media kit or design
@@ -78,6 +88,17 @@ const HOUSE_STYLE = [
   'images:transform:*',
 ];
 
+// Advisory by construction — the check has no 🔧/🛑 branch at all, in either
+// mode. Listing one here is a claim about its code, and tools/test.mjs asserts
+// it: run the suite under --strict and none of these may report fix or block.
+const ADVISORY = [
+  // Whether a site measures its traffic is a business decision. The tool reports
+  // what delivers analytics and moves on — including when the answer is nothing.
+  // This is what lets the baseline recommend Cloudflare Web Analytics without
+  // failing every site that has not set it up.
+  'analytics:provider',
+];
+
 function toRegExp(pattern) {
   const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   // `\*` here is the escaped form of a trailing wildcard in the pattern above.
@@ -85,14 +106,22 @@ function toRegExp(pattern) {
 }
 
 const MATCHERS = HOUSE_STYLE.map(toRegExp);
+const ADVISORY_MATCHERS = ADVISORY.map(toRegExp);
 
-/**
- * Is this check part of the opinionated baseline rather than universal practice?
- * Location suffixes (`name (src/pages/x.astro:12)`) are stripped before matching
- * so a check keeps one policy regardless of where it fired.
- */
+// Location suffixes (`name (src/pages/x.astro:12)`) are stripped before matching
+// so a check keeps one policy regardless of where it fired.
+function key(section, name) {
+  return `${section}:${String(name).replace(/\s*\(.*\)\s*$/, '')}`;
+}
+
+/** Is this check part of the opinionated baseline rather than universal practice? */
 export function isHouseStyle(section, name) {
-  const base = String(name).replace(/\s*\(.*\)\s*$/, '');
-  const key = `${section}:${base}`;
-  return MATCHERS.some((re) => re.test(key));
+  const k = key(section, name);
+  return MATCHERS.some((re) => re.test(k));
+}
+
+/** Does this check report a fact rather than a verdict — advice in every mode? */
+export function isAdvisory(section, name) {
+  const k = key(section, name);
+  return ADVISORY_MATCHERS.some((re) => re.test(k));
 }

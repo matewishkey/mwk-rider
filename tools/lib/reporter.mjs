@@ -139,7 +139,7 @@ export class Reporter {
     const demoted = this.results.filter(r => r.houseStyle).length;
     if (demoted > 0) {
       const is = demoted === 1 ? 'is' : 'are';
-      console.log(`${demoted} of the 💡 ${is} [baseline] — this project's house style (Cloudflare, Orama, llms.txt …),`);
+      console.log(`${demoted} of the 💡 ${is} [baseline] — this project's house style (Cloudflare delivery, llms.txt, RSS …),`);
       console.log('not universal practice. Re-run with --strict to treat them as required.');
     }
 
