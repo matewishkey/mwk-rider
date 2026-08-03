@@ -1,8 +1,8 @@
-# Wish BusterZ Rider
+# Wish busterZ Rider
 
-<sub>`wishbusterz-rider`</sub>
+<sub>`rider`</sub>
 
-An on-demand best-practices auditor for **Astro** sites. One slash command (`/wishbusterz-rider`), one zero-dependency script, ten domains (seven offline + three live). No framework, no contract, nothing installed into the sites it audits — it reports, you decide.
+An on-demand best-practices auditor for **Astro** sites. One slash command (`/rider`), one zero-dependency script, ten domains (seven offline + three live). No framework, no contract, nothing installed into the sites it audits — it reports, you decide.
 
 ```
 ✅ modules: astro:version — ^7.1.6
@@ -19,7 +19,7 @@ audit complete — 1 finding to address (exit 1).
 No install, no dependencies, no API key. From the root of any Astro project:
 
 ```bash
-git clone --depth 1 https://github.com/mergodon/wishbusterz-rider.git /tmp/rider
+git clone --depth 1 https://github.com/wishbusterz/rider.git /tmp/rider
 npm run build          # optional, but the image + perf checks read dist/
 node /tmp/rider/tools/audit.mjs
 ```
@@ -96,11 +96,11 @@ The static domains answer *"is it wired right?"*; `lighthouse` answers *"what's 
 ## Install
 
 ```bash
-git clone https://github.com/mergodon/wishbusterz-rider.git
-cd wishbusterz-rider && ./install.sh
+git clone https://github.com/wishbusterz/rider.git
+cd rider && ./install.sh
 ```
 
-This symlinks the `/wishbusterz-rider` command and its tools into `~/.claude/`. It installs nothing into any project and never touches a project's `CLAUDE.md`. Re-run `./install.sh` after `git pull` to update.
+This symlinks the `/rider` command and its tools into `~/.claude/`. It installs nothing into any project and never touches a project's `CLAUDE.md`. Re-run `./install.sh` after `git pull` to update.
 
 Requires **Node 22+**. No `npm install` — the tool uses Node built-ins only.
 
@@ -109,18 +109,18 @@ Requires **Node 22+**. No `npm install` — the tool uses Node built-ins only.
 From inside any Astro project, in [Claude Code](https://claude.com/claude-code):
 
 ```
-/wishbusterz-rider                 # offline: source + dist checks
-/wishbusterz-rider https://example.com    # also check the live/served site
+/rider                 # offline: source + dist checks
+/rider https://example.com    # also check the live/served site
 ```
 
 Or call the script directly — it's a plain CLI, Claude Code is optional:
 
 ```bash
-node ~/.claude/wishbusterz-rider-tools/audit.mjs --help
-node ~/.claude/wishbusterz-rider-tools/audit.mjs                     # everything offline
-node ~/.claude/wishbusterz-rider-tools/audit.mjs -s seo -s images    # scope to domains
-node ~/.claude/wishbusterz-rider-tools/audit.mjs --url https://example.com  # add live + lighthouse
-node ~/.claude/wishbusterz-rider-tools/audit.mjs --json              # machine-readable
+node ~/.claude/rider-tools/audit.mjs --help
+node ~/.claude/rider-tools/audit.mjs                     # everything offline
+node ~/.claude/rider-tools/audit.mjs -s seo -s images    # scope to domains
+node ~/.claude/rider-tools/audit.mjs --url https://example.com  # add live + lighthouse
+node ~/.claude/rider-tools/audit.mjs --json              # machine-readable
 ```
 
 `--url` works from **any directory** — the offline domains need an Astro project in the cwd, but a live/lighthouse run only needs the URL.
@@ -159,9 +159,9 @@ The tool only ever *reads* through this API. It never provisions, never writes.
 ## Layout
 
 ```
-skills/wishbusterz-rider/SKILL.md   how an agent should run and report an audit
+skills/rider/SKILL.md   how an agent should run and report an audit
                            (install.sh links it as BOTH the skill and the
-                           /wishbusterz-rider command — one file, no drift)
+                           /rider command — one file, no drift)
 tools/
   audit.mjs                  entry: detect project, run domains, report
   test.mjs                   the gate: fixture + known-bad synthetic projects
@@ -187,7 +187,7 @@ The tool is meant to be pointed at projects you don't control, so it **never exe
 
 ## Licence
 
-[MIT](LICENSE) — © 2026 Mergodon Limited. **Wish BusterZ** is a brand of Mergodon Limited. Use it, fork it, sell it; just keep the notice.
+[MIT](LICENSE) — © 2026 Mergodon Limited. **Wish busterZ** is a brand of Mergodon Limited. Use it, fork it, sell it; just keep the notice.
 
 The auditor itself has **zero dependencies**, so nothing third-party is redistributed here. The example fixture installs its own dependencies from npm under their respective licences (predominantly MIT, with Apache-2.0, ISC, MPL-2.0 and LGPL-3.0 transitives) — those are fetched at install time, not vendored into this repo.
 

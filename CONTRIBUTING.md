@@ -1,4 +1,4 @@
-# Contributing to Wish BusterZ Rider
+# Contributing to Wish busterZ Rider
 
 Thanks for looking. This is a small, deliberately dependency-free tool — the bar for changes is "does it make the tool's answers more trustworthy?"
 
@@ -11,8 +11,8 @@ By submitting a pull request you agree that your contribution is licensed under 
 There is nothing to install. You need Node 22.12 or newer, and that's it — no `npm install`, no root `package.json`, no API keys.
 
 ```bash
-git clone https://github.com/mergodon/wishbusterz-rider.git
-cd wishbusterz-rider
+git clone https://github.com/wishbusterz/rider.git
+cd rider
 node tools/test.mjs          # the gate — must pass
 ```
 

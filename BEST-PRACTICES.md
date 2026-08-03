@@ -174,7 +174,7 @@ thing a version bump leaves behind. Each maps to a documented v7 breaking change
   *Boundary:* the same-viewport case (a 404 shot at the real 1200×630 viewport)
   is indistinguishable from headers/bytes — the fix for that is a `resp.ok()`
   guard in the **generator** (assert a 200 before screenshotting), which lives in
-  the audited site, not here. wishbusterz-rider documents the practice; the site
+  the audited site, not here. rider documents the practice; the site
   implements the guard.
 - **The head meta is on every published page, not merely somewhere.** Coverage
   is measured over the pages the **sitemap** declares — the site's own answer to

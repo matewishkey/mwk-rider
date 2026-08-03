@@ -1,4 +1,4 @@
-# Audit an Astro site with wishbusterz-rider on every push and pull request.
+# Audit an Astro site with rider on every push and pull request.
 #
 # Copy this file into YOUR Astro site's repo at .github/workflows/audit.yml.
 # It needs no secrets to be useful — the offline domains run on source and dist/
@@ -35,7 +35,7 @@ jobs:
         run: npm run build
 
       - name: Fetch the auditor
-        run: git clone --depth 1 https://github.com/mergodon/wishbusterz-rider.git "$RUNNER_TEMP/rider"
+        run: git clone --depth 1 https://github.com/wishbusterz/rider.git "$RUNNER_TEMP/rider"
 
       # Universal Astro/SEO/perf practice only. Findings fail the job (exit 1).
       # Add --strict to also require this project's full opinionated baseline.
