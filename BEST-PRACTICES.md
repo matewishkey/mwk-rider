@@ -877,12 +877,13 @@ The queue. Each becomes a real check when a reporter hits it or we decide it's
 worth it — following *How we add a practice* above. Listed so we don't lose them.
 
 **The live queue is the issue tracker**, not this list:
-[wishbusterz/rider issues](https://github.com/wishbusterz/rider/issues). The six
-that came in from audited sites were all closed on 2026-08-03 by shipped checks —
+[matewishkey/rider issues](https://github.com/matewishkey/rider/issues). Seven
+came in from audited sites and all were closed on 2026-08-03 by shipped checks —
 eager third-party embeds, `dist:size` flagging srcset rungs, CSS
 `background-image` (no srcset, no lazy loading), the two remaining font-hygiene
-traps, cross-origin `preconnect`, and the two Astro 7 changes that build clean and
-ship wrong. What is below is the older, quieter half.
+traps, cross-origin `preconnect`, the two Astro 7 changes that build clean and
+ship wrong, and a glossary `DefinedTerm` page read as a missing Article. What is
+below is the older, quieter half.
 
 - **Astro scoped CSS does not reach `innerHTML`-injected DOM.** A component's
   scoped styles are keyed on a `data-astro-cid-*` attribute the compiler stamps

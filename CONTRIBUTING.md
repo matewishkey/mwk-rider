@@ -11,7 +11,7 @@ By submitting a pull request you agree that your contribution is licensed under 
 There is nothing to install. You need Node 22.12 or newer, and that's it — no `npm install`, no root `package.json`, no API keys.
 
 ```bash
-git clone https://github.com/wishbusterz/rider.git
+git clone https://github.com/matewishkey/rider.git
 cd rider
 node tools/test.mjs          # the gate — must pass
 ```

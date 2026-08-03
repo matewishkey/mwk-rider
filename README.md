@@ -19,7 +19,7 @@ audit complete — 1 finding to address (exit 1).
 No install, no dependencies, no API key. From the root of any Astro project:
 
 ```bash
-git clone --depth 1 https://github.com/wishbusterz/rider.git /tmp/rider
+git clone --depth 1 https://github.com/matewishkey/rider.git /tmp/rider
 npm run build          # optional, but the image + perf checks read dist/
 node /tmp/rider/tools/audit.mjs
 ```
@@ -101,7 +101,7 @@ The static domains answer *"is it wired right?"*; `lighthouse` answers *"what's 
 ## Install
 
 ```bash
-git clone https://github.com/wishbusterz/rider.git
+git clone https://github.com/matewishkey/rider.git
 cd rider && ./install.sh
 ```
 
