@@ -9,7 +9,7 @@
 import { transformSmells } from '../lib/cf-image.mjs';
 import { headingLevels, headingAudit, attrValue, hasAttr } from '../lib/html.mjs';
 import { imageSize } from '../lib/image-size.mjs';
-import { collectJsonLd, ldTypes, hasArticleType } from '../lib/jsonld.mjs';
+import { collectJsonLd, ldTypes, hasArticleType, classifyPage } from '../lib/jsonld.mjs';
 import { untrusted, capped, UNTRUSTED_NOTE } from '../lib/untrusted.mjs';
 import { declaresImmutableAssets } from '../lib/headers.mjs';
 import {
@@ -271,9 +271,7 @@ async function auditSeo(home, postPath, base, get, head, reporter) {
     assertHas(reporter, 'seo', name, h, re, msg, severity);
   }
   checkHeadings(reporter, 'post', h);
-  checkLdTypes(reporter, 'post:jsonld', h, hasArticleType,
-    'content page emits no Article-family JSON-LD (Article/BlogPosting/NewsArticle/TechArticle…)',
-    'emit an Article-family shape per post', { url: postPath });
+  checkPostJsonLd(reporter, h, postPath);
 
   const ogImgRaw = h.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/)?.[1];
   if (ogImgRaw) {
@@ -498,6 +496,40 @@ function assertHas(reporter, section, name, html, re, failMsg, severity = 'fix')
 // Parse the JSON-LD rather than substring-matching it: a page emitting Article
 // where we looked for the literal "BlogPosting" was reported as having none, and
 // a @graph-wrapped shape was invisible to the regex either way.
+/**
+ * The sampled content page describes what it is.
+ *
+ * An Article-family type is the common answer and the one the baseline wants for
+ * posts. It is not the only correct one: a glossary entry is a `DefinedTerm`, an
+ * FAQ is an `FAQPage`, and rewriting either as an Article would make the page
+ * worse. Both pass; the message says which was found, so "this is a definition"
+ * and "this is a post" stay distinguishable in the output.
+ *
+ * Only a page carrying neither — nothing but `WebPage`/`WebSite` wrappers, or no
+ * JSON-LD at all — is a finding.
+ */
+function checkPostJsonLd(reporter, html, postPath) {
+  const { objects } = collectJsonLd(html);
+  const types = ldTypes(objects);
+  const shown = untrusted([...types].sort().join(', '), 160);
+  const at = { url: postPath };
+  const { kind, type } = classifyPage(types);
+
+  if (kind === 'article') {
+    reporter.pass('data', 'post:jsonld', shown, at);
+  } else if (kind === 'content') {
+    reporter.pass('data', 'post:jsonld', `${shown} — ${type} is this page's own content type, not a missing Article`, at);
+  } else {
+    reporter.fix(
+      'data',
+      'post:jsonld',
+      `content page emits no type saying what it is (Article/BlogPosting/… or DefinedTerm/FAQPage/HowTo/…)${types.size ? ` — found: ${shown}` : ''}`,
+      'emit an Article-family shape per post, or the type that actually describes the page',
+      at,
+    );
+  }
+}
+
 function checkLdTypes(reporter, name, html, predicate, failMsg, fixMsg, at = {}) {
   const { objects } = collectJsonLd(html);
   const types = ldTypes(objects);
@@ -548,6 +580,16 @@ const PAGINATION = /\/(?:page\/)?\d+\/?$/;
  * the last resort.
  */
 async function discoverPost(home, base, get) {
+  // The feed first: it is the site's own list of what it considers an article,
+  // so it answers the question the post-only checks are actually asking. The
+  // sitemap lists every indexable page equally, and "deepest path wins" then
+  // picks whatever sorts first — on wishbusterz that was /glossary/agent/, a
+  // DefinedTerm page, while the BlogPosting-carrying /projects/* sat right next
+  // to it. Reported by wishbusterz-web.
+  const fromFeed = await feedCandidates(base, get);
+  const feedPick = pickContentPath(fromFeed, base);
+  if (feedPick) return feedPick;
+
   const fromSitemap = await sitemapCandidates(base, get);
   const best = pickContentPath(fromSitemap, base);
   if (best) return best;
@@ -575,6 +617,25 @@ async function resolveSlash(path, get) {
   if (flipped === path) return path;
   const alt = await get(flipped);
   return (alt.ok && alt.status === 200) ? flipped : path;
+}
+
+/**
+ * Item URLs from the site's feed, in feed order (newest first, conventionally).
+ *
+ * RSS puts them in `<item><link>`, Atom in `<entry><link href=…>`. Both are read
+ * because a site ships whichever its generator emits, and @astrojs/rss can be
+ * pointed at any filename.
+ */
+async function feedCandidates(base, get) {
+  for (const path of ['/rss.xml', '/feed.xml', '/atom.xml', '/rss', '/feed', '/index.xml']) {
+    const r = await get(path);
+    if (!r.ok || r.status !== 200 || !/<(?:rss|feed)\b/i.test(r.text)) continue;
+    const rss = [...r.text.matchAll(/<link>\s*([^<\s]+)\s*<\/link>/gi)].map((m) => m[1]);
+    const atom = [...r.text.matchAll(/<link\b[^>]*\bhref=["']([^"']+)["']/gi)].map((m) => m[1]);
+    const urls = [...rss, ...atom];
+    if (urls.length) return urls;
+  }
+  return [];
 }
 
 async function sitemapCandidates(base, get) {

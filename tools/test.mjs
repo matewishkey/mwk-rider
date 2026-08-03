@@ -510,6 +510,12 @@ const home = '<!doctype html><html><head>' + head('/', '{"@type":"WebSite"}')
   + '</head><body><h1>Home</h1><a href="/wiki">Wiki</a><a href="/wiki/kettle-clock">An entry</a></body></html>';
 const entry = '<!doctype html><html><head>' + head('/wiki/kettle-clock', '{"@type":"TechArticle"}')
   + '</head><body><h1>Kettle clock</h1></body></html>';
+// A glossary entry: DefinedTerm is the CORRECT markup, not a degraded Article.
+const glossary = '<!doctype html><html><head>' + head('/glossary/agent', '{"@type":"DefinedTerm"}')
+  + '</head><body><h1>Agent</h1></body></html>';
+// Wrappers only — says nothing about what the page is, so it stays a finding.
+const bare = '<!doctype html><html><head>' + head('/bare', '[{"@type":"WebPage"},{"@type":"WebSite"}]')
+  + '</head><body><h1>Bare</h1></body></html>';
 const sitemapIndex = '<?xml version="1.0"?><sitemapindex><sitemap><loc>http://HOST/sitemap-0.xml</loc></sitemap></sitemapindex>';
 const sitemap = '<?xml version="1.0"?><urlset><url><loc>http://HOST/</loc></url>'
   + '<url><loc>http://HOST/wiki</loc></url><url><loc>http://HOST/wiki/kettle-clock</loc></url></urlset>';
@@ -531,6 +537,8 @@ const srv = createServer((req, res) => {
   if (url === '/sitemap-index.xml') return send(sitemapIndex.split('HOST').join(host), 'application/xml');
   if (url === '/sitemap-0.xml') return send(sitemap.split('HOST').join(host), 'application/xml');
   if (url === '/wiki/kettle-clock') return send(entry, 'text/html');
+  if (url === '/glossary/agent') return send(glossary, 'text/html');
+  if (url === '/bare') return send(bare, 'text/html');
   if (url === '/') return send(home, 'text/html');
   res.writeHead(404, { 'content-type': 'text/html', 'content-length': '3' });
   res.end(req.method === 'HEAD' ? undefined : '404');
@@ -567,6 +575,19 @@ check('  …so the post-only checks run on it',
 check('  …and TechArticle satisfies the Article-family shape',
   liveRows.find(r => r.id === 'data/post-jsonld')?.outcome === 'pass',
   JSON.stringify(liveRows.find(r => r.id === 'data/post-jsonld')));
+
+// A glossary entry is a DefinedTerm and rewriting it as an Article would make
+// the page worse — so reporting one as a *missing* Article is the check assuming
+// every content page wants to be a blog post. Reported by wishbusterz-web, whose
+// /glossary/* pages were flagged while their /projects/* carried BlogPosting.
+const glossary = runJson(tmpdir(), ['-s', 'live', '--url', `http://127.0.0.1:${port}`, '--post', '/glossary/agent'])
+  .json?.results.find(r => r.id === 'data/post-jsonld');
+check('a DefinedTerm page → pass, naming it as the page\'s own type',
+  glossary?.outcome === 'pass' && /DefinedTerm is this page/.test(glossary.message ?? ''), JSON.stringify(glossary));
+const wrapperOnly = runJson(tmpdir(), ['-s', 'live', '--url', `http://127.0.0.1:${port}`, '--post', '/bare'])
+  .json?.results.find(r => r.id === 'data/post-jsonld');
+check('  …while WebPage/WebSite wrappers alone still fail — they say nothing about what the page is',
+  wrapperOnly?.outcome === 'fix', JSON.stringify(wrapperOnly));
 
 // perf:cache:_astro against a local server that ignores _headers. Measured:
 // `astro dev` and `astro preview` serve /_astro/* no-cache whatever the file

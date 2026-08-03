@@ -794,6 +794,24 @@ the cache headers.
 - **A skip names what it skipped.** When no content page can be found, the `⏭`
   lists the rule ids that did not run. Silence must never be indistinguishable
   from a pass. → `seo: post`
+- **The sampled page is one the site itself calls an article.** Discovery reads
+  the **feed first** — RSS/Atom is the site's own list of what it considers a
+  post — and only falls back to the sitemap, homepage links and `/llms.txt`. The
+  sitemap lists every indexable page equally, so "deepest path wins" picked
+  whatever sorted first: on wishbusterz-web that was `/glossary/agent/`, while
+  the `BlogPosting`-carrying `/projects/*` sat right beside it in the same
+  sitemap.
+- **A page type that isn't an Article is not a missing Article.** A glossary
+  entry is a `DefinedTerm`, an FAQ is an `FAQPage`, a recipe is a `Recipe` —
+  each is the *correct* markup, and rewriting it as an Article would make the
+  page worse. `data: post:jsonld` passes on any of them and says which was
+  found, so "this is a definition" and "this is a post" stay distinguishable.
+
+  The generic wrappers are deliberately **not** accepted — `WebPage`,
+  `WebSite`, `BreadcrumbList`, `Organization`. They say nothing about what the
+  page is, so accepting them would collapse this check into "has any JSON-LD",
+  which `jsonld:emitted` already answers. The list lives in
+  `tools/lib/jsonld.mjs` (`CONTENT_PAGE_TYPES`). Reported by wishbusterz-web.
 - **A finding that could not have gone the other way is not a finding.** Neither
   `astro dev` nor `astro preview` applies `public/_headers` — both serve
   `/_astro/*` as `no-cache` whatever the file says — so `perf: cache:_astro`

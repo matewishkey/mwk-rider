@@ -127,7 +127,7 @@ const RULES = [
   ['data/search-index', 'data', 'search:index', 'A site that ships a search library needs an index endpoint to feed it; a site with no search needs neither.'],
   ['data/content-schema', 'data', 'content:schema', 'A Zod schema gives every consumer a validated, stable shape.'],
   ['data/home-jsonld-website', 'data', 'home:jsonld-website', 'Live only: the homepage should carry the site-wide WebSite shape.'],
-  ['data/post-jsonld', 'data', 'post:jsonld', 'Live only: a content page should carry an Article-family shape.'],
+  ['data/post-jsonld', 'data', 'post:jsonld', 'Live only: a content page should carry a type saying what it is — an Article family shape, or DefinedTerm/FAQPage/HowTo where that is what the page is.'],
   ['data/llms-txt-h1', 'data', 'llms.txt:h1', 'Live only: /llms.txt needs a heading to be readable as a document.'],
 
   // --- analytics -------------------------------------------------------------
