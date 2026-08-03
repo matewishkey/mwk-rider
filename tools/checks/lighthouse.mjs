@@ -7,6 +7,8 @@
 // Needs a free PSI API key in $PAGESPEED_API_KEY. Without one it skips
 // gracefully (the tool still works for everything else).
 
+import { attrValue } from '../lib/html.mjs';
+
 const SEC = 'lighthouse';
 // No timeout meant a host that accepts the connection and never answers hung the
 // whole audit — in CI, forever.
@@ -102,7 +104,7 @@ export function reportDiagnostics(lr, reporter, strategy = 'mobile') {
     reporter.suggest(
       SEC,
       `lcp:element (${strategy})`,
-      `LCP element: ${truncate(node, 120)}${failed.length ? ` — failing: ${failed.join('; ')}` : ''}`,
+      `LCP element: ${describeElement(node)}${failed.length ? ` — failing: ${failed.join('; ')}` : ''}`,
       failed.length
         ? 'fix the failing checks above first: they delay the LCP image regardless of how small it is'
         : 'this is the thing the LCP number is waiting for — preload it, size it correctly, and keep it out of a lazy-loaded container',
@@ -156,6 +158,34 @@ function lcpElement(audits) {
     }
   }
   return null;
+}
+
+/**
+ * An LCP `<img>` summarised by the attributes that explain it.
+ *
+ * Raw-truncating the snippet is what this replaces, and dogfooding showed why:
+ * on a real run the 120-character budget was spent on `src`, `alt` and an
+ * `data-astro-cid-…` before reaching `loading=`, so the output cut off at
+ * `loa…` — dropping the single attribute a reader wants. Framework noise is not
+ * worth a character here. Anything that isn't an `<img>` falls back to the
+ * snippet, which is all there is to say about it.
+ */
+function describeElement(snippet) {
+  const attrs = snippet.match(/^<img\b((?:"[^"]*"|'[^']*'|[^>])*)>?/i)?.[1];
+  if (!attrs) return truncate(snippet, 140);
+
+  const src = attrValue(attrs, 'src') ?? attrValue(attrs, 'srcset')?.split(',')[0]?.trim().split(/\s+/)[0] ?? '?';
+  const parts = [`img ${truncate(src.split('/').pop(), 46)}`];
+  // Named whether present or not: "no fetchpriority" is the finding as often as
+  // a wrong value is, and an attribute silently absent from a summary reads as
+  // one that was never checked.
+  for (const name of ['loading', 'fetchpriority', 'sizes']) {
+    const v = attrValue(attrs, name);
+    parts.push(v == null ? `no ${name}` : `${name}="${truncate(v, 40)}"`);
+  }
+  const w = attrValue(attrs, 'width'), h = attrValue(attrs, 'height');
+  parts.push(w && h ? `${w}×${h}` : 'no width/height');
+  return parts.join(', ');
 }
 
 /** Labels of the failing entries in the LCP-discovery checklist, if there is one. */

@@ -835,7 +835,7 @@ const PSI_INSIGHT = {
         eagerlyLoaded: { value: false, label: 'LCP resources should not use loading=lazy' },
         requestDiscoverable: { value: true, label: 'Request is discoverable in initial document' },
       } },
-      { nodeLabel: 'Hero', snippet: '<img src="/hero.webp">' },
+      { nodeLabel: 'Hero', snippet: '<img src="/_astro/hero.webp" alt="A long alt that would eat the truncation budget on its own" data-astro-cid-nlow4r3u="true" loading="lazy" fetchpriority="low" width="1200" height="630">' },
     ] } },
     'third-parties-insight': { details: { type: 'table', items: [
       { entity: 'Google Maps', transferSize: 368640, mainThreadTime: 120 },
@@ -849,6 +849,14 @@ reportDiagnostics(PSI_INSIGHT, diag, 'mobile');
 const byName = (frag) => diag.rows.find(r => r.name.includes(frag)) ?? null;
 check('the LCP element is named, not just the number',
   /hero\.webp/.test(byName('lcp:element')?.message ?? ''), JSON.stringify(byName('lcp:element')));
+// Raw-truncating the snippet spent the whole budget on src/alt/data-astro-cid
+// and cut off at `loa…`, dropping the one attribute worth reading. Found by
+// dogfooding against a real site, not by the fixtures.
+const lcpMsg = byName('lcp:element')?.message ?? '';
+check('  …summarised by the attributes that explain it, not by truncating the tag',
+  /loading=/.test(lcpMsg) && /fetchpriority/.test(lcpMsg) && !/data-astro-cid/.test(lcpMsg), lcpMsg);
+check('  …naming an absent attribute rather than omitting it, so silence is not ambiguous',
+  /no sizes/.test(lcpMsg), lcpMsg);
 check('  …the heaviest third parties are listed, largest first',
   /Google Maps 360 KB/.test(byName('third-party:payload')?.message ?? ''), JSON.stringify(byName('third-party:payload')));
 check('  …and simulated is shown against observed, which is what tells the two cases apart',
