@@ -26,11 +26,19 @@ Everything else has a default. Colours, fonts and layout are *"change them on
 
 1. **Check the target directory.** If it is not empty, say what is in it and ask
    before writing anything.
-2. **Copy `~/.claude/rider-starter`** into it, excluding `node_modules`, `dist`,
-   `.astro` and `worker-configuration.d.ts`.
+2. **Copy `~/.claude/rider-starter`** into it, **excluding everything the
+   starter's own `.gitignore` lists** — read it rather than trusting this
+   sentence, so the two cannot drift. Today that is `node_modules`, `dist`,
+   `.astro`, `.env`, `.wrangler`, `worker-configuration.d.ts` and `.DS_Store`:
+   build output and local caches, none of which belong in a fresh site.
 3. **Edit, don't rewrite:**
-   - `scripts/og.config.mjs` — `siteName`, `siteUrl`, `tagline`, `contactEmail`.
-     Leave `cloudflareAnalyticsToken: null`.
+   - `scripts/og.config.mjs` — `siteName`, `siteUrl`, `tagline`, `contactEmail`,
+     and **`authorName` / `authorUrl`**, which default to `Example` /
+     `https://example.com` and otherwise ship inside the site's published JSON-LD
+     as its author. Set them from the answers you already have (the site name and
+     its URL are a correct default; a person's name is better if they give one).
+     Leave `cloudflareAnalyticsToken` and both `twitter*` fields `null` — the
+     first you cannot know, and an invented handle credits a stranger's account.
    - `wrangler.jsonc` — `name` (the Worker name) and
      `send_email[0].destination_address` (the same contact email).
    - `package.json` — `name`, `description`.
@@ -43,8 +51,9 @@ Everything else has a default. Colours, fonts and layout are *"change them on
    ```bash
    node ~/.claude/rider-tools/audit.mjs --strict
    ```
-   Expect `0 🔧 / 0 🛑` and exactly one `💡`: the analytics beacon reporting its
-   token is unset. Anything else means you broke something — fix it before
+   Expect `0 🔧 / 0 🛑` and two `💡`: the analytics beacon reporting its token is
+   unset, and the missing Twitter handles. Both are true and both are the
+   owner's to resolve. Anything else means you broke something — fix it before
    handing over.
 6. **Print the two operator TODOs** (below) and nothing more.
 

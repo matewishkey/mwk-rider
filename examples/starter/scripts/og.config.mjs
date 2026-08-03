@@ -20,11 +20,18 @@ export const config = {
     // destination* in Cloudflare Email Service — see CLAUDE.md § Operator steps.
     contactEmail: 'hello@example.com',
 
-    // Optional, and they make richer social cards.
+    // Optional, and they make richer social cards. Without authorName the
+    // JSON-LD attributes posts to the site as an Organization, which is correct
+    // — so leaving it is a choice, not an omission.
     authorName: 'Example',
     authorUrl: 'https://example.com',
-    twitterSite: '@example',
-    twitterCreator: '@example',
+
+    // Null, and not a placeholder, on purpose. A social card carrying an
+    // invented handle credits whoever actually owns it on X — your posts,
+    // someone else's account. No handle is strictly better than a wrong one,
+    // and the audit will remind you with a 💡 until you set yours.
+    twitterSite: null,
+    twitterCreator: null,
 
     logoUrl: '/logo.svg',
 
