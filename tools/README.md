@@ -1,21 +1,21 @@
-# wishbusterz-rider tools
+# rider tools
 
-The engine behind `/wishbusterz-rider`. Detects an Astro project, runs domain checks, reports `✅ / 🔧 / 🛑 / ⏭`, exits non-zero on findings. Zero dependencies — Node 22 built-ins only.
+The engine behind `/rider`. Detects an Astro project, runs domain checks, reports `✅ / 🔧 / 🛑 / ⏭`, exits non-zero on findings. Zero dependencies — Node 22 built-ins only.
 
 ## Usage
 
 ```bash
 cd ~/projects/<some-astro-site>
 
-node ~/.claude/wishbusterz-rider-tools/audit.mjs            # every offline domain
-node ~/.claude/wishbusterz-rider-tools/audit.mjs -s seo -s images   # subset
-node ~/.claude/wishbusterz-rider-tools/audit.mjs --url https://example.com # add live checks
-node ~/.claude/wishbusterz-rider-tools/audit.mjs --url … --post /wiki/x     # audit that page, not a discovered one
-node ~/.claude/wishbusterz-rider-tools/audit.mjs --url … --strategy desktop # Lighthouse on desktop (default: mobile)
-node ~/.claude/wishbusterz-rider-tools/audit.mjs --strict    # require the house-style baseline too
-node ~/.claude/wishbusterz-rider-tools/audit.mjs --json     # machine-readable
-node ~/.claude/wishbusterz-rider-tools/audit.mjs --quiet    # hide ✅ lines; findings, 💡 and ⏭ still print
-node ~/.claude/wishbusterz-rider-tools/audit.mjs --help
+node ~/.claude/rider-tools/audit.mjs            # every offline domain
+node ~/.claude/rider-tools/audit.mjs -s seo -s images   # subset
+node ~/.claude/rider-tools/audit.mjs --url https://example.com # add live checks
+node ~/.claude/rider-tools/audit.mjs --url … --post /wiki/x     # audit that page, not a discovered one
+node ~/.claude/rider-tools/audit.mjs --url … --strategy desktop # Lighthouse on desktop (default: mobile)
+node ~/.claude/rider-tools/audit.mjs --strict    # require the house-style baseline too
+node ~/.claude/rider-tools/audit.mjs --json     # machine-readable
+node ~/.claude/rider-tools/audit.mjs --quiet    # hide ✅ lines; findings, 💡 and ⏭ still print
+node ~/.claude/rider-tools/audit.mjs --help
 ```
 
 ## Domains

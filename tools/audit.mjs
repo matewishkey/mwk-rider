@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// wishbusterz-rider — check an Astro site against baseline best practices.
+// rider — check an Astro site against baseline best practices.
 //
 // Seven offline domains read source + dist:
 //   modules   expected baseline integrations + config are present and wired
@@ -62,20 +62,20 @@ try {
 }
 
 if (values.help) {
-  console.log(`wishbusterz-rider — check an Astro site against baseline best practices
+  console.log(`rider — check an Astro site against baseline best practices
 
 Usage:
-  wishbusterz-rider                       Run every offline check in the current dir
-  wishbusterz-rider -s seo -s images      Run only those domains
-  wishbusterz-rider --url https://example.com    Also run live + lighthouse against a served site
-  wishbusterz-rider --url … --strategy desktop   Lighthouse on desktop (default: mobile)
-  wishbusterz-rider --url … --post /blog/x       Audit a specific page live
-  wishbusterz-rider -s lighthouse --url https://example.com   Just the Lighthouse scorecard
-  wishbusterz-rider --strict              Treat house-style baseline checks as required too
-  wishbusterz-rider --json                Machine-readable output
-  wishbusterz-rider --quiet               Hide the ✅ lines (findings, 💡 and ⏭ still print)
-  wishbusterz-rider --verbose             Show them even when output is piped or $CI is set
-  wishbusterz-rider --rules --json        List every rule id, severity and rationale; run nothing
+  rider                       Run every offline check in the current dir
+  rider -s seo -s images      Run only those domains
+  rider --url https://example.com    Also run live + lighthouse against a served site
+  rider --url … --strategy desktop   Lighthouse on desktop (default: mobile)
+  rider --url … --post /blog/x       Audit a specific page live
+  rider -s lighthouse --url https://example.com   Just the Lighthouse scorecard
+  rider --strict              Treat house-style baseline checks as required too
+  rider --json                Machine-readable output
+  rider --quiet               Hide the ✅ lines (findings, 💡 and ⏭ still print)
+  rider --verbose             Show them even when output is piped or $CI is set
+  rider --rules --json        List every rule id, severity and rationale; run nothing
 
 Offline domains: ${Object.keys(OFFLINE).join(', ')}
 With --url:      live, lighthouse, browser

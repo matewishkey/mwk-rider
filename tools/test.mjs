@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Smoke test for the wishbusterz-rider audit tool.
+// Smoke test for the rider audit tool.
 //
 // Runs audit.mjs against the compliant fixture (examples/_fixture-i18n) and a
 // non-Astro dir, and asserts the engine behaves. The fixture is compliant by
@@ -68,7 +68,7 @@ if (fix.json) {
 
 // Location belongs in file/line, not baked into the name string: an agent that
 // reads a finding must not have to grep dist/ to learn which file it means.
-const clsDir = tmpProject('wishbusterz-rider-cls-');
+const clsDir = tmpProject('rider-cls-');
 writeFileSync(join(clsDir, 'package.json'), JSON.stringify({ name: 'fx', type: 'module', dependencies: { astro: '^7.1.6' } }));
 writeFileSync(join(clsDir, 'astro.config.mjs'), "export default { output: 'static' };\n");
 mkdirSync(join(clsDir, 'src', 'pages'), { recursive: true });
@@ -115,7 +115,7 @@ console.log('adapter:cloudflare is gated on SSR, not <Image> presence:');
 // needed. The Cloudflare image service only matters under output:'server', where
 // Sharp can't run on Workers. Build throwaway projects and read just that result.
 function mkProject({ output, withImage, withAdapter }) {
-  const dir = tmpProject('wishbusterz-rider-mod-');
+  const dir = tmpProject('rider-mod-');
   const deps = { astro: '^7.1.6' };
   if (withAdapter) deps['@astrojs/cloudflare'] = '^14.1.7';
   writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'fx', type: 'module', dependencies: deps }));
@@ -142,7 +142,7 @@ console.log('Astro 7 migration checks fire on a v6-shaped project:');
 // The fixture is compliant by construction, so it only proves these checks stay
 // quiet. Build the known-bad counterpart and prove each one actually fires.
 function mkLegacyProject({ deps = {}, config = '', src = '' } = {}) {
-  const dir = tmpProject('wishbusterz-rider-v7-');
+  const dir = tmpProject('rider-v7-');
   writeFileSync(join(dir, 'package.json'), JSON.stringify({
     name: 'fx', type: 'module', engines: { node: '>=22' },
     dependencies: { astro: '^6.4.2', ...deps },
@@ -223,7 +223,7 @@ console.log('checks read the built artifact, not a proxy for it:');
 // they had none. dist/ is written by hand here: these checks read files, so a
 // real astro build would only make the test slower.
 function mkBuilt(files, { deps = {}, src = {} } = {}) {
-  const dir = tmpProject('wishbusterz-rider-dist-');
+  const dir = tmpProject('rider-dist-');
   writeFileSync(join(dir, 'package.json'), JSON.stringify({
     name: 'fx', type: 'module', engines: { node: '>=22.12.0' },
     dependencies: { astro: '^7.1.6', ...deps },
@@ -297,7 +297,7 @@ console.log('a check with nothing to look at skips, and defaults are not defects
 // `output` defaults to 'static', so omitting it is correct — this was a
 // required finding for writing less config than necessary.
 function mkConfig(body) {
-  const dir = tmpProject('wishbusterz-rider-out-');
+  const dir = tmpProject('rider-out-');
   writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'fx', type: 'module', dependencies: { astro: '^7.1.6' } }));
   writeFileSync(join(dir, 'astro.config.mjs'), `export default { ${body} };\n`);
   mkdirSync(join(dir, 'src', 'pages'), { recursive: true });
@@ -352,7 +352,7 @@ check('a bare attribute name does not match a longer one',
 
 // A site using BaseHead.astro rather than SEO.astro is not wrong. This used to
 // emit required findings AND silently skip every meta:* check.
-const headDir = tmpProject('wishbusterz-rider-head-');
+const headDir = tmpProject('rider-head-');
 writeFileSync(join(headDir, 'package.json'), JSON.stringify({ name: 'fx', type: 'module', dependencies: { astro: '^7.1.6' } }));
 writeFileSync(join(headDir, 'astro.config.mjs'), "export default { output: 'static' };\n");
 mkdirSync(join(headDir, 'src', 'components'), { recursive: true });
@@ -371,7 +371,7 @@ check('  …and every meta:* check actually ran',
 // The worst failure this tool can have: reporting *verified good* where nothing
 // was checked. Bare-substring matching meant a component whose entire content
 // was a TODO comment passed all six meta checks.
-const todoDir = tmpProject('wishbusterz-rider-todo-');
+const todoDir = tmpProject('rider-todo-');
 writeFileSync(join(todoDir, 'package.json'), JSON.stringify({ name: 'fx', type: 'module', dependencies: { astro: '^7.1.6' } }));
 writeFileSync(join(todoDir, 'astro.config.mjs'), "export default { output: 'static' };\n");
 mkdirSync(join(todoDir, 'src', 'components'), { recursive: true });
@@ -405,7 +405,7 @@ check('comment blanking preserves offsets and line count',
 check('  …and leaves a URL alone', /https:\/\/example\.com/.test(stripComments('const u = "https://example.com/x";')));
 
 // Auditing a repo must never be equivalent to running it.
-const rceDir = tmpProject('wishbusterz-rider-rce-');
+const rceDir = tmpProject('rider-rce-');
 writeFileSync(join(rceDir, 'package.json'), JSON.stringify({ name: 'fx', type: 'module', dependencies: { astro: '^7.1.6' } }));
 writeFileSync(join(rceDir, 'astro.config.mjs'), "export default { output: 'static' };\n");
 mkdirSync(join(rceDir, 'scripts'), { recursive: true });
@@ -427,7 +427,7 @@ console.log('live domain runs against a served site (it had no coverage at all):
 //
 // The server must be its OWN process: runJson uses spawnSync, which blocks this
 // process's event loop, so an in-process http server could never answer.
-const srvDir = tmpProject('wishbusterz-rider-srv-');
+const srvDir = tmpProject('rider-srv-');
 const srvFile = join(srvDir, 'server.mjs');
 // A small site whose content lives at /wiki/, NOT /blog/. Discovery used to
 // match `href=".../blog/..."` and nothing else, so on all five dogfood sites the
@@ -518,7 +518,7 @@ const pwRow = noPw.json?.results.find(r => r.section === 'browser');
 check('browser domain skips without playwright', pwRow?.outcome === 'skip', JSON.stringify(pwRow));
 check('  …and the run still exits 0', noPw.code === 0, `exit ${noPw.code}`);
 
-const fontDir = tmpProject('wishbusterz-rider-font-');
+const fontDir = tmpProject('rider-font-');
 writeFileSync(join(fontDir, 'package.json'), JSON.stringify({ name: 'fx', type: 'module', dependencies: { astro: '^7.1.6' } }));
 writeFileSync(join(fontDir, 'astro.config.mjs'), "export default { output: 'static' };\n");
 mkdirSync(join(fontDir, 'src', 'layouts'), { recursive: true });
@@ -647,7 +647,7 @@ check('every page declaring the same canonical URL is reported',
   runJson(sameCanonical, ['-s', 'seo']).json?.results.find(r => r.id === 'seo/canonical-unique')?.outcome === 'suggest');
 
 // A scan that opened nothing is not a clean bill of health.
-const emptyProject = tmpProject('wishbusterz-rider-empty-');
+const emptyProject = tmpProject('rider-empty-');
 writeFileSync(join(emptyProject, 'package.json'), JSON.stringify({ name: 'fx', type: 'module', dependencies: { astro: '^7.1.6' } }));
 writeFileSync(join(emptyProject, 'astro.config.mjs'), "export default { output: 'static' };\n");
 check('analytics does not pass on a project with nothing to scan',

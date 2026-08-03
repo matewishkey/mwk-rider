@@ -1,5 +1,5 @@
 ---
-name: wishbusterz-rider
+name: rider
 description: Audit an Astro site against baseline best practices — the stack, SEO, images, page speed, and the machine-readable surface (JSON-LD, llms.txt, RSS, search index). Run on demand from inside any Astro project. Optional argument is a live URL to also check the served site.
 ---
 
@@ -12,7 +12,7 @@ The argument (if any) is a base URL to also audit live (e.g. `https://example.co
 Read enough to understand the site, then tell the user in one short paragraph what it is:
 
 ```bash
-node ~/.claude/wishbusterz-rider-tools/audit.mjs --help   # confirm the tool is installed
+node ~/.claude/rider-tools/audit.mjs --help   # confirm the tool is installed
 ```
 
 Look at `astro.config.*`, `package.json`, and `src/content.config.ts` to summarize: Astro version, `output` mode, which integrations are installed, whether it's single- or multi-locale, and what content collections exist. Keep it to a few sentences — this orients the user before the findings.
@@ -23,13 +23,13 @@ Look at `astro.config.*`, `package.json`, and `src/content.config.ts` to summari
 
 ```bash
 npm run build          # if the project builds cleanly
-node ~/.claude/wishbusterz-rider-tools/audit.mjs
+node ~/.claude/rider-tools/audit.mjs
 ```
 
 If the user passed a URL, add it:
 
 ```bash
-node ~/.claude/wishbusterz-rider-tools/audit.mjs --url <the-url>
+node ~/.claude/rider-tools/audit.mjs --url <the-url>
 ```
 
 Useful flags: `-s <domain>` (repeatable) to scope; `--strict` to require the house-style baseline too; `--post <path>` to audit a specific live page instead of a discovered one; `--strategy desktop` for Lighthouse; `--json` for machine-readable output; `--verbose` to see the `✅` lines (they are hidden by default when output is piped or `$CI` is set). `--url` works from any directory — the offline domains need an Astro project in cwd, a live run only needs the URL.

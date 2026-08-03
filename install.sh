@@ -1,21 +1,21 @@
 #!/usr/bin/env bash
-# wishbusterz-rider installer — symlinks the skill, the /wishbusterz-rider
+# rider installer — symlinks the skill, the /rider
 # command and the tools into ~/.claude/.
 # Idempotent: safe to re-run after pulling updates.
 #
 # Command-driven by design: this installs NOTHING into any project and never
-# touches a project's CLAUDE.md. You run /wishbusterz-rider on demand.
+# touches a project's CLAUDE.md. You run /rider on demand.
 
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLAUDE_DIR="$HOME/.claude"
 COMMANDS_DIR="$CLAUDE_DIR/commands"
-SKILLS_DIR="$CLAUDE_DIR/skills/wishbusterz-rider"
-COMMAND_LINK="$COMMANDS_DIR/wishbusterz-rider.md"
-SKILL_SRC="$REPO_DIR/skills/wishbusterz-rider/SKILL.md"
+SKILLS_DIR="$CLAUDE_DIR/skills/rider"
+COMMAND_LINK="$COMMANDS_DIR/rider.md"
+SKILL_SRC="$REPO_DIR/skills/rider/SKILL.md"
 SKILL_LINK="$SKILLS_DIR/SKILL.md"
-TOOLS_LINK="$CLAUDE_DIR/wishbusterz-rider-tools"
+TOOLS_LINK="$CLAUDE_DIR/rider-tools"
 
 mkdir -p "$COMMANDS_DIR" "$SKILLS_DIR"
 
@@ -25,12 +25,12 @@ mkdir -p "$COMMANDS_DIR" "$SKILLS_DIR"
 echo "→ installing the skill to $SKILLS_DIR"
 if [ -L "$SKILL_LINK" ] || [ -e "$SKILL_LINK" ]; then rm -f "$SKILL_LINK"; fi
 ln -s "$SKILL_SRC" "$SKILL_LINK"
-echo "  wishbusterz-rider (skill)"
+echo "  rider (skill)"
 
-echo "→ installing /wishbusterz-rider to $COMMANDS_DIR"
+echo "→ installing /rider to $COMMANDS_DIR"
 if [ -L "$COMMAND_LINK" ] || [ -e "$COMMAND_LINK" ]; then rm -f "$COMMAND_LINK"; fi
 ln -s "$SKILL_SRC" "$COMMAND_LINK"
-echo "  /wishbusterz-rider"
+echo "  /rider"
 
 # 2. The tools (the command invokes audit.mjs from here)
 echo "→ linking tools to $TOOLS_LINK"
@@ -43,17 +43,17 @@ elif [ -e "$TOOLS_LINK" ]; then
   exit 1
 fi
 ln -s "$REPO_DIR/tools" "$TOOLS_LINK"
-echo "  wishbusterz-rider-tools linked (audit.mjs)"
+echo "  rider-tools linked (audit.mjs)"
 
 echo
-echo "wishbusterz-rider installed."
+echo "rider installed."
 echo
 echo "Run it from inside any Astro project:"
 echo "  cd ~/projects/<an-astro-site>"
 echo "  claude"
-echo "  /wishbusterz-rider                 # offline source + dist checks"
-echo "  /wishbusterz-rider https://site    # also check the live/served site"
+echo "  /rider                 # offline source + dist checks"
+echo "  /rider https://site    # also check the live/served site"
 echo
-echo "Or call the tool directly:  node ~/.claude/wishbusterz-rider-tools/audit.mjs --help"
-echo "What it checks, machine-readable:  node ~/.claude/wishbusterz-rider-tools/audit.mjs --rules --json"
+echo "Or call the tool directly:  node ~/.claude/rider-tools/audit.mjs --help"
+echo "What it checks, machine-readable:  node ~/.claude/rider-tools/audit.mjs --rules --json"
 echo "To update later: git pull in this repo + re-run ./install.sh"
