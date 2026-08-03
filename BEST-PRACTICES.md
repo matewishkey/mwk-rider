@@ -837,6 +837,21 @@ Lab scores are noisy — treat one run as a sample, not a verdict.
   All three are advisory by construction (`policy.mjs` `ADVISORY`): they are
   facts about the run, not verdicts. The scores beside them are the verdict.
 
+  **Audit ids are read under both the current and the legacy names, and that is
+  load-bearing.** Lighthouse renamed this family to `*-insight`, and PSI serves
+  whatever its deployed Lighthouse emits. Measured 2026-08-03 against a live key:
+  the response carried `lcp-discovery-insight`, `lcp-breakdown-insight` and
+  `third-parties-insight`, and **none** of `largest-contentful-paint-element` or
+  `third-party-summary`. The failure mode is the quiet one — a renamed id doesn't
+  error, it produces a permanent `⏭`, which reads exactly like "nothing to report
+  here". Both id sets are parsed and both are asserted in `tools/test.mjs`.
+
+  The insight shape pays for itself: `lcp-discovery-insight` also carries a
+  checklist of the three things that delay an LCP image regardless of its bytes —
+  `fetchpriority=high` applied, not `loading="lazy"`, discoverable in the initial
+  document. Failures are quoted in Lighthouse's own words rather than re-worded,
+  since it is the authority on its own check.
+
 
 ## Gaps / candidate practices (not yet enforced)
 

@@ -807,7 +807,11 @@ const collect = () => {
   const push = (outcome) => (section, name, message, fix) => rows.push({ outcome, name, message, fix });
   return { rows, pass: push('pass'), fix: push('fix'), suggest: push('suggest'), skip: push('skip') };
 };
-const PSI = {
+// Two shapes, because Lighthouse renamed this family and PSI serves whatever
+// its deployed version emits. Reading only one set is not a loud failure — it is
+// a permanent ⏭, which reads exactly like "this page is fine". A live run on
+// 2026-08-03 returned ONLY the *-insight ids; the legacy ones were absent.
+const PSI_LEGACY = {
   audits: {
     'largest-contentful-paint': { numericValue: 5500 },
     'first-contentful-paint': { numericValue: 3500 },
@@ -819,8 +823,29 @@ const PSI = {
     metrics: { details: { items: [{ observedFirstContentfulPaint: 1500, observedLargestContentfulPaint: 2000 }] } },
   },
 };
+// Trimmed from a real PSI response (wishbusterz.com, mobile, 2026-08-03), with
+// the failing-checklist entry flipped so the failure path is covered too.
+const PSI_INSIGHT = {
+  audits: {
+    'largest-contentful-paint': { numericValue: 5500 },
+    'first-contentful-paint': { numericValue: 3500 },
+    'lcp-discovery-insight': { details: { type: 'list', items: [
+      { type: 'checklist', items: {
+        priorityHinted: { value: true, label: 'fetchpriority=high applied' },
+        eagerlyLoaded: { value: false, label: 'LCP resources should not use loading=lazy' },
+        requestDiscoverable: { value: true, label: 'Request is discoverable in initial document' },
+      } },
+      { nodeLabel: 'Hero', snippet: '<img src="/hero.webp">' },
+    ] } },
+    'third-parties-insight': { details: { type: 'table', items: [
+      { entity: 'Google Maps', transferSize: 368640, mainThreadTime: 120 },
+      { entity: 'Google Fonts', transferSize: 40960, mainThreadTime: 4 },
+    ] } },
+    metrics: { details: { items: [{ observedFirstContentfulPaint: 1500, observedLargestContentfulPaint: 2000 }] } },
+  },
+};
 const diag = collect();
-reportDiagnostics(PSI, diag, 'mobile');
+reportDiagnostics(PSI_INSIGHT, diag, 'mobile');
 const byName = (frag) => diag.rows.find(r => r.name.includes(frag)) ?? null;
 check('the LCP element is named, not just the number',
   /hero\.webp/.test(byName('lcp:element')?.message ?? ''), JSON.stringify(byName('lcp:element')));
@@ -829,8 +854,20 @@ check('  …the heaviest third parties are listed, largest first',
 check('  …and simulated is shown against observed, which is what tells the two cases apart',
   /3500 ms simulated \/ 1500 ms observed/.test(byName('metrics:observed')?.message ?? ''),
   JSON.stringify(byName('metrics:observed')));
+check('  …the LCP discovery checklist names what is failing, in Lighthouse\'s own words',
+  /loading=lazy/.test(byName('lcp:element')?.message ?? ''), JSON.stringify(byName('lcp:element')));
 check('  …all three advisory: a diagnosis is a fact about the run, not a verdict',
   diag.rows.every(r => r.outcome === 'suggest' || r.outcome === 'skip'), JSON.stringify(diag.rows.map(r => r.outcome)));
+
+// The legacy ids must keep working — PSI serves whatever Lighthouse it runs.
+const legacy = collect();
+reportDiagnostics(PSI_LEGACY, legacy, 'mobile');
+const legacyBy = (frag) => legacy.rows.find(r => r.name.includes(frag)) ?? null;
+check('  …and the pre-rename audit ids parse identically, so an older PSI is not a silent ⏭',
+  /hero\.webp/.test(legacyBy('lcp:element')?.message ?? '')
+  && /Google Maps 360 KB/.test(legacyBy('third-party:payload')?.message ?? ''),
+  JSON.stringify(legacy.rows.map(r => [r.name, r.outcome])));
+
 const empty = collect();
 reportDiagnostics({ audits: {} }, empty, 'mobile');
 check('  …and a response carrying none of it skips, naming what was absent',

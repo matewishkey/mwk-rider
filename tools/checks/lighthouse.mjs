@@ -81,27 +81,41 @@ export async function run({ reporter, url, strategy = 'mobile' }) {
  *     lighter.
  *
  * All three are advisory: they are facts about the run, not verdicts.
+ *
+ * **Audit ids are read under both the current and the legacy names.** Lighthouse
+ * renamed this family to `*-insight`, and PSI serves whatever its deployed
+ * Lighthouse emits — measured 2026-08-03, a live run returned
+ * `lcp-discovery-insight` / `lcp-breakdown-insight` / `third-parties-insight`
+ * and none of the older ids. Reading only one set is how a diagnosis silently
+ * becomes a permanent `⏭`, which is indistinguishable from "this page is fine".
  */
 export function reportDiagnostics(lr, reporter, strategy = 'mobile') {
   const audits = lr?.audits ?? {};
 
-  const lcpEl = audits['largest-contentful-paint-element'];
-  const node = firstNode(lcpEl);
+  const node = lcpElement(audits);
   if (node) {
-    reporter.suggest(SEC, `lcp:element (${strategy})`, `LCP element: ${truncate(node, 120)}`, 'this is the thing the LCP number is waiting for — preload it, size it correctly, and keep it out of a lazy-loaded container');
+    // The discovery insight also checks the three things that make an LCP image
+    // slow for reasons unrelated to its bytes. They come back as a checklist of
+    // pass/fail with their own labels, so failures are quoted rather than
+    // re-worded — Lighthouse's phrasing is the authority on its own check.
+    const failed = lcpChecklistFailures(audits);
+    reporter.suggest(
+      SEC,
+      `lcp:element (${strategy})`,
+      `LCP element: ${truncate(node, 120)}${failed.length ? ` — failing: ${failed.join('; ')}` : ''}`,
+      failed.length
+        ? 'fix the failing checks above first: they delay the LCP image regardless of how small it is'
+        : 'this is the thing the LCP number is waiting for — preload it, size it correctly, and keep it out of a lazy-loaded container',
+    );
   } else {
     reporter.skip(SEC, `lcp:element (${strategy})`, 'PSI reported no LCP element for this run');
   }
 
-  const third = (audits['third-party-summary']?.details?.items ?? [])
-    .map((i) => ({ entity: nameOf(i.entity), bytes: i.transferSize ?? 0, blocking: i.blockingTime ?? 0 }))
-    .filter((i) => i.entity && i.bytes > 0)
-    .sort((a, b) => b.bytes - a.bytes)
-    .slice(0, 3);
+  const third = thirdParties(audits);
   if (third.length === 0) {
     reporter.skip(SEC, `third-party:payload (${strategy})`, 'PSI reported no third-party payload on this page');
   } else {
-    const shown = third.map((i) => `${i.entity} ${Math.round(i.bytes / 1024)} KB${i.blocking >= 50 ? ` (${Math.round(i.blocking)} ms blocking)` : ''}`).join(', ');
+    const shown = third.map((i) => `${i.entity} ${Math.round(i.bytes / 1024)} KB${i.blocking >= 50 ? ` (${Math.round(i.blocking)} ms main thread)` : ''}`).join(', ');
     reporter.suggest(SEC, `third-party:payload (${strategy})`, `heaviest third parties: ${shown}`, 'weight you did not write, on the critical path — a facade or a deferred loader usually removes it entirely');
   }
 
@@ -125,10 +139,48 @@ export function reportDiagnostics(lr, reporter, strategy = 'mobile') {
   );
 }
 
-function firstNode(audit) {
-  const item = audit?.details?.items?.[0];
-  const node = item?.node ?? item;
-  return node?.snippet ?? node?.selector ?? null;
+/**
+ * The LCP element's markup, whichever audit this Lighthouse version emits.
+ *
+ * The insight audits carry it as one entry in a mixed `details.items` list —
+ * alongside a checklist or a subpart table — so the element is found by looking
+ * for the entry that *has* a snippet rather than by position. The legacy audit
+ * nested it under `item.node`.
+ */
+function lcpElement(audits) {
+  for (const id of ['lcp-discovery-insight', 'lcp-breakdown-insight', 'largest-contentful-paint-element']) {
+    for (const item of audits[id]?.details?.items ?? []) {
+      const node = item?.node ?? item;
+      const snippet = node?.snippet ?? node?.selector ?? null;
+      if (snippet) return snippet;
+    }
+  }
+  return null;
+}
+
+/** Labels of the failing entries in the LCP-discovery checklist, if there is one. */
+function lcpChecklistFailures(audits) {
+  for (const item of audits['lcp-discovery-insight']?.details?.items ?? []) {
+    if (item?.type !== 'checklist' || !item.items) continue;
+    return Object.values(item.items)
+      .filter((c) => c && c.value === false && c.label)
+      .map((c) => c.label);
+  }
+  return [];
+}
+
+/** The heaviest third-party entities, largest first. */
+function thirdParties(audits) {
+  for (const id of ['third-parties-insight', 'third-party-summary']) {
+    const rows = (audits[id]?.details?.items ?? [])
+      // `mainThreadTime` is the current field; `blockingTime` was the legacy one.
+      .map((i) => ({ entity: nameOf(i.entity), bytes: i.transferSize ?? 0, blocking: i.mainThreadTime ?? i.blockingTime ?? 0 }))
+      .filter((i) => i.entity && i.bytes > 0)
+      .sort((a, b) => b.bytes - a.bytes)
+      .slice(0, 3);
+    if (rows.length) return rows;
+  }
+  return [];
 }
 
 // PSI has returned `entity` as both a string and an object across versions.
