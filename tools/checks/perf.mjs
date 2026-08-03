@@ -3,13 +3,17 @@
 //      repeat visits don't re-validate every JS/CSS/font.
 //   2. Content <img> tags carry width + height (no layout shift / CLS).
 //      <Image> from astro:assets bakes these in; raw <img> without them shifts.
+//   3. Render-blocking CSS + webfont weight, measured on the built output.
+//   4. Heavy third-party embeds are behind a facade, not loaded with the page.
 
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, extname, relative } from 'node:path';
 
 import { attrValue } from '../lib/html.mjs';
-import { SKIP_DIST, distDir } from '../lib/dist.mjs';
+import { eachDistHtml } from '../lib/html.mjs';
+import { SKIP_DIST, distDir, distRelative } from '../lib/dist.mjs';
 import { astroBlock, MIN_IMMUTABLE_MAXAGE, CANONICAL_MAXAGE } from '../lib/headers.mjs';
+import { embedProduct, fetchableMarkup } from '../lib/embed-hosts.mjs';
 
 const SEC = 'perf';
 
@@ -21,6 +25,7 @@ export async function run({ project, reporter }) {
   checkHeaders(project, reporter);
   checkCls(project, reporter);
   checkWeight(project, reporter);
+  checkEmbeds(project, reporter);
 }
 
 // 1. public/_headers — hashed assets immutable -------------------------------
@@ -254,6 +259,64 @@ function checkFontWeight(project, reporter, files) {
     reporter.fix(SEC, 'font:format', `${legacy.length} font file(s) served as ttf/otf/eot`, 'convert to woff2 — universally supported for years and roughly half the bytes', { file: relative(project.root, legacy[0]) });
   } else {
     reporter.pass(SEC, 'font:format', 'all webfonts are woff2/woff');
+  }
+}
+
+// 4. Heavy third-party embeds behind a facade --------------------------------
+
+/**
+ * A heavy third-party iframe in the built HTML is, by definition, loaded with
+ * the page — a facade injects the frame at scroll time, so a compliant site has
+ * nothing here to find.
+ *
+ * `loading="lazy"` deliberately does not exempt one. It defers only frames far
+ * enough down, and the measured case (cypruspokerbrisbane.com) had the map in
+ * the *second section*, inside the threshold: the attribute was present, the
+ * 360 KB was fetched anyway, and mobile Performance sat at 70 until the embed
+ * went behind an IntersectionObserver facade (then 97).
+ */
+function checkEmbeds(project, reporter) {
+  if (!project.hasDist) {
+    reporter.skip(SEC, 'embed:eager', 'no dist/ — build the site to check for eagerly-loaded third-party embeds');
+    return;
+  }
+
+  let iframes = 0;
+  const found = [];
+  const seen = new Set();
+  eachDistHtml(project.root, (rel, html) => {
+    for (const m of fetchableMarkup(html).matchAll(/<iframe\b((?:"[^"]*"|'[^']*'|[^>])*)>/gi)) {
+      iframes++;
+      const src = attrValue(m[1], 'src') ?? attrValue(m[1], 'data-src');
+      if (!src) continue;
+      const product = embedProduct(src);
+      if (!product) continue;
+      // One finding per embed, not per page: a component rendered on 400 pages
+      // is one edit. First page wins as the place to look.
+      const key = `${product}|${src.split(/[?#]/)[0]}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      found.push({ product, src, page: distRelative(project.root, rel), lazy: /\bloading\s*=\s*["']?lazy/i.test(m[1]) });
+    }
+  });
+
+  if (found.length === 0) {
+    reporter.pass(SEC, 'embed:eager', iframes === 0
+      ? 'no <iframe> in the built pages'
+      : `none of the ${iframes} built <iframe>(s) is a heavy third-party embed`);
+    return;
+  }
+  for (const f of found) {
+    const lazyNote = f.lazy
+      ? ' — loading="lazy" does not defer it: native lazy loading has a generous near-viewport threshold, and an embed high on the page falls inside it (measured)'
+      : '';
+    reporter.fix(
+      SEC,
+      'embed:eager',
+      `${f.product} embed loads with the page${lazyNote} (${truncate(f.src, 90)})`,
+      'replace it with a facade — render a static placeholder (an image or a styled box) and inject the <iframe> from an IntersectionObserver when the user scrolls near it. Keeping the real frame in a <template> or <noscript> is fine; neither is fetched',
+      { file: f.page },
+    );
   }
 }
 

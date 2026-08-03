@@ -383,6 +383,29 @@ thing a version bump leaves behind. Each maps to a documented v7 breaking change
 - **woff2, not ttf/otf.** Universally supported for years and roughly half the
   bytes. Serving a raw font format to browsers is a defect on anyone's site, so
   this one is universal. → `perf: font:format`
+- **Heavy third-party embeds sit behind a facade.** A Maps, YouTube, Vimeo,
+  Spotify, Calendly or Typeform `<iframe>` pulls hundreds of kilobytes over
+  dozens of requests from an origin you don't control, and it starts the moment
+  the page loads. The fix is a facade: render a static placeholder — an image, or
+  a styled box with a play button — and inject the real `<iframe>` from an
+  `IntersectionObserver` when the reader scrolls near it. → `perf: embed:eager`
+
+  **`loading="lazy"` is not a substitute, and the check deliberately does not
+  accept it.** Native lazy loading only defers frames far enough down the page.
+  On cypruspokerbrisbane.com (2026-05-31) the Maps `output=embed` iframe was in
+  the *second section* — inside the threshold — so the attribute was present and
+  the ~360 KB across ~20 requests was fetched anyway. Under PageSpeed's simulated
+  Slow-4G that saturated bandwidth before first paint: mobile Performance 70,
+  FCP 3.5 s, LCP 5.5 s. Behind an IntersectionObserver facade the same page
+  measured 97 / 1.5 s / 2.0 s.
+
+  Detection is "is the frame in the built HTML at all", because a facade injects
+  it at runtime and so leaves nothing to find. Markup a browser does not fetch is
+  excluded first — `<template>` (inert, and exactly what a facade clones) and
+  `<noscript>` (the correct no-JS fallback *for* a facade) — since flagging those
+  would report the fix as the defect. The host table lives in
+  `tools/lib/embed-hosts.mjs`; a same-origin or small third-party frame is not
+  what this is about.
 
 ## content — pages a site is repeatedly asked for
 

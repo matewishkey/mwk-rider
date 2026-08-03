@@ -727,6 +727,28 @@ check('  …and a single image in no srcset is still judged on its own bytes',
   sizeRows(solo).some(r => r.outcome === 'fix' && r.file === 'dist/_astro/solo.webp'),
   JSON.stringify(sizeRows(solo)));
 
+// Heavy third-party embeds. cypruspokerbrisbane.com sat at mobile Performance
+// 70 because a Maps iframe in the second section pulled ~360 KB across ~20
+// requests; a facade took it to 97. `loading="lazy"` was present the whole time.
+console.log('a heavy third-party embed is only invisible behind a facade:');
+const embedRow = (files) => runJson(mkBuilt(files), ['-s', 'perf', '--strict']).json?.results
+  .find(r => r.id === 'perf/embed-eager') ?? null;
+
+const maps = embedRow({ 'dist/index.html': PAGE('<iframe src="https://www.google.com/maps?q=x&output=embed" loading="lazy"></iframe>') });
+check('a Maps embed in the built HTML → fix, even with loading="lazy"',
+  maps?.outcome === 'fix' && /lazy/.test(maps.message ?? ''), JSON.stringify(maps));
+check('  …and a YouTube embed too',
+  embedRow({ 'dist/index.html': PAGE('<iframe src="https://www.youtube.com/embed/abc"></iframe>') })?.outcome === 'fix');
+
+// The compliant pattern must not read as the defect: a facade keeps the real
+// frame in an inert <template>, and <noscript> is its no-JS fallback.
+check('  …while the same frame inside <template> (a facade) → pass',
+  embedRow({ 'dist/index.html': PAGE('<div class="map-facade"></div><template><iframe src="https://www.youtube.com/embed/abc"></iframe></template>') })?.outcome === 'pass');
+check('  …and inside <noscript> → pass',
+  embedRow({ 'dist/index.html': PAGE('<noscript><iframe src="https://www.youtube.com/embed/abc"></iframe></noscript>') })?.outcome === 'pass');
+check('  …and a same-origin iframe is not the tool\'s business',
+  embedRow({ 'dist/index.html': PAGE('<iframe src="/widgets/toc.html"></iframe>') })?.outcome === 'pass');
+
 // A pass with no message is indistinguishable from a check that never ran —
 // the failure mode this tool cares most about. Asserted as an invariant rather
 // than per-check, so a new check cannot reintroduce it.

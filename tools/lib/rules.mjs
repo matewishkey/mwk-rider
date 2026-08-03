@@ -98,6 +98,7 @@ const RULES = [
   ['perf/font-families', 'perf', 'font:families', 'Two families — headings and body — is enough for almost any content site.'],
   ['perf/font-faces', 'perf', 'font:faces', 'Each @font-face is a separate file to download; a variable font covers a weight range in one.'],
   ['perf/font-format', 'perf', 'font:format', 'woff2 has been universally supported for years and is roughly half the bytes of ttf/otf.'],
+  ['perf/embed-eager', 'perf', 'embed:eager', 'A heavy third-party iframe in the built HTML loads with the page; loading="lazy" does not defer one high on it. A facade does.'],
   ['perf/cache-astro', 'perf', 'cache:_astro', 'Live only: the real Cache-Control on a hashed asset. Neither astro dev nor astro preview applies _headers.'],
   ['perf/cache-html', 'perf', 'cache:html', 'Live only: HTML marked immutable means a deploy stays invisible until the cache expires.'],
 
