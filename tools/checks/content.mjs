@@ -1,11 +1,12 @@
-// content — pages a site is repeatedly asked for and rarely has.
+// content — pages a site is repeatedly asked for and rarely has, plus one lint
+// on the prose itself.
 //
-// Both checks here are house style: a personal Astro blog is not broken for
+// The two page checks are house style: a personal Astro blog is not broken for
 // lacking either, and a tool that says otherwise gets uninstalled. They read
 // built HTML rather than filenames, so any routing convention counts.
 
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { join, relative } from 'node:path';
 import { eachDistHtml } from '../lib/html.mjs';
 import { distRelative } from '../lib/dist.mjs';
 
@@ -17,6 +18,8 @@ const MEDIA_KIT_RE = /(^|\/)(media-?kit|press-?kit|press)(\.html|\/index\.html)$
 const DESIGN_KIT_RE = /(^|\/)(design|design-?kit|design-?system|style-?guide|styleguide|tokens)(\.html|\/index\.html)$/i;
 
 export async function run({ project, reporter }) {
+  checkAmbiguousQuotes(project, reporter);
+
   if (!project.hasDist || !existsSync(join(project.root, 'dist'))) {
     reporter.skip(SEC, 'mediakit', 'no dist/ — build the site to check for a media-kit page');
     reporter.skip(SEC, 'designkit', 'no dist/ — build the site to check for a design reference page');
@@ -119,4 +122,84 @@ function designEvidence(html) {
   if (sections >= 4) found.push(`${sections} sections`);
 
   return found;
+}
+
+/**
+ * Straight quotes on a line that also uses directional ones — the exact input
+ * two smart-quote engines resolve differently.
+ *
+ * Astro 7 replaced remark with Sätteri, and the two disagree on an ambiguous
+ * straight `"`. On tasmanvisa-web's Hungarian content the closing quotes flipped
+ * to *opening* ones: six posts shipped `„bespoke“` where the Hungarian pairing
+ * is `„…”`. Nothing in the build said a word.
+ *
+ * ADVISORY IN EVERY MODE, deliberately. Correct prose can legitimately mix a
+ * straight quote (an inch mark, a code sample, an attribute in a sentence) with
+ * a directional one, so this is the one check here that can fire on a compliant
+ * site — and a check that fails a compliant site is the thing this repo refuses
+ * to ship. It reports where the ambiguity is; the reader decides. Writing the
+ * quote explicitly fixes it permanently, for any engine.
+ */
+function checkAmbiguousQuotes(project, reporter) {
+  const files = markdownFiles(project.root);
+  if (files.length === 0) {
+    reporter.skip(SEC, 'quotes:ambiguous', 'no markdown under src/ — nothing to read');
+    return;
+  }
+
+  const hits = [];
+  let scanned = 0;
+  for (const file of files) {
+    let text;
+    try { text = readFileSync(join(project.root, file), 'utf8'); } catch { continue; }
+    scanned++;
+    let inFence = false;
+    text.split('\n').forEach((line, i) => {
+      // Fenced code is not prose and no engine touches its quotes.
+      if (/^\s*(```|~~~)/.test(line)) { inFence = !inFence; return; }
+      if (inFence) return;
+      const withoutCode = line.replace(/`[^`]*`/g, '');
+      if (!/"/.test(withoutCode)) return;
+      if (!/[„“”«»‚‘’]/.test(withoutCode)) return;
+      hits.push({ file, line: i + 1, text: withoutCode.trim() });
+    });
+  }
+
+  if (hits.length === 0) {
+    reporter.pass(SEC, 'quotes:ambiguous', `no straight quote shares a line with a directional one across ${scanned} content file(s)`);
+    return;
+  }
+  const sample = hits.slice(0, 3).map((h) => `${h.file}:${h.line}`).join(', ');
+  reporter.suggest(
+    SEC,
+    'quotes:ambiguous',
+    `${hits.length} line(s) mix a straight " with a directional quote — the ambiguous input Sätteri (Astro 7) and remark resolve differently (${sample}${hits.length > 3 ? ', …' : ''})`,
+    'write the quote you mean („…" in Hungarian, "…" in English) so no engine has to guess; an inch mark or an attribute quoted in prose is fine and can be ignored',
+  );
+}
+
+/**
+ * Every markdown file under `src/`, project-relative.
+ *
+ * Not `src/content/` — that is a convention, not a rule. The starter keeps its
+ * posts in `src/data/blog/`, and hardcoding the other path is precisely the
+ * failure that made a whole SEO domain silently not run (see lib/src-scan.mjs).
+ */
+function markdownFiles(root) {
+  const base = join(root, 'src');
+  const out = [];
+  if (!existsSync(base)) return out;
+  const stack = [base];
+  while (stack.length) {
+    const d = stack.pop();
+    let entries;
+    try { entries = readdirSync(d, { withFileTypes: true }); } catch { continue; }
+    for (const e of entries) {
+      if (e.name.startsWith('.') || e.name === 'node_modules') continue;
+      const full = join(d, e.name);
+      if (e.isDirectory()) stack.push(full);
+      else if (/\.mdx?$/i.test(e.name)) out.push(relative(root, full));
+    }
+  }
+  return out;
 }

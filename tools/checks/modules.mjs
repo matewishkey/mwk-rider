@@ -78,7 +78,11 @@ export async function run({ project, reporter }) {
   if (!astroVer) {
     reporter.block(SEC, 'astro:installed', 'not in dependencies', 'npm i astro@latest');
   } else if (!atLeast(astroVer, 7)) {
-    reporter.fix(SEC, 'astro:version', `${astroVer} (baseline is ^7+)`, 'npx @astrojs/upgrade — then walk docs.astro.build/en/guides/upgrade-to/v7 (Rust compiler, Sätteri markdown, Vite 8, compressHTML: "jsx")');
+    // The guide is 333 pages and the two changes that actually break a site are
+    // both silent. So the hint leads with the mechanical check that catches them
+    // — reported by tasmanvisa-web, who got to "332 of 333 pages byte-identical,
+    // and the one difference is a fix" with it.
+    reporter.fix(SEC, 'astro:version', `${astroVer} (baseline is ^7+)`, 'npx @astrojs/upgrade — then walk docs.astro.build/en/guides/upgrade-to/v7 (Rust compiler, Sätteri markdown, Vite 8, compressHTML: "jsx"). Verify it mechanically rather than by reading: build on the old version, snapshot dist/, upgrade, rebuild, and diff the rendered visible text with tags stripped to EMPTY — not to a space, which masks exactly the compressHTML whitespace change');
   } else {
     reporter.pass(SEC, 'astro:version', astroVer);
   }
@@ -288,8 +292,37 @@ export async function run({ project, reporter }) {
       : Array.isArray(ext) && ext.some((e) => e.includes('astro/tsconfigs/strict'));
     if (strict) reporter.pass(SEC, 'tsconfig:strict', `tsconfig.json extends "${Array.isArray(ext) ? ext.join('", "') : ext}"`);
     else reporter.fix(SEC, 'tsconfig:strict', `extends "${ext ?? 'nothing'}"`, 'extend "astro/tsconfigs/strict" in tsconfig.json');
+
+    // Astro's own tsconfigs exclude dist/, but only relative to the config that
+    // declares them — a project that sets its own `exclude` replaces that list
+    // rather than adding to it, and `astro check` then type-checks the built
+    // bundle. cypruspokerbrisbane got ~70 spurious warnings out of a built
+    // chart.js this way, and 0/0/0 once dist was excluded again.
+    const exclude = project.tsconfig.exclude;
+    const excludesDist = Array.isArray(exclude) && exclude.some((e) => /(^|\/)dist(\/|$|\/\*)/.test(String(e)));
+    if (!Array.isArray(exclude)) {
+      reporter.pass(SEC, 'tsconfig:exclude-dist', 'no "exclude" of its own, so the one from astro/tsconfigs (which excludes dist) applies');
+    } else if (excludesDist) {
+      reporter.pass(SEC, 'tsconfig:exclude-dist', `"exclude": [${exclude.map((e) => `"${e}"`).join(', ')}]`);
+    } else {
+      reporter.fix(SEC, 'tsconfig:exclude-dist', `"exclude": [${exclude.map((e) => `"${e}"`).join(', ')}] replaces the one from astro/tsconfigs and does not cover dist — \`astro check\` type-checks the built bundle`, 'add "dist" to the exclude array');
+    }
   } else {
     reporter.fix(SEC, 'tsconfig:strict', 'tsconfig.json missing', 'create tsconfig.json extending astro/tsconfigs/strict');
+  }
+
+  // compressHTML: v7 changed the default from `true` to `"jsx"`, which strips
+  // whitespace by JSX rules — including the newline between prose and an inline
+  // element. Measured on astro@7.1.6: `operates the website\n<a>…</a>.` renders
+  // as `operates the website<a>…</a>.` with the default, and keeps the space
+  // with `compressHTML: true`. It builds clean, typechecks clean, and ships
+  // visibly wrong text. tasmanvisa-web had it live on their privacy page.
+  if (atLeast(deps.astro, 7) && cfg != null) {
+    if (/\bcompressHTML\s*:/.test(cfg)) {
+      reporter.pass(SEC, 'compressHTML', 'set explicitly in astro.config');
+    } else {
+      reporter.fix(SEC, 'compressHTML', 'unset, so Astro 7 uses its new default "jsx" — whitespace between an inline element and the text around it is stripped, so `the website\\n<a>x</a>.` ships as `the websitex.`', 'set compressHTML: true to restore the v6 HTML-aware behaviour, or leave it "jsx" deliberately and check every place prose meets an inline element');
+    }
   }
 
   // <ClientRouter /> in the root layout (view transitions)

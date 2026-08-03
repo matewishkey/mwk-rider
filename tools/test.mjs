@@ -793,6 +793,60 @@ check('  …and inside <noscript> → pass',
 check('  …and a same-origin iframe is not the tool\'s business',
   embedRow({ 'dist/index.html': PAGE('<iframe src="/widgets/toc.html"></iframe>') })?.outcome === 'pass');
 
+// The two Astro 7 changes that broke tasmanvisa-web both build clean, typecheck
+// clean, and ship visibly wrong output. Neither is something a person reliably
+// catches by reading a 333-page guide.
+console.log('the Astro 7 changes that build clean and ship wrong:');
+const v7 = (config, tsconfig) => {
+  const dir = tmpProject('rider-v7c-');
+  writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'fx', type: 'module', dependencies: { astro: '^7.1.6' } }));
+  writeFileSync(join(dir, 'astro.config.mjs'), config);
+  if (tsconfig) writeFileSync(join(dir, 'tsconfig.json'), JSON.stringify(tsconfig));
+  return runJson(dir, ['-s', 'modules', '--strict']).json?.results ?? [];
+};
+const v7row = (id, config, tsconfig) => v7(config, tsconfig).find(r => r.id === id) ?? null;
+
+// Measured on astro@7.1.6: with compressHTML unset, `the website\n<a>x</a>.`
+// builds as `the websitex.`; with compressHTML: true the space survives.
+const unset = v7row('modules/compresshtml', "export default { output: 'static' };\n");
+check('compressHTML unset on Astro 7 → fix, naming the new default',
+  unset?.outcome === 'fix' && /jsx/.test(unset.message ?? ''), JSON.stringify(unset));
+check('  …and set explicitly → pass, whichever value',
+  v7row('modules/compresshtml', "export default { output: 'static', compressHTML: true };\n")?.outcome === 'pass'
+  && v7row('modules/compresshtml', "export default { output: 'static', compressHTML: 'jsx' };\n")?.outcome === 'pass');
+const v6 = tmpProject('rider-v6c-');
+writeFileSync(join(v6, 'package.json'), JSON.stringify({ name: 'fx', type: 'module', dependencies: { astro: '^6.3.7' } }));
+writeFileSync(join(v6, 'astro.config.mjs'), "export default { output: 'static' };\n");
+check('  …and it does not fire on Astro 6, whose default is still true',
+  runJson(v6, ['-s', 'modules', '--strict']).json?.results.find(r => r.id === 'modules/compresshtml') === undefined);
+
+// astro check type-checking dist/ produced ~70 spurious warnings out of a built
+// chart.js on cypruspokerbrisbane, and 0/0/0 once dist was excluded again.
+const STRICT_TS = { extends: 'astro/tsconfigs/strict' };
+check('a tsconfig whose own exclude drops dist → fix',
+  v7row('modules/tsconfig-exclude-dist', "export default {};\n", { ...STRICT_TS, exclude: ['tests'] })?.outcome === 'fix');
+check('  …while one that keeps it → pass',
+  v7row('modules/tsconfig-exclude-dist', "export default {};\n", { ...STRICT_TS, exclude: ['tests', 'dist'] })?.outcome === 'pass');
+check('  …and no exclude at all is fine — astro/tsconfigs already excludes dist',
+  v7row('modules/tsconfig-exclude-dist', "export default {};\n", STRICT_TS)?.outcome === 'pass');
+
+// Sätteri and remark disagree on an ambiguous straight quote: six Hungarian
+// posts shipped „bespoke“ where the pairing is „…”. Advisory in every mode,
+// because correct prose can mix the two as well.
+const quoteRow = (md) => {
+  const dir = mkBuilt({ 'src/data/blog/a.md': md });
+  return runJson(dir, ['-s', 'content', '--strict']).json?.results.find(r => r.id === 'content/quotes-ambiguous') ?? null;
+};
+const mixed = quoteRow('---\ntitle: t\n---\n\nA „bespoke" service for everyone.\n');
+check('a straight quote sharing a line with a directional one → suggest, never a finding',
+  mixed?.outcome === 'suggest', JSON.stringify(mixed));
+check('  …and it stays advisory under --strict, which is the whole point',
+  mixed?.outcome !== 'fix' && mixed?.outcome !== 'block');
+check('  …while straight quotes alone are not ambiguous',
+  quoteRow('---\ntitle: t\n---\n\nA "bespoke" service.\n')?.outcome === 'pass');
+check('  …and a fenced code block is not prose',
+  quoteRow('---\ntitle: t\n---\n\nSome „prose”.\n\n```js\nconst a = "x";\n```\n')?.outcome === 'pass');
+
 // A CSS background gets neither srcset nor lazy loading, so a pinned width is
 // what every device downloads. tasmanvisa-web had QuoteCTA pinned at width=1600
 // for a 393px viewport: ~1.1 MB on the home page, audited `images ✅ all`.

@@ -29,6 +29,21 @@ export default defineConfig({
   // that reads built HTML — silently unverified.
   output: 'static',
 
+  // Astro 7 changed this default from `true` to `'jsx'`, which strips whitespace
+  // by JSX rules — including the newline between prose and an inline element, so
+  //
+  //     operates the website
+  //     <a href="…">example.test</a>.
+  //
+  // ships as `operates the websiteexample.test.` It builds clean, typechecks
+  // clean, and is wrong only in the rendered text (measured on astro@7.1.6;
+  // `true` keeps the space). A content site is exactly where prose meets inline
+  // elements constantly, so the baseline takes the HTML-aware behaviour back.
+  //
+  // The audit does not demand this value — it demands the choice be explicit,
+  // because inheriting a changed default is not choosing.
+  compressHTML: true,
+
   adapter: cloudflare({
     // Deliberate, and worth understanding before changing.
     //

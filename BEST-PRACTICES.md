@@ -216,6 +216,37 @@ thing a version bump leaves behind. Each maps to a documented v7 breaking change
   (`'astro:before-preparation'`, `'astro:after-swap'`, …). An import of a removed
   export is a build failure, so this catches it before deploy. →
   `modules: astro7:transitions`
+- **`compressHTML` is set explicitly.** v7 changed the default from `true` to
+  `'jsx'`, which strips whitespace by JSX rules — including the newline between
+  prose and an inline element. Measured on astro@7.1.6:
+
+  ```astro
+  Tasman Visa operates the website
+  <a href="…">tasmanvisa.com</a>. Your privacy is important to us.
+  ```
+
+  builds as `operates the websitetasmanvisa.com.` with the default, and keeps the
+  space with `compressHTML: true`. It builds clean, typechecks clean, and is
+  wrong only in the rendered text — tasmanvisa-web had it live on their privacy
+  page. → `modules: compressHTML`
+
+  The check accepts **either value**. What it refuses is the field being unset,
+  because inheriting a changed default is not choosing one. The baseline itself
+  takes `true`: a content site is exactly where prose meets inline elements
+  constantly.
+- **`tsconfig.json`'s own `exclude` still covers `dist`.** Astro's shipped
+  tsconfigs exclude it, but a project that declares its own `exclude` *replaces*
+  that list rather than adding to it, and `astro check` then type-checks the
+  built bundle. cypruspokerbrisbane got ~70 spurious warnings out of a built
+  `chart.js` this way, and 0/0/0 once `dist` went back in. No `exclude` at all is
+  correct and passes. → `modules: tsconfig:exclude-dist`
+- **The upgrade is verified mechanically, not by reading.** The guide is 333
+  pages and the two changes above are both silent, so `astro:version`'s fix hint
+  now carries the procedure that actually caught them: build on the old version,
+  snapshot `dist/`, upgrade, rebuild, and diff the rendered visible text **with
+  tags stripped to empty** — not to a space, which masks precisely the
+  `compressHTML` change. That took tasmanvisa-web from "hope it is fine" to "332
+  of 333 pages byte-identical, and the one difference is a fix".
 
 ## seo — the discoverability surface
 
@@ -519,6 +550,25 @@ lacking either, and a tool that says otherwise gets uninstalled. They report
   the token source so it cannot drift, but that is site-side work: the auditor
   checks the page is there and is not a stub, and does not try to generate it.
   → `content: designkit` (`⏭` with no `dist/`)
+- **Quotes are written, not guessed at.** Astro 7 renders Markdown with Sätteri
+  instead of remark, and the two resolve an *ambiguous* straight `"` differently.
+  On tasmanvisa-web's Hungarian content the closing quotes flipped to opening
+  ones: six posts shipped `„bespoke“` where the pairing is `„…”`. Nothing in the
+  build said a word. Writing the quote you mean fixes it permanently, for any
+  engine. → `💡 content: quotes:ambiguous`
+
+  **Advisory in every mode** (`policy.mjs` `ADVISORY`, no `🔧` branch at all).
+  Correct prose can legitimately mix a straight quote with a directional one — an
+  inch mark, an attribute quoted mid-sentence — so this is the one check here
+  that can fire on a compliant site, and a check that fails a compliant site is
+  what this repo refuses to ship. It reports *where the two engines would
+  disagree*; whether that is a bug is the author's call.
+
+  Fenced code and inline backticks are excluded first: no engine touches those,
+  and a `const a = "x"` on a page about typography would otherwise be a finding.
+  Markdown is found by walking `src/`, not `src/content/` — the starter keeps its
+  posts in `src/data/blog/`, and hardcoding the other path is the mistake that
+  once made a whole SEO domain silently not run.
 
 ## data — the machine-readable surface
 

@@ -102,6 +102,11 @@ const ADVISORY = [
   // This is what lets the baseline recommend Cloudflare Web Analytics without
   // failing every site that has not set it up.
   'analytics:provider',
+  // Correct prose can legitimately mix a straight quote (an inch mark, an
+  // attribute quoted in a sentence) with a directional one, so this check can
+  // fire on a compliant site. It reports where two smart-quote engines would
+  // disagree; whether that is a bug is the author's call, never the tool's.
+  'content:quotes:ambiguous',
 ];
 
 function toRegExp(pattern) {

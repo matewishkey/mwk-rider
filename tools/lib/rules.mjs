@@ -32,6 +32,8 @@ const RULES = [
   ['modules/adapter-cloudflare', 'modules', 'adapter:cloudflare', "Rendering on demand on Workers, Sharp can't run, so <Image> needs the Cloudflare image service. On a fully prerendered build it doesn't."],
   ['modules/adapter-imageservice', 'modules', 'adapter:imageService', "@astrojs/cloudflare's imageService default changed to 'cloudflare-binding', which provisions a paid product on deploy. Choosing it should be deliberate."],
   ['modules/tsconfig-strict', 'modules', 'tsconfig:strict', 'Strict TypeScript catches whole classes of content/schema bug at build time.'],
+  ['modules/tsconfig-exclude-dist', 'modules', 'tsconfig:exclude-dist', 'A project `exclude` replaces the one from astro/tsconfigs, so `astro check` starts type-checking the built bundle.'],
+  ['modules/compresshtml', 'modules', 'compressHTML', 'Astro 7 changed the default to "jsx", which strips the whitespace between prose and an inline element. Builds clean, ships wrong text.'],
   ['modules/clientrouter', 'modules', 'ClientRouter', 'View transitions / SPA-style navigation come from <ClientRouter /> in the root layout.'],
   ['modules/fonts', 'modules', 'fonts', "A font CDN costs a DNS+TLS round-trip on the critical path, ships no fallback metrics, and leaks every visitor's IP."],
   ['modules/404-custom', 'modules', '404:custom', 'A branded 404 rather than the host default.'],
@@ -111,6 +113,7 @@ const RULES = [
   // --- content ---------------------------------------------------------------
   ['content/mediakit', 'content', 'mediakit', 'The one URL you hand to press, partners and directories; without it "send us your logo" becomes an email thread.'],
   ['content/designkit', 'content', 'designkit', 'A page rendering the real tokens and components shows what exists without reading every file — and makes drift visible.'],
+  ['content/quotes-ambiguous', 'content', 'quotes:ambiguous', 'A straight quote sharing a line with a directional one is the input Sätteri and remark resolve differently. Advisory: correct prose can do it too.'],
 
   // --- data ------------------------------------------------------------------
   ['data/jsonld-emitted', 'data', 'jsonld:emitted', 'Structured data is how a page earns rich results; without it a crawler infers everything.'],

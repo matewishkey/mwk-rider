@@ -21,6 +21,11 @@ export default defineConfig({
   output: 'static',
   trailingSlash: 'never',
 
+  // v7's default is 'jsx', which strips the whitespace between prose and an
+  // inline element. Explicit either way is the requirement; see the long note in
+  // examples/starter/astro.config.mjs for the measurement.
+  compressHTML: true,
+
   //canonical multi-locale routing
   i18n: {
     defaultLocale: 'en',
