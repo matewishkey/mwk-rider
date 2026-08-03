@@ -793,6 +793,77 @@ check('  …and inside <noscript> → pass',
 check('  …and a same-origin iframe is not the tool\'s business',
   embedRow({ 'dist/index.html': PAGE('<iframe src="/widgets/toc.html"></iframe>') })?.outcome === 'pass');
 
+// A stuck PSI score is not diagnosable on its own, and calling a bad one "lab
+// noise" is a real failure mode: cypruspokerbrisbane's 5.5s LCP was dismissed
+// as a harness artifact when the cause was a 360 KB Maps iframe. These are the
+// three fields that settled it, which the check used to discard.
+//
+// Parsing is asserted against a hand-built response in the documented PSI shape.
+// It does NOT cover the API call — this box has no $PAGESPEED_API_KEY.
+console.log('the PSI score comes with what it means:');
+const { reportDiagnostics } = await import('./checks/lighthouse.mjs');
+const collect = () => {
+  const rows = [];
+  const push = (outcome) => (section, name, message, fix) => rows.push({ outcome, name, message, fix });
+  return { rows, pass: push('pass'), fix: push('fix'), suggest: push('suggest'), skip: push('skip') };
+};
+const PSI = {
+  audits: {
+    'largest-contentful-paint': { numericValue: 5500 },
+    'first-contentful-paint': { numericValue: 3500 },
+    'largest-contentful-paint-element': { details: { items: [{ node: { snippet: '<img src="/hero.webp">' } }] } },
+    'third-party-summary': { details: { items: [
+      { entity: 'Google Maps', transferSize: 368640, blockingTime: 120 },
+      { entity: 'Google Fonts', transferSize: 40960, blockingTime: 0 },
+    ] } },
+    metrics: { details: { items: [{ observedFirstContentfulPaint: 1500, observedLargestContentfulPaint: 2000 }] } },
+  },
+};
+const diag = collect();
+reportDiagnostics(PSI, diag, 'mobile');
+const byName = (frag) => diag.rows.find(r => r.name.includes(frag)) ?? null;
+check('the LCP element is named, not just the number',
+  /hero\.webp/.test(byName('lcp:element')?.message ?? ''), JSON.stringify(byName('lcp:element')));
+check('  …the heaviest third parties are listed, largest first',
+  /Google Maps 360 KB/.test(byName('third-party:payload')?.message ?? ''), JSON.stringify(byName('third-party:payload')));
+check('  …and simulated is shown against observed, which is what tells the two cases apart',
+  /3500 ms simulated \/ 1500 ms observed/.test(byName('metrics:observed')?.message ?? ''),
+  JSON.stringify(byName('metrics:observed')));
+check('  …all three advisory: a diagnosis is a fact about the run, not a verdict',
+  diag.rows.every(r => r.outcome === 'suggest' || r.outcome === 'skip'), JSON.stringify(diag.rows.map(r => r.outcome)));
+const empty = collect();
+reportDiagnostics({ audits: {} }, empty, 'mobile');
+check('  …and a response carrying none of it skips, naming what was absent',
+  empty.rows.length === 3 && empty.rows.every(r => r.outcome === 'skip' && r.message),
+  JSON.stringify(empty.rows));
+
+// headings:order reported dist/wiki/index.html when the skipped level was
+// written in a shared component. The built page is the artifact; the component
+// is what someone has to edit.
+console.log('a heading finding points at the component that wrote it:');
+const SKIPPED = '<html><head><link rel="canonical" href="/x"></head><body>'
+  + '<h1>Page</h1><h2>Section</h2><h4>Buried subsection</h4></body></html>';
+const headingRow = (src) => runJson(mkBuilt({ 'dist/index.html': SKIPPED }, { src }), ['-s', 'seo'])
+  .json?.results.find(r => r.id === 'seo/headings-order') ?? null;
+
+const traced = headingRow({ 'src/components/Aside.astro': '<div>\n  <h4>Buried subsection</h4>\n</div>\n' });
+check('a skipped level traced to the one component that emits it → file:line',
+  /src\/components\/Aside\.astro:2/.test(traced?.message ?? ''), JSON.stringify(traced));
+check('  …and it still names the built page it showed up on',
+  /dist\/index\.html/.test(traced?.message ?? ''));
+
+// A confidently wrong pointer is worse than the artifact path, so ambiguity and
+// absence both fall back to the built page.
+const ambiguous = headingRow({
+  'src/components/A.astro': '<h4>Buried subsection</h4>\n',
+  'src/components/B.astro': '<h4>Buried subsection</h4>\n',
+});
+check('  …while two components matching the same text → no source claimed',
+  !/src\/components/.test(ambiguous?.message ?? '') && /dist\/index\.html/.test(ambiguous?.message ?? ''),
+  JSON.stringify(ambiguous));
+check('  …and an interpolated heading, which has no literal to find, keeps the page',
+  /dist\/index\.html/.test(headingRow({ 'src/components/C.astro': '<h4>{title}</h4>\n' })?.message ?? ''));
+
 // The two Astro 7 changes that broke tasmanvisa-web both build clean, typecheck
 // clean, and ship visibly wrong output. Neither is something a person reliably
 // catches by reading a 333-page guide.

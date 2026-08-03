@@ -2,7 +2,7 @@
 // canonical URL, OG meta, and the brand fields they need.
 // (Structured data / JSON-LD / llms.txt live in the data check.)
 
-import { eachDistHtml, isContentPage, headingLevels, headingAudit } from '../lib/html.mjs';
+import { eachDistHtml, isContentPage, headingOutline, headingAudit } from '../lib/html.mjs';
 import { readSrcFiles, headMetaFiles } from '../lib/src-scan.mjs';
 import { distFiles, readDist, countMatches, sitemapPages, distRelative } from '../lib/dist.mjs';
 
@@ -76,7 +76,7 @@ export async function run({ project, reporter }) {
   // Heading outline on built content pages: exactly one <h1>, no skipped levels.
   // Scoped to pages with a canonical link, so OG-template / preview routes (no
   // canonical) don't get flagged for legitimately having no <h1>.
-  if (project.hasDist) checkHeadings(project, reporter);
+  if (project.hasDist) checkHeadings(project, reporter, srcFiles);
 }
 
 /**
@@ -226,15 +226,24 @@ function checkSitemap(project, reporter) {
   }
 }
 
-function checkHeadings(project, reporter) {
+function checkHeadings(project, reporter, srcFiles) {
   const h1bad = [], skipbad = [];
   let pages = 0;
   eachDistHtml(project.root, (rel, html) => {
     if (!isContentPage(html)) return;
     pages++;
-    const a = headingAudit(headingLevels(html));
+    const outline = headingOutline(html);
+    const a = headingAudit(outline.map((h) => h.level));
     if (a.h1) h1bad.push(`${rel} (${a.h1})`);
-    if (a.skip) skipbad.push(`${rel} (${a.skip})`);
+    if (a.skip) {
+      // The built page is where it showed up; the component is where it was
+      // written, and that is what someone has to edit.
+      const offender = outline[a.skipAt];
+      const source = offender ? traceHeadingToSource(srcFiles, offender) : null;
+      skipbad.push(source
+        ? `${source} (${a.skip}, at "${truncate(offender.text, 40)}") — via ${rel}`
+        : `${rel} (${a.skip}${offender?.text ? `, at "${truncate(offender.text, 40)}"` : ''})`);
+    }
   });
 
   if (pages === 0) {
@@ -255,6 +264,33 @@ function checkHeadings(project, reporter) {
   } else {
     reporter.suggest(SEC, 'headings:order', `${skipbad.length}/${pages} content page(s) skip a heading level — ${sampleOf(skipbad)}`, 'keep the outline sequential (h2→h3→h4); a shared header/footer using a deeper level is the usual cause');
   }
+}
+
+/**
+ * The source file and line that emitted a built heading, or null.
+ *
+ * `null` is the common and correct answer: a heading rendered from frontmatter
+ * (`<h2>{title}</h2>`) has no literal text to find. A confidently wrong pointer
+ * is worse than the artifact path, so this returns a location only when
+ * **exactly one** source matches — several matches, or none, and the caller
+ * keeps reporting the built page.
+ */
+function traceHeadingToSource(srcFiles, { level, text }) {
+  if (!text || text.length < 4) return null;
+  const escaped = text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // The tag, then any inline wrappers (a link, an anchor icon), then the text.
+  const tag = new RegExp(`<h${level}\\b[^>]*>\\s*(?:<[^>]+>\\s*)*${escaped}`, 'i');
+  // …or the markdown that compiles to it.
+  const md = new RegExp(`^\\s{0,3}#{${level}}\\s+${escaped}\\s*$`, 'im');
+
+  const hits = [];
+  for (const f of srcFiles) {
+    const body = f.code ?? f.text;
+    const m = tag.exec(body) ?? md.exec(body);
+    if (m) hits.push(`${f.path}:${body.slice(0, m.index).split('\n').length}`);
+    if (hits.length > 1) return null;   // ambiguous — say less, not more
+  }
+  return hits.length === 1 ? hits[0] : null;
 }
 
 function sampleOf(list, n = 3) {

@@ -36,8 +36,23 @@ export function isContentPage(html) {
 
 // Heading levels in document order, e.g. "<h1>…<h2>…<h2>…<h3>" → [1, 2, 2, 3].
 export function headingLevels(html) {
-  html = html.replace(/<!--[\s\S]*?-->/g, '').replace(/<template\b[\s\S]*?<\/template>/gi, '');
-  return [...html.matchAll(/<h([1-6])\b/gi)].map((m) => Number(m[1]));
+  return headingOutline(html).map((h) => h.level);
+}
+
+/**
+ * Headings in document order as { level, text }.
+ *
+ * The text is what lets a finding point at the component that *emitted* the
+ * heading rather than at the built page it landed on — the built page is the
+ * artifact, and a shared layout is usually the cause.
+ */
+export function headingOutline(html) {
+  const clean = html.replace(/<!--[\s\S]*?-->/g, '').replace(/<template\b[\s\S]*?<\/template>/gi, '');
+  return [...clean.matchAll(/<h([1-6])\b[^>]*>([\s\S]*?)<\/h\1>|<h([1-6])\b/gi)].map((m) => ({
+    level: Number(m[1] ?? m[3]),
+    // Inner markup (a link, an anchor icon) is not part of the heading's text.
+    text: (m[2] ?? '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim(),
+  }));
 }
 
 // Outline audit for a content page, split by severity:
@@ -51,12 +66,14 @@ export function headingAudit(levels) {
   const h1 = count === 0 ? 'no <h1>'
            : count > 1   ? `${count} <h1> tags (expected exactly 1)`
            : null;
-  let skip = null, prev = 0;
-  for (const l of levels) {
-    if (prev && l > prev + 1) { skip = `jumps h${prev}→h${l} (skips a level)`; break; }
+  // `skipAt` is the index of the offending heading in the same array, so a
+  // caller holding the outline can name it — and trace it back to source.
+  let skip = null, skipAt = null, prev = 0;
+  for (const [i, l] of levels.entries()) {
+    if (prev && l > prev + 1) { skip = `jumps h${prev}→h${l} (skips a level)`; skipAt = i; break; }
     prev = l;
   }
-  return { h1, skip };
+  return { h1, skip, skipAt };
 }
 
 // Attribute helpers. Anchor on an attribute-name boundary (start or whitespace),

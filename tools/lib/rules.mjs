@@ -151,6 +151,9 @@ const RULES = [
   ['lighthouse/lcp', 'lighthouse', 'LCP', 'Largest Contentful Paint — good is ≤ 2500 ms.'],
   ['lighthouse/tbt', 'lighthouse', 'TBT', 'Total Blocking Time, the lab proxy for INP — good is ≤ 200 ms.'],
   ['lighthouse/cls', 'lighthouse', 'CLS', 'Cumulative Layout Shift — good is ≤ 0.1.'],
+  ['lighthouse/lcp-element', 'lighthouse', 'lcp:element', 'What the LCP number is actually waiting for. A score alone is not diagnosable.'],
+  ['lighthouse/third-party-payload', 'lighthouse', 'third-party:payload', 'The heaviest origins the site owner did not write — the usual answer when TTFB is ~0 ms and FCP is still high.'],
+  ['lighthouse/metrics-observed', 'lighthouse', 'metrics:observed', 'Simulated vs observed FCP/LCP: the pair that tells a real payload problem from harness variance.'],
   ['lighthouse/crux-field-data', 'lighthouse', 'crux:field-data', 'Whether real-user (CrUX) data exists, or the scores are lab-only.'],
 
   // --- browser ---------------------------------------------------------------

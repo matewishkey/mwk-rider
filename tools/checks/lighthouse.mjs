@@ -52,6 +52,7 @@ export async function run({ reporter, url, strategy = 'mobile' }) {
   }
 
   reportA11yAudits(lr, reporter);
+  reportDiagnostics(lr, reporter, strategy);
 
   const le = data.loadingExperience;
   if (le?.metrics && Object.keys(le.metrics).length) {
@@ -59,6 +60,84 @@ export async function run({ reporter, url, strategy = 'mobile' }) {
   } else {
     reporter.skip(SEC, 'crux:field-data', 'no real-user (CrUX) field data — lab only (site lacks enough traffic)');
   }
+}
+
+/**
+ * What the score *means* — the three facts that make a stuck number readable.
+ *
+ * A single Performance score is not diagnosable, and treating a bad one as lab
+ * noise is a real failure mode: cypruspokerbrisbane's 5.5 s LCP was dismissed as
+ * a harness artifact when the cause was a 360 KB Maps iframe. Pulling the full
+ * PSI JSON settled it in one read, so the three fields that settled it are now
+ * reported rather than discarded:
+ *
+ *   - **the LCP element** — what the score is actually waiting for;
+ *   - **the heaviest third-party origins** — weight the site owner did not write,
+ *     and the usual answer when TTFB is ~0 ms and FCP is still high (blocked by
+ *     payload, not by the server);
+ *   - **observed vs simulated** — the tell for the opposite case. A completed
+ *     load with an idle main thread but a late *observed* paint is harness
+ *     variance, and the proof is that observed FCP got slower after the page got
+ *     lighter.
+ *
+ * All three are advisory: they are facts about the run, not verdicts.
+ */
+export function reportDiagnostics(lr, reporter, strategy = 'mobile') {
+  const audits = lr?.audits ?? {};
+
+  const lcpEl = audits['largest-contentful-paint-element'];
+  const node = firstNode(lcpEl);
+  if (node) {
+    reporter.suggest(SEC, `lcp:element (${strategy})`, `LCP element: ${truncate(node, 120)}`, 'this is the thing the LCP number is waiting for — preload it, size it correctly, and keep it out of a lazy-loaded container');
+  } else {
+    reporter.skip(SEC, `lcp:element (${strategy})`, 'PSI reported no LCP element for this run');
+  }
+
+  const third = (audits['third-party-summary']?.details?.items ?? [])
+    .map((i) => ({ entity: nameOf(i.entity), bytes: i.transferSize ?? 0, blocking: i.blockingTime ?? 0 }))
+    .filter((i) => i.entity && i.bytes > 0)
+    .sort((a, b) => b.bytes - a.bytes)
+    .slice(0, 3);
+  if (third.length === 0) {
+    reporter.skip(SEC, `third-party:payload (${strategy})`, 'PSI reported no third-party payload on this page');
+  } else {
+    const shown = third.map((i) => `${i.entity} ${Math.round(i.bytes / 1024)} KB${i.blocking >= 50 ? ` (${Math.round(i.blocking)} ms blocking)` : ''}`).join(', ');
+    reporter.suggest(SEC, `third-party:payload (${strategy})`, `heaviest third parties: ${shown}`, 'weight you did not write, on the critical path — a facade or a deferred loader usually removes it entirely');
+  }
+
+  // PSI reports both the simulated metric (the score) and what the run actually
+  // observed. They disagreeing is information, not an error.
+  const m = audits.metrics?.details?.items?.[0];
+  if (!m || m.observedFirstContentfulPaint == null) {
+    reporter.skip(SEC, `metrics:observed (${strategy})`, 'PSI returned no observed metrics alongside the simulated ones');
+    return;
+  }
+  const pairs = [
+    ['FCP', audits['first-contentful-paint']?.numericValue, m.observedFirstContentfulPaint],
+    ['LCP', audits['largest-contentful-paint']?.numericValue, m.observedLargestContentfulPaint],
+  ].filter(([, sim, obs]) => sim != null && obs != null);
+  const shown = pairs.map(([l, sim, obs]) => `${l} ${Math.round(sim)} ms simulated / ${Math.round(obs)} ms observed`).join(', ');
+  reporter.suggest(
+    SEC,
+    `metrics:observed (${strategy})`,
+    shown || 'no comparable simulated/observed pair',
+    'read them together before acting: ~0 ms TTFB with a high FCP means the render is blocked by payload, while a completed load with a late *observed* paint is usually harness variance rather than the page',
+  );
+}
+
+function firstNode(audit) {
+  const item = audit?.details?.items?.[0];
+  const node = item?.node ?? item;
+  return node?.snippet ?? node?.selector ?? null;
+}
+
+// PSI has returned `entity` as both a string and an object across versions.
+function nameOf(entity) {
+  return typeof entity === 'string' ? entity : entity?.text ?? entity?.name ?? null;
+}
+
+function truncate(s, n) {
+  return s.length > n ? s.slice(0, n - 1) + '…' : s;
 }
 
 // Cap the instances so one badly-themed site can't bury the rest of the audit.

@@ -107,6 +107,12 @@ const ADVISORY = [
   // fire on a compliant site. It reports where two smart-quote engines would
   // disagree; whether that is a bug is the author's call, never the tool's.
   'content:quotes:ambiguous',
+  // Diagnosis, not verdict: what the LCP is waiting for, which third parties
+  // weigh the most, and how the simulated numbers compare to the observed ones.
+  // The scores next to them are the verdict; these are what make one readable.
+  'lighthouse:lcp:element*',
+  'lighthouse:third-party:payload*',
+  'lighthouse:metrics:observed*',
 ];
 
 function toRegExp(pattern) {

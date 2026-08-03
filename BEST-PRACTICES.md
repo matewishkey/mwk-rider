@@ -321,6 +321,16 @@ thing a version bump leaves behind. Each maps to a documented v7 breaking change
   shared header/footer using a deeper level, not a content bug, so it shouldn't
   fail an otherwise-clean run. → 💡 `seo: headings:order`
 
+  **The finding names the component, not the built page.** Reporting
+  `dist/wiki/index.html` for a level written in a shared layout leaves the reader
+  the actual work — the built page is where it showed up, the component is what
+  they have to edit. The offending heading's *text* is matched back against
+  `src/`, and a location is claimed only when **exactly one** source file
+  matches: a heading rendered from frontmatter (`<h2>{title}</h2>`) has no
+  literal to find, and two components sharing a heading text are ambiguous. Both
+  fall back to the built path, because a confidently wrong pointer is worse than
+  the artifact.
+
 ## images — content images delivered well
 
 *Check files: `tools/checks/images.mjs` (offline: source + built `dist/`) and
@@ -809,6 +819,24 @@ PageSpeed Insights Performance/SEO/Accessibility/Best-Practices + lab Core Web
 Vitals (LCP/TBT/CLS), plus CrUX field data when the site has enough traffic.
 Lab scores are noisy — treat one run as a sample, not a verdict.
 
+- **A score comes with what it means.** "Lab noise" is a real answer and also a
+  dangerous one: cypruspokerbrisbane's 5.5 s LCP was dismissed as a harness
+  artifact when the cause was a 360 KB Maps iframe. Pulling the full PSI JSON
+  settled it in one read, so the three fields that settled it are reported
+  instead of discarded — the **LCP element** (what the number is waiting for),
+  the **heaviest third-party origins** (weight the site owner did not write), and
+  **simulated vs observed** FCP/LCP.
+  → `💡 lighthouse: lcp:element`, `third-party:payload`, `metrics:observed`
+
+  The pair is what tells the two cases apart. ~0 ms TTFB with a high FCP means
+  the render is blocked by *payload* — go looking for an embed. A completed load
+  with an idle main thread but a late **observed** paint is harness variance, and
+  the proof in that case was that observed FCP got *slower* after the page got
+  lighter.
+
+  All three are advisory by construction (`policy.mjs` `ADVISORY`): they are
+  facts about the run, not verdicts. The scores beside them are the verdict.
+
 
 ## Gaps / candidate practices (not yet enforced)
 
@@ -843,7 +871,8 @@ ship wrong. What is below is the older, quieter half.
   the block entirely. The fixture smoke test checks this; the audit doesn't yet.
 - **Responsive `srcset`/`sizes`.** Large content images should ship responsive
   variants, not a single fixed width.
-- **Offline heading scan beyond the canonical gate.** Today the offline outline
+- **Offline heading scan beyond the canonical gate (see also `headings:order`,
+  which now names the component rather than the built page).** Today the offline outline
   check only inspects pages with a `<link rel="canonical">`; a page that should
   be indexable but lacks canonical is invisible to it (the live check still
   covers home + a post).
