@@ -1,4 +1,4 @@
-# Contributing to Wish busterZ Rider
+# Contributing to Mate Wish Key Rider
 
 Thanks for looking. This is a small, deliberately dependency-free tool — the bar for changes is "does it make the tool's answers more trustworthy?"
 

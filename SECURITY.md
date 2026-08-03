@@ -1,4 +1,4 @@
-# Security — Wish busterZ Rider
+# Security — Mate Wish Key Rider
 
 ## Reporting a vulnerability
 

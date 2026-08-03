@@ -1,4 +1,4 @@
-# Wish busterZ Rider
+# Mate Wish Key Rider
 
 <sub>`rider`</sub>
 
@@ -212,7 +212,7 @@ The tool is meant to be pointed at projects you don't control, so it **never exe
 
 ## Licence
 
-[MIT](LICENSE) — © 2026 Mergodon Limited. **Wish busterZ** is a brand of Mergodon Limited. Use it, fork it, sell it; just keep the notice.
+[MIT](LICENSE) — © 2026 Mergodon Limited. **Mate Wish Key** is a brand of Mergodon Limited. Use it, fork it, sell it; just keep the notice.
 
 The auditor itself has **zero dependencies**, so nothing third-party is redistributed here. The example fixture installs its own dependencies from npm under their respective licences (predominantly MIT, with Apache-2.0, ISC, MPL-2.0 and LGPL-3.0 transitives) — those are fetched at install time, not vendored into this repo.
 
