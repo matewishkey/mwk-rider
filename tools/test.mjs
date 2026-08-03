@@ -749,6 +749,44 @@ check('  …and inside <noscript> → pass',
 check('  …and a same-origin iframe is not the tool\'s business',
   embedRow({ 'dist/index.html': PAGE('<iframe src="/widgets/toc.html"></iframe>') })?.outcome === 'pass');
 
+// Cross-origin images. tasmanvisa-web served every hero and card from
+// media.tasmanvisa.com with no preconnect: blog index LCP 5424 ms, ~3500 ms once
+// a preconnect and a matching preload were added. The audit passed perf ✅ all.
+console.log('a cross-origin image host needs its connection opened early:');
+const CANON = '<link rel="canonical" href="https://x.test/">';
+const perfRows = (body, head = '') => runJson(
+  mkBuilt({ 'dist/index.html': `<html><head>${CANON}${head}</head><body>${body}</body></html>` }),
+  ['-s', 'perf', '--strict'],
+).json?.results ?? [];
+const perfRow = (id, body, head) => perfRows(body, head).find(r => r.id === id) ?? null;
+
+const TWO_REMOTE = '<img src="https://media.x.test/a.webp" alt="a"><img src="https://media.x.test/b.webp" alt="b">';
+const noPre = perfRow('perf/preconnect', TWO_REMOTE);
+check('two images from another origin with no preconnect → fix, naming the origin',
+  noPre?.outcome === 'fix' && /https:\/\/media\.x\.test/.test(noPre.message ?? ''), JSON.stringify(noPre));
+check('  …while a single incidental image from one → suggest, not a build failure',
+  perfRow('perf/preconnect', '<img src="https://media.x.test/a.webp" alt="a">')?.outcome === 'suggest');
+check('  …and same-origin images need nothing',
+  perfRow('perf/preconnect', '<img src="/local.webp" alt="a">')?.outcome === 'pass');
+
+// The trap: a preconnect that looks like the fix and is not.
+const bare = perfRow('perf/preconnect-crossorigin', TWO_REMOTE, '<link rel="preconnect" href="https://media.x.test">');
+check('a preconnect with no crossorigin → fix (images cannot reuse that connection)',
+  bare?.outcome === 'fix', JSON.stringify(bare));
+check('  …and with it → pass, with the preconnect check satisfied too',
+  perfRow('perf/preconnect-crossorigin', TWO_REMOTE, '<link rel="preconnect" href="https://media.x.test" crossorigin>')?.outcome === 'pass'
+  && perfRow('perf/preconnect', TWO_REMOTE, '<link rel="preconnect" href="https://media.x.test" crossorigin>')?.outcome === 'pass');
+
+// A preload that disagrees with its <img> downloads the image twice.
+const IMG = '<img src="/h.webp" srcset="/h-800.webp 800w, /h-1600.webp 1600w" sizes="(max-width: 700px) 100vw, 700px" alt="h">';
+const mismatched = perfRow('perf/preload-pair', IMG,
+  '<link rel="preload" as="image" imagesrcset="/h-800.webp 800w, /h-1600.webp 1600w" imagesizes="100vw">');
+check('a preload as="image" whose imagesizes differ from the tag → fix',
+  mismatched?.outcome === 'fix' && /imagesizes/.test(mismatched.message ?? ''), JSON.stringify(mismatched));
+check('  …while a byte-identical pair reports nothing',
+  perfRow('perf/preload-pair', IMG,
+    '<link rel="preload" as="image" imagesrcset="/h-800.webp 800w, /h-1600.webp 1600w" imagesizes="(max-width: 700px) 100vw, 700px">') === null);
+
 // A pass with no message is indistinguishable from a check that never ran —
 // the failure mode this tool cares most about. Asserted as an invariant rather
 // than per-check, so a new check cannot reintroduce it.

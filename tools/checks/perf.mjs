@@ -9,8 +9,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, extname, relative } from 'node:path';
 
-import { attrValue } from '../lib/html.mjs';
-import { eachDistHtml } from '../lib/html.mjs';
+import { attrValue, hasAttr, eachDistHtml } from '../lib/html.mjs';
 import { SKIP_DIST, distDir, distRelative } from '../lib/dist.mjs';
 import { astroBlock, MIN_IMMUTABLE_MAXAGE, CANONICAL_MAXAGE } from '../lib/headers.mjs';
 import { embedProduct, fetchableMarkup } from '../lib/embed-hosts.mjs';
@@ -26,6 +25,7 @@ export async function run({ project, reporter }) {
   checkCls(project, reporter);
   checkWeight(project, reporter);
   checkEmbeds(project, reporter);
+  checkCrossOrigin(project, reporter);
 }
 
 // 1. public/_headers — hashed assets immutable -------------------------------
@@ -317,6 +317,188 @@ function checkEmbeds(project, reporter) {
       'replace it with a facade — render a static placeholder (an image or a styled box) and inject the <iframe> from an IntersectionObserver when the user scrolls near it. Keeping the real frame in a <template> or <noscript> is fine; neither is fetched',
       { file: f.page },
     );
+  }
+}
+
+// 5. Cross-origin images: preconnect, and a preload that matches -------------
+
+/**
+ * Images from another origin need the connection opened early.
+ *
+ * The browser only starts DNS + TLS for a host once it parses a URL pointing at
+ * it, so on a 150 ms-RTT mobile link that is several round trips of dead time
+ * before a single byte of the LCP image moves. tasmanvisa-web served every blog
+ * hero and card from `media.tasmanvisa.com` with no preconnect anywhere: blog
+ * index LCP 5424 ms, and ~3500 ms once a preconnect plus a matching head preload
+ * were added.
+ *
+ * The site's own origin is read from each page's canonical link — the page's own
+ * statement of where it lives — falling back to `site:` in astro.config. A page
+ * that declares neither cannot be judged and is not counted.
+ */
+function checkCrossOrigin(project, reporter) {
+  if (!project.hasDist) {
+    reporter.skip(SEC, 'preconnect', 'no dist/ — build the site to check cross-origin image hosts');
+    return;
+  }
+  const configSite = project.astroConfig?.match(/\bsite\s*:\s*(['"`])(https?:\/\/[^'"`]+)\1/)?.[2]
+    ?? project.ogConfig?.siteUrl ?? null;
+
+  // host → { images: Set<url>, preconnect: 'crossorigin' | 'bare' | null, page }
+  const hosts = new Map();
+  const preloadIssues = [];
+  let pagesJudged = 0;
+
+  eachDistHtml(project.root, (rel, html) => {
+    const origin = pageOrigin(html, configSite);
+    if (!origin) return;
+    pagesJudged++;
+    const page = distRelative(project.root, rel);
+    const head = html.split(/<\/head>/i)[0] ?? html;
+    const links = [...head.matchAll(/<link\b((?:"[^"]*"|'[^']*'|[^>])*)>/gi)].map((m) => m[1]);
+
+    for (const url of imageUrls(html)) {
+      let host;
+      try { host = new URL(url, origin); } catch { continue; }
+      if (host.origin === origin) continue;
+      const entry = hosts.get(host.origin) ?? { images: new Set(), preconnect: null, page };
+      entry.images.add(host.href);
+      hosts.set(host.origin, entry);
+    }
+
+    for (const attrs of links) {
+      if (!/(?:^|\s)preconnect(?:\s|$)/i.test(attrValue(attrs, 'rel') ?? '')) continue;
+      const href = attrValue(attrs, 'href');
+      if (!href) continue;
+      let target;
+      try { target = new URL(href, origin).origin; } catch { continue; }
+      const entry = hosts.get(target) ?? { images: new Set(), preconnect: null, page };
+      // crossorigin wins: one page declaring it correctly is enough, since the
+      // finding is about the connection the browser opens for that host.
+      if (hasAttr(attrs, 'crossorigin')) entry.preconnect = 'crossorigin';
+      else entry.preconnect ??= 'bare';
+      hosts.set(target, entry);
+    }
+
+    collectPreloadMismatches(head, html, page, preloadIssues);
+  });
+
+  reportPreconnect(hosts, pagesJudged, reporter);
+  reportPreloadPairs(preloadIssues, reporter);
+}
+
+function pageOrigin(html, configSite) {
+  const canonical = html.match(/<link\b[^>]*\brel\s*=\s*["']canonical["'][^>]*>/i)?.[0];
+  const href = canonical ? attrValue(canonical.replace(/^<link/i, ''), 'href') : null;
+  for (const candidate of [href, configSite]) {
+    if (!candidate) continue;
+    try { return new URL(candidate).origin; } catch { /* relative canonical — try the next */ }
+  }
+  return null;
+}
+
+/** Every image URL a document references: <img src|srcset>, <source srcset>, inline background-image. */
+function imageUrls(html) {
+  const out = [];
+  for (const m of html.matchAll(/<(?:img|source)\b((?:"[^"]*"|'[^']*'|[^>])*)>/gi)) {
+    const src = attrValue(m[1], 'src');
+    if (src) out.push(src);
+    const srcset = attrValue(m[1], 'srcset');
+    if (srcset) out.push(...srcset.split(',').map((s) => s.trim().split(/\s+/)[0]).filter(Boolean));
+  }
+  for (const m of html.matchAll(/background(?:-image)?\s*:[^;"'}]*?url\(\s*(["'`]?)([^"'`)]+)\1\s*\)/gi)) {
+    out.push(m[2]);
+  }
+  return out.filter((u) => u && !u.startsWith('data:') && !u.startsWith('blob:'));
+}
+
+function reportPreconnect(hosts, pagesJudged, reporter) {
+  const imageHosts = [...hosts.entries()].filter(([, v]) => v.images.size > 0);
+  if (pagesJudged === 0) {
+    reporter.skip(SEC, 'preconnect', 'no built page declares a canonical URL and astro.config sets no site — cannot tell which hosts are cross-origin');
+    return;
+  }
+  if (imageHosts.length === 0) {
+    reporter.pass(SEC, 'preconnect', `every image on the ${pagesJudged} built page(s) is same-origin — no connection to open early`);
+    return;
+  }
+
+  const missing = imageHosts.filter(([, v]) => v.preconnect === null);
+  // A host serving a single incidental image (one avatar, one badge) is not
+  // what cost tasmanvisa 900 ms of LCP; advising it is right, failing a build
+  // over it is not.
+  const heavy = missing.filter(([, v]) => v.images.size >= 2);
+  const incidental = missing.filter(([, v]) => v.images.size === 1);
+
+  for (const [origin, v] of heavy) {
+    reporter.fix(SEC, 'preconnect', `${v.images.size} images load from ${origin} with no <link rel="preconnect"> — DNS + TLS only start when the parser reaches the first one`, `add <link rel="preconnect" href="${origin}" crossorigin> to <head>`, { file: v.page });
+  }
+  for (const [origin, v] of incidental) {
+    reporter.suggest(SEC, 'preconnect', `1 image loads from ${origin} with no <link rel="preconnect">`, `add <link rel="preconnect" href="${origin}" crossorigin> to <head> if it is on the critical path`, { file: v.page });
+  }
+  if (missing.length === 0) {
+    reporter.pass(SEC, 'preconnect', `all ${imageHosts.length} cross-origin image host(s) are preconnected (${imageHosts.map(([o]) => o).join(', ')})`);
+  }
+
+  // A preconnect without `crossorigin` is the trap: images are CORS-mode
+  // fetches, so the anonymous connection it opens is not the one the image can
+  // use, and the browser opens a second. It looks fixed and is not.
+  const bare = imageHosts.filter(([, v]) => v.preconnect === 'bare');
+  if (bare.length === 0) {
+    if (imageHosts.some(([, v]) => v.preconnect === 'crossorigin')) {
+      reporter.pass(SEC, 'preconnect:crossorigin', `every preconnect to an image host carries crossorigin`);
+    }
+  } else {
+    for (const [origin, v] of bare) {
+      reporter.fix(SEC, 'preconnect:crossorigin', `<link rel="preconnect" href="${origin}"> has no crossorigin attribute — images are CORS-mode fetches, so the connection it opens is not the one they reuse`, `write it as <link rel="preconnect" href="${origin}" crossorigin>`, { file: v.page });
+    }
+  }
+}
+
+/**
+ * A head `<link rel="preload" as="image">` has to match the `<img>` it is for,
+ * byte for byte. If `imagesrcset`/`imagesizes` differ from the tag's
+ * `srcset`/`sizes`, the browser resolves two different candidates and downloads
+ * the image twice — the preload makes the page slower than none at all.
+ */
+function collectPreloadMismatches(head, html, page, out) {
+  for (const m of head.matchAll(/<link\b((?:"[^"]*"|'[^']*'|[^>])*)>/gi)) {
+    const attrs = m[1];
+    if (!/(?:^|\s)preload(?:\s|$)/i.test(attrValue(attrs, 'rel') ?? '')) continue;
+    if ((attrValue(attrs, 'as') ?? '').toLowerCase() !== 'image') continue;
+    const imagesrcset = attrValue(attrs, 'imagesrcset');
+    const href = attrValue(attrs, 'href');
+    const imagesizes = attrValue(attrs, 'imagesizes');
+
+    // Find the <img> this preload is for: the one sharing a URL with it. No
+    // match means the image is injected at runtime or lives on another page —
+    // not something a static read can call a defect.
+    const wanted = new Set([...(imagesrcset ? srcsetKeys(imagesrcset) : []), ...(href ? [href] : [])]);
+    for (const tag of html.matchAll(/<img\b((?:"[^"]*"|'[^']*'|[^>])*)>/gi)) {
+      const srcset = attrValue(tag[1], 'srcset');
+      const src = attrValue(tag[1], 'src');
+      const keys = new Set([...(srcset ? srcsetKeys(srcset) : []), ...(src ? [src] : [])]);
+      if (![...keys].some((k) => wanted.has(k))) continue;
+
+      const sizes = attrValue(tag[1], 'sizes');
+      const srcsetDiffers = imagesrcset != null && srcset != null && norm(imagesrcset) !== norm(srcset);
+      const sizesDiffers = imagesizes != null && sizes != null && norm(imagesizes) !== norm(sizes);
+      if (srcsetDiffers || sizesDiffers) {
+        const which = [srcsetDiffers ? 'imagesrcset ≠ srcset' : null, sizesDiffers ? 'imagesizes ≠ sizes' : null].filter(Boolean).join(' and ');
+        out.push({ page, which, preload: truncate(imagesrcset ?? href ?? '', 70), tag: truncate(srcset ?? src ?? '', 70) });
+      }
+      break;
+    }
+  }
+}
+
+const norm = (s) => s.replace(/\s+/g, ' ').trim();
+const srcsetKeys = (s) => s.split(',').map((e) => e.trim().split(/\s+/)[0]).filter(Boolean);
+
+function reportPreloadPairs(issues, reporter) {
+  if (issues.length === 0) return;   // nothing to say when no preload as=image exists
+  for (const i of issues) {
+    reporter.fix(SEC, 'preload:pair', `preload as="image" does not match the <img> it preloads (${i.which}) — the browser resolves two candidates and downloads the image twice`, 'make the preload\'s imagesrcset/imagesizes byte-identical to the tag\'s srcset/sizes', { file: i.page });
   }
 }
 

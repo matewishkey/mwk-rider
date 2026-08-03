@@ -130,7 +130,19 @@ export async function run({ reporter, url, post }) {
       for (const img of document.querySelectorAll('img')) {
         const dw = img.naturalWidth, rw = Math.round(img.getBoundingClientRect().width);
         if (!dw || !rw) continue;
-        if (dw / rw >= ratio) out.push({ src: img.currentSrc || img.src, natural: dw, rendered: rw });
+        // `sizes` — not the layout — is what picks the srcset rung, so an
+        // overstated one is the CAUSE of an oversized download and the thing to
+        // edit. Reported alongside so the finding names it rather than the
+        // symptom: tasmanvisa-web claimed 100vw for a card rendering at 355 px
+        // in a 393 px viewport, and the browser fetched 1280w/167 KB where
+        // 1000w/133 KB was correct.
+        if (dw / rw >= ratio) out.push({
+          src: img.currentSrc || img.src,
+          natural: dw,
+          rendered: rw,
+          sizes: img.getAttribute('sizes'),
+          viewport: window.innerWidth,
+        });
       }
       return out;
     }, OVERSIZED_RATIO);
@@ -142,7 +154,14 @@ export async function run({ reporter, url, post }) {
       reporter.pass(SEC, 'images:rendered-size', `none of the ${imgCount} image(s) is served far larger than it is displayed`);
     } else {
       const o = oversized[0];
-      reporter.suggest(SEC, 'images:rendered-size', `${oversized.length} image(s) served well over their displayed size, e.g. ${o.natural}px served for a ${o.rendered}px box`, 'set width/sizes so the transform serves the size actually rendered');
+      // When `sizes` claims a viewport-width share the element does not occupy,
+      // that is the whole explanation — say so instead of leaving the reader to
+      // work back from the byte count.
+      const claimsFullWidth = o.sizes != null && /(^|[\s,])100vw\s*$/.test(o.sizes) && o.rendered < o.viewport * 0.8;
+      const cause = claimsFullWidth
+        ? ` — sizes="${o.sizes}" claims the full ${o.viewport}px viewport for a ${o.rendered}px box, and sizes (not the layout) is what picks the srcset rung`
+        : o.sizes != null ? ` (sizes="${o.sizes}")` : '';
+      reporter.suggest(SEC, 'images:rendered-size', `${oversized.length} image(s) served well over their displayed size, e.g. ${o.natural}px served for a ${o.rendered}px box${cause}`, claimsFullWidth ? 'correct the sizes attribute to the width the element actually renders at' : 'set width/sizes so the transform serves the size actually rendered');
     }
 
     // --- Layout shift, measured rather than inferred --------------------------

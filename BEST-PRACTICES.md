@@ -406,6 +406,39 @@ thing a version bump leaves behind. Each maps to a documented v7 breaking change
   would report the fix as the defect. The host table lives in
   `tools/lib/embed-hosts.mjs`; a same-origin or small third-party frame is not
   what this is about.
+- **Cross-origin image hosts are preconnected.** A browser only starts DNS + TLS
+  for a host once it parses a URL pointing at it, so on a 150 ms-RTT mobile link
+  that is several round trips of dead time before a byte of the LCP image moves.
+  tasmanvisa-web served every blog hero and card from `media.tasmanvisa.com` with
+  no preconnect anywhere: blog index LCP **5424 ms**, ~3500 ms once a preconnect
+  plus a matching head preload were added — and the audit reported `perf ✅ all`
+  throughout. → `perf: preconnect`
+
+  A host serving one incidental image (an avatar, a badge) is `💡`, not `🔧`:
+  the advice is still right, but it is not what cost 900 ms, and failing a build
+  over it is the crying-wolf failure `policy.mjs` exists to prevent.
+- **A preconnect to an image host carries `crossorigin`.** Images are CORS-mode
+  fetches, so a bare `<link rel="preconnect">` opens an anonymous connection the
+  image cannot reuse and the browser opens a second. It is a separate finding
+  precisely because it *looks* fixed — the worse state to be in than missing.
+  → `perf: preconnect:crossorigin`
+- **A preload for an image matches the tag byte for byte.** A head
+  `<link rel="preload" as="image">` whose `imagesrcset`/`imagesizes` differ from
+  the `<img>`'s `srcset`/`sizes` makes the browser resolve two different
+  candidates and download the image twice, so the preload leaves the page slower
+  than no preload at all. → `perf: preload:pair`
+
+  Which page is "cross-origin" is decided per page from its own canonical link
+  (falling back to `site:` in astro.config): a page declaring neither is not
+  counted, because guessing the site's origin from the build would invent
+  findings on a site that renders absolute self-URLs.
+- **`sizes` describes the box, not the ambition.** `sizes`, not the layout, is
+  what picks the srcset rung — so `sizes="100vw"` on a card that renders at
+  355 px in a 393 px viewport makes the browser fetch 1280w/167 KB where
+  1000w/133 KB was correct. This needs a rendered measurement, so it lives in the
+  `browser` domain: when an image is served far larger than its box *and* its
+  `sizes` claims the full viewport, the finding names the attribute as the cause
+  rather than reporting the bytes as the symptom. → `browser: images:rendered-size`
 
 ## content — pages a site is repeatedly asked for
 
