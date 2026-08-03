@@ -8,6 +8,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, extname, relative } from 'node:path';
 
 import { attrValue } from '../lib/html.mjs';
+import { SKIP_DIST, distDir } from '../lib/dist.mjs';
 
 const SEC = 'perf';
 // The hashed-asset rule, as written by any of the common conventions:
@@ -178,13 +179,13 @@ export function checkWeight(project, reporter) {
     reporter.skip(SEC, 'font:bytes', 'no dist/ — build the site to measure the fonts it ships');
     return;
   }
-  const files = distTree(join(project.root, 'dist'));
+  const files = distTree(distDir(project.root));
   checkCssWeight(project, reporter, files);
   checkFontWeight(project, reporter, files);
 }
 
 function checkCssWeight(project, reporter, files) {
-  const dist = join(project.root, 'dist');
+  const dist = distDir(project.root);
   const pages = files.filter((f) => f.endsWith('.html'));
   if (pages.length === 0) {
     reporter.skip(SEC, 'css:bytes', 'no built HTML — nothing to measure');
@@ -295,7 +296,7 @@ function distTree(dir) {
     let entries;
     try { entries = readdirSync(d, { withFileTypes: true }); } catch { continue; }
     for (const e of entries) {
-      if (e.name.startsWith('.')) continue;
+      if (e.name.startsWith('.') || SKIP_DIST.has(e.name)) continue;
       const full = join(d, e.name);
       if (e.isDirectory()) stack.push(full);
       else out.push(full);

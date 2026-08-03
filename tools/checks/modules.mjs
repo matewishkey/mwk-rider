@@ -3,8 +3,17 @@
 // and wired correctly (it does not try to set anything up).
 
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { BASELINE_SEARCH, installedEngines } from '../lib/search-engines.mjs';
+import { stripComments } from '../lib/src-scan.mjs';
+
+// First-party adapters. The list is a convenience for naming what it found —
+// `adapter:` in astro.config is what actually decides, so a third-party adapter
+// counts too.
+const KNOWN_ADAPTERS = [
+  '@astrojs/cloudflare', '@astrojs/node', '@astrojs/vercel',
+  '@astrojs/netlify', '@astrojs/deno',
+];
 
 const SEC = 'modules';
 
@@ -119,21 +128,77 @@ export async function run({ project, reporter }) {
     reporter.suggest(SEC, 'search:engine', `search is ${engines[0]}`, `a single client-side search engine is fine — the baseline happens to use ${BASELINE_SEARCH}, so only reach for it if you want the shared index-endpoint shape too`);
   }
 
-  // @astrojs/cloudflare adapter is needed for <Image> only under SSR. On a static
-  // build, <Image> is optimized at build time by Sharp and emitted to dist/ — no
-  // adapter exists or is needed. A Cloudflare image service only matters for
-  // on-demand (output: 'server') rendering, where Sharp can't run on Workers.
-  const usesImageComponent = await grepSrc(project.root, /<Image[\s/>]/);
-  const hasAdapter = !!deps['@astrojs/cloudflare'];
-  const isSSR = /output\s*:\s*['"]server['"]/.test(project.astroConfig ?? '');
-  if (!usesImageComponent) {
-    reporter.pass(SEC, 'adapter:cloudflare', hasAdapter ? 'present (no <Image> usage detected)' : 'absent, no <Image> usage');
-  } else if (!isSSR) {
-    reporter.pass(SEC, 'adapter:cloudflare', '<Image> optimized at build time by Sharp (static output) — no adapter needed');
-  } else if (hasAdapter) {
-    reporter.pass(SEC, 'adapter:cloudflare', 'present, backs runtime <Image> under SSR');
+  // --- on-demand rendering and the adapter it requires ------------------------
+  //
+  // "On demand" is NOT just output: 'server'. A static site with one
+  // `export const prerender = false` route renders that route on demand too, and
+  // that is the shape a contact form takes: the whole site prerendered, one API
+  // endpoint live. Testing only for output:'server' missed it entirely — a
+  // static build with a prerender=false page using <Image> renders on Workers,
+  // where Sharp cannot run, which is the exact case adapter:cloudflare exists to
+  // catch.
+  const cfgCode = stripComments(project.astroConfig ?? '');
+  const explicitServer = /output\s*:\s*['"]server['"]/.test(cfgCode);
+  const prerenderFalse = await collectSrcFiles(project.root, /export\s+const\s+prerender\s*=\s*false/);
+  const rendersOnDemand = explicitServer || prerenderFalse.length > 0;
+  const onDemandReason = explicitServer
+    ? "output: 'server'"
+    : `${prerenderFalse.length} route(s) with prerender = false (${prerenderFalse.slice(0, 2).join(', ')})`;
+
+  // Any adapter. Naming ours would be house style wearing a universal badge —
+  // the build fails on Vercel, Netlify, Node and Deno for exactly the same
+  // reason, and it is not this tool's business which host you picked.
+  const installedAdapters = KNOWN_ADAPTERS.filter((d) => deps[d]);
+  const configuresAdapter = /\badapter\s*:/.test(cfgCode);
+  const hasAnyAdapter = installedAdapters.length > 0 || configuresAdapter;
+  const adapterLabel = installedAdapters.join(', ') || 'an adapter declared in astro.config';
+
+  if (!rendersOnDemand) {
+    reporter.skip(SEC, 'adapter:on-demand', 'every route is prerendered — a static build needs no adapter');
+  } else if (hasAnyAdapter) {
+    reporter.pass(SEC, 'adapter:on-demand', `${onDemandReason}, backed by ${adapterLabel}`);
   } else {
-    reporter.block(SEC, 'adapter:cloudflare', 'SSR (output: "server") uses <Image> but @astrojs/cloudflare not installed', "npm i @astrojs/cloudflare (its image service backs runtime <Image> where Sharp can't run), or prerender the routes that use <Image>");
+    reporter.block(SEC, 'adapter:on-demand', `${onDemandReason}, but no adapter is installed — the build fails with "Cannot use \`prerender = false\` without an adapter"`, 'add the adapter for your host (@astrojs/cloudflare, @astrojs/node, @astrojs/vercel, @astrojs/netlify, @astrojs/deno …) and pass it as `adapter:` in astro.config, or prerender the route');
+  }
+
+  // @astrojs/cloudflare specifically: its image service is what backs <Image>
+  // where Sharp cannot run. On a fully prerendered build <Image> is optimized at
+  // build time by Sharp and emitted to dist/, so no adapter is needed or wanted.
+  const usesImageComponent = await grepSrc(project.root, /<Image[\s/>]/);
+  const hasCloudflare = !!deps['@astrojs/cloudflare'];
+  if (!usesImageComponent) {
+    reporter.pass(SEC, 'adapter:cloudflare', hasCloudflare ? 'present (no <Image> usage detected)' : 'absent, no <Image> usage');
+  } else if (!rendersOnDemand) {
+    reporter.pass(SEC, 'adapter:cloudflare', '<Image> optimized at build time by Sharp (fully prerendered) — no adapter needed');
+  } else if (hasCloudflare) {
+    reporter.pass(SEC, 'adapter:cloudflare', `present, backs runtime <Image> under on-demand rendering (${onDemandReason})`);
+  } else if (hasAnyAdapter) {
+    // Sharp runs fine on Node/Vercel/Netlify/Deno. Demanding the Cloudflare
+    // adapter there would be house style asserted as a defect.
+    reporter.pass(SEC, 'adapter:cloudflare', `not needed — this site renders on demand via ${adapterLabel}, not Workers`);
+  } else {
+    // No adapter at all is already a block on adapter:on-demand. Reporting the
+    // same root cause twice is the noise this tool exists to avoid.
+    reporter.skip(SEC, 'adapter:cloudflare', 'no adapter installed at all — see adapter:on-demand, which is the finding that matters here');
+  }
+
+  // The billing trap. @astrojs/cloudflare's `imageService` default changed from
+  // 'compile' to 'cloudflare-binding' (Astro's Cloudflare adapter docs, verified
+  // 2026-08-03), and that binding is "automatically provisioned upon deployment"
+  // — a paid product. So adding the adapter for something unrelated (a contact
+  // form, say) can silently opt a site into billing for image transforms it was
+  // previously doing for free at build time. Being explicit costs one line.
+  if (hasCloudflare && usesImageComponent) {
+    if (/\bimageService\s*:/.test(cfgCode)) {
+      reporter.pass(SEC, 'adapter:imageService', 'set explicitly');
+    } else {
+      reporter.suggest(
+        SEC,
+        'adapter:imageService',
+        "@astrojs/cloudflare with <Image> and no explicit imageService — the default is 'cloudflare-binding', which provisions the paid Cloudflare Images binding on deploy",
+        "set it deliberately: `cloudflare({ imageService: 'compile' })` keeps build-time Sharp optimization and costs nothing; 'cloudflare-binding' is the right choice only if you want runtime transforms and are happy to pay for them",
+      );
+    }
   }
 
   // astro.config assertions
@@ -330,6 +395,21 @@ async function grepSrc(root, regex) {
     catch {}
   }
   return false;
+}
+
+// Project-relative paths of the src/ files whose code matches. Comments are
+// blanked first: a commented-out `// export const prerender = false` is a note,
+// not a route, and treating it as one would demand an adapter nobody needs.
+async function collectSrcFiles(root, regex) {
+  const src = join(root, 'src');
+  if (!existsSync(src)) return [];
+  const hits = [];
+  for (const file of walkSrc(src)) {
+    try {
+      if (regex.test(stripComments(readFileSync(file, 'utf8')))) hits.push(relative(root, file));
+    } catch {}
+  }
+  return hits;
 }
 
 // Every distinct capture of `regex` (global, one capture group) across src/.

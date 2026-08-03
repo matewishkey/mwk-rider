@@ -1,0 +1,36 @@
+---
+import RootLayout from '../layouts/RootLayout.astro';
+import { config as ogConfig } from '../../scripts/og.config.mjs';
+const { brand } = ogConfig;
+
+// The one URL you hand to anyone who asks for your logo, your description or a
+// way to reach you. Without it, "can you send us your assets" is an email
+// thread, and inconsistent versions of your logo end up in the wild.
+---
+<RootLayout title="Media kit" description={`Logo, boilerplate and contact details for ${brand.siteName}.`}>
+  <h1>Media kit</h1>
+  <p>Everything a journalist, partner or directory needs. Use it without asking.</p>
+
+  <h2>Logo</h2>
+  <p><a href="/logo.svg" download>Download the logo (SVG)</a> — vector, so it scales to anything. Please don't recolour or stretch it.</p>
+  <p><img src="/logo.svg" alt={`${brand.siteName} logo`} width="120" height="120" /></p>
+
+  <h2>Boilerplate</h2>
+  <p>
+    {brand.siteName} is a small independent content site publishing writing about
+    its subject for anyone who wants to understand it properly. It is built as a
+    static site, served from the edge, and it runs no advertising and no visitor
+    tracking beyond aggregate, cookieless page counts.
+  </p>
+
+  <h2>Facts</h2>
+  <ul>
+    <li>Name: {brand.siteName}</li>
+    <li>Site: <a href={brand.siteUrl}>{brand.siteUrl}</a></li>
+    <li>In one line: {brand.tagline}</li>
+    <li>Feed: <a href="/rss.xml">/rss.xml</a></li>
+  </ul>
+
+  <h2>Contact</h2>
+  <p><a href="/contact">Send a message</a> or email <a href={`mailto:${brand.contactEmail}`}>{brand.contactEmail}</a>.</p>
+</RootLayout>

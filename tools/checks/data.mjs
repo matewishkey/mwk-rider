@@ -10,7 +10,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { readSrcFiles, stripComments } from '../lib/src-scan.mjs';
 import { eachDistHtml } from '../lib/html.mjs';
-import { distFiles, readDist, countMatches, sitemapPages } from '../lib/dist.mjs';
+import { distFiles, readDist, countMatches, sitemapPages, distRelative } from '../lib/dist.mjs';
 import { collectJsonLd, ldTypes, hasArticleType } from '../lib/jsonld.mjs';
 import { installedEngines } from '../lib/search-engines.mjs';
 
@@ -150,7 +150,7 @@ function checkJsonLd(project, reporter) {
   const objects = [], broken = [], without = [];
   let pages = 0, pagesWithLd = 0;
   eachDistHtml(project.root, (rel, html) => {
-    if (declared && !declared.has(rel.replace(/^dist\//, ''))) return;
+    if (declared && !declared.has(distRelative(project.root, rel))) return;
     pages++;
     const found = collectJsonLd(html);
     if (found.objects.length) pagesWithLd++;

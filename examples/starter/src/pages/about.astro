@@ -1,0 +1,25 @@
+---
+import RootLayout from '../layouts/RootLayout.astro';
+import { config as ogConfig } from '../../scripts/og.config.mjs';
+const { brand } = ogConfig;
+---
+<RootLayout title="About" description={`What ${brand.siteName} is and who writes it.`}>
+  <h1>About</h1>
+
+  <p>
+    {brand.siteName} is a small content site. Replace this paragraph with what
+    yours is actually about — one honest paragraph beats three vague ones, and
+    it is the text a search result and a social card will show.
+  </p>
+
+  <h2>How this site is built</h2>
+  <p>
+    Astro, statically built, served from Cloudflare. There is no database, no
+    CMS and no build step you have to understand: posts are markdown files in
+    <code>src/data/blog/</code>, and everything else is a page in
+    <code>src/pages/</code>.
+  </p>
+
+  <h2>Get in touch</h2>
+  <p><a href="/contact">Send a message</a>, or email <a href={`mailto:${brand.contactEmail}`}>{brand.contactEmail}</a>.</p>
+</RootLayout>

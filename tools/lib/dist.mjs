@@ -5,9 +5,56 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
-/** Files under dist/ whose dist-relative path matches, sorted. */
-export function distFiles(root, re) {
+/**
+ * Never walked inside the static root.
+ *
+ * `_worker.js` is the server bundle some adapter versions emit — a DIRECTORY,
+ * despite the name — and it contains copies of built assets plus server-side
+ * HTML. Walking it double-counts every image, font and stylesheet against a byte
+ * budget, and reads pages that are never served as files. Nothing under it
+ * reaches a browser as a static asset.
+ */
+export const SKIP_DIST = new Set(['_worker.js']);
+
+/**
+ * Where the *served* files actually are.
+ *
+ * A fully static build writes them straight to `dist/`. Add an adapter — which
+ * one `prerender = false` route is enough to require — and the build splits:
+ * `dist/client/` is what a browser gets, `dist/server/` (or `dist/_worker.js/`)
+ * is the bundle that runs. Assuming `dist/` is the static root on such a build
+ * is wrong in both directions: byte budgets count the server bundle's copy of
+ * every asset, and `dist/index.html` is not where the homepage is, so the
+ * sitemap denominator silently collapses to "every built page".
+ *
+ * Resolved once, here, so no walker has to know. Falls back to `dist/` — which
+ * is right for every static build, and is what this returned before adapters
+ * were part of the baseline.
+ */
+export function distDir(root) {
   const dist = join(root, 'dist');
+  const client = join(dist, 'client');
+  // Both halves must be there. A site that merely has a `dist/client/` page
+  // route is not an adapter build, and must not have its root moved.
+  if (existsSync(client) && (existsSync(join(dist, 'server')) || existsSync(join(dist, '_worker.js')))) {
+    return client;
+  }
+  return dist;
+}
+
+/**
+ * A path reported relative to the project root (`dist/client/about/index.html`),
+ * re-based on the static root (`about/index.html`) so it can be compared with
+ * what the sitemap declares.
+ */
+export function distRelative(root, rel) {
+  const prefix = `${relative(root, distDir(root))}/`;
+  return rel.startsWith(prefix) ? rel.slice(prefix.length) : rel.replace(/^dist\//, '');
+}
+
+/** Files under the static root whose relative path matches, sorted. */
+export function distFiles(root, re) {
+  const dist = distDir(root);
   if (!existsSync(dist)) return [];
   const out = [];
   const stack = [dist];
@@ -16,7 +63,7 @@ export function distFiles(root, re) {
     let entries;
     try { entries = readdirSync(d, { withFileTypes: true }); } catch { continue; }
     for (const e of entries) {
-      if (e.name.startsWith('.')) continue;
+      if (e.name.startsWith('.') || SKIP_DIST.has(e.name)) continue;
       const full = join(d, e.name);
       if (e.isDirectory()) stack.push(full);
       else if (re.test(relative(dist, full))) out.push(relative(dist, full));
@@ -25,9 +72,9 @@ export function distFiles(root, re) {
   return out.sort();
 }
 
-/** Text of a dist-relative file, or '' if it can't be read. */
+/** Text of a file relative to the static root, or '' if it can't be read. */
 export function readDist(root, rel) {
-  try { return readFileSync(join(root, 'dist', rel), 'utf8'); }
+  try { return readFileSync(join(distDir(root), rel), 'utf8'); }
   catch { return ''; }
 }
 
@@ -61,7 +108,7 @@ export function sitemapPages(root) {
       // Astro writes either `about/index.html` or `about.html` depending on
       // build.format; accept whichever exists.
       for (const candidate of clean ? [`${clean}/index.html`, `${clean}.html`] : ['index.html']) {
-        if (existsSync(join(root, 'dist', candidate))) { paths.add(candidate); break; }
+        if (existsSync(join(distDir(root), candidate))) { paths.add(candidate); break; }
       }
     }
   }

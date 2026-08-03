@@ -1,0 +1,26 @@
+# Cache-control rules for Cloudflare Workers Static Assets.
+#
+# Drop this at public/_headers. Astro copies it verbatim to dist/_headers,
+# where Cloudflare Workers Static Assets parses it as config (same syntax as
+# Cloudflare Pages) and applies it to static-asset responses.
+#
+# WHY: Workers Static Assets defaults every asset to
+#   Cache-Control: public, max-age=0, must-revalidate
+# That is correct for HTML (a deploy must show immediately) but wrong for
+# content-hashed bundles — they never change under a given URL, yet repeat
+# visitors re-validate every .js/.css/font on every navigation. `immutable`
+# eliminates the round-trip. This is the JS/CSS/font analogue of the
+# image-delivery win.
+
+# Astro content-hashed assets (/_astro/app.[hash].js etc.) — cache forever.
+/_astro/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Fonts served directly from public/fonts/ (Astro Fonts API output already
+# lands under /_astro/ and is covered above; this catches hand-placed fonts).
+/fonts/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# HTML and everything else is intentionally NOT listed — it inherits the
+# Workers default (max-age=0, must-revalidate), which is what we want:
+# pages revalidate via ETag (cheap 304, no body) so a deploy is visible at once.

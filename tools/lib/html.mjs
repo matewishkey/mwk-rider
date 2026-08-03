@@ -3,10 +3,11 @@
 
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, relative } from 'node:path';
+import { SKIP_DIST, distDir } from './dist.mjs';
 
 // Walk dist/**/*.html, calling cb(relPath, html) for each file.
 export function eachDistHtml(root, cb) {
-  const dist = join(root, 'dist');
+  const dist = distDir(root);
   if (!existsSync(dist)) return;
   const stack = [dist];
   while (stack.length) {
@@ -15,7 +16,7 @@ export function eachDistHtml(root, cb) {
     try { entries = readdirSync(d, { withFileTypes: true }); }
     catch { continue; }
     for (const e of entries) {
-      if (e.name.startsWith('.')) continue;
+      if (e.name.startsWith('.') || SKIP_DIST.has(e.name)) continue;
       const full = join(d, e.name);
       if (e.isDirectory()) stack.push(full);
       else if (e.name.endsWith('.html')) {

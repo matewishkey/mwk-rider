@@ -110,33 +110,77 @@ const jp = imageSize(jpeg(1200, 630));
 check('JPEG 1200×630 parsed (segment skip)', jp?.w === 1200 && jp?.h === 630, JSON.stringify(jp));
 check('non-image bytes → null', imageSize(Uint8Array.from([1, 2, 3, 4]).buffer) === null);
 
-console.log('adapter:cloudflare is gated on SSR, not <Image> presence:');
-// <Image> on a static build is optimized at build time by Sharp → no adapter
-// needed. The Cloudflare image service only matters under output:'server', where
-// Sharp can't run on Workers. Build throwaway projects and read just that result.
-function mkProject({ output, withImage, withAdapter }) {
+console.log('adapter checks are gated on on-demand rendering, not <Image> presence:');
+// <Image> on a fully prerendered build is optimized at build time by Sharp → no
+// adapter needed. The Cloudflare image service only matters when a route renders
+// on demand, where Sharp can't run on Workers. Build throwaway projects and read
+// just that result.
+function mkProject({ output = 'static', withImage, withAdapter, adapterDep = '@astrojs/cloudflare', config, prerenderFalse = false } = {}) {
   const dir = tmpProject('rider-mod-');
   const deps = { astro: '^7.1.6' };
-  if (withAdapter) deps['@astrojs/cloudflare'] = '^14.1.7';
+  if (withAdapter) deps[adapterDep] = '^14.1.7';
   writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'fx', type: 'module', dependencies: deps }));
-  writeFileSync(join(dir, 'astro.config.mjs'), `export default { output: '${output}' };\n`);
+  writeFileSync(join(dir, 'astro.config.mjs'),
+    config ?? `export default { output: '${output}'${withAdapter ? ', adapter: adapter()' : ''} };\n`);
   mkdirSync(join(dir, 'src', 'pages'), { recursive: true });
   const body = withImage
     ? `---\nimport { Image } from 'astro:assets';\nimport shot from '../shot.png';\n---\n<Image src={shot} alt="x" />\n`
     : `<p>hi</p>\n`;
   writeFileSync(join(dir, 'src', 'pages', 'index.astro'), body);
+  if (prerenderFalse) {
+    mkdirSync(join(dir, 'src', 'pages', 'api'), { recursive: true });
+    writeFileSync(join(dir, 'src', 'pages', 'api', 'contact.ts'),
+      'export const prerender = false;\nexport const POST = () => new Response(null, { status: 303 });\n');
+  }
   return dir;
 }
-function adapterResult(opts) {
-  const { json } = runJson(mkProject(opts), ['-s', 'modules', '--strict']);
-  return json?.results.find(r => r.name === 'adapter:cloudflare') ?? null;
-}
-const staticImg = adapterResult({ output: 'static', withImage: true, withAdapter: false });
+const modRow = (opts, name) =>
+  runJson(mkProject(opts), ['-s', 'modules', '--strict']).json?.results.find(r => r.name === name) ?? null;
+
+const staticImg = modRow({ output: 'static', withImage: true, withAdapter: false }, 'adapter:cloudflare');
 check('static + <Image>, no adapter → pass (build-time Sharp)', staticImg?.outcome === 'pass', JSON.stringify(staticImg));
-const ssrNoAdapter = adapterResult({ output: 'server', withImage: true, withAdapter: false });
-check('SSR + <Image>, no adapter → block', ssrNoAdapter?.outcome === 'block', JSON.stringify(ssrNoAdapter));
-const ssrAdapter = adapterResult({ output: 'server', withImage: true, withAdapter: true });
+const ssrAdapter = modRow({ output: 'server', withImage: true, withAdapter: true }, 'adapter:cloudflare');
 check('SSR + <Image> + adapter → pass', ssrAdapter?.outcome === 'pass', JSON.stringify(ssrAdapter));
+// No adapter at all is one defect, so it gets one finding — on adapter:on-demand,
+// which is the rule that names it. adapter:cloudflare defers rather than
+// reporting the same root cause a second time.
+const ssrNoAdapter = modRow({ output: 'server', withImage: true, withAdapter: false }, 'adapter:on-demand');
+check('SSR, no adapter → block on adapter:on-demand', ssrNoAdapter?.outcome === 'block', JSON.stringify(ssrNoAdapter));
+check('  …and adapter:cloudflare defers instead of double-reporting it',
+  modRow({ output: 'server', withImage: true, withAdapter: false }, 'adapter:cloudflare')?.outcome === 'skip');
+
+// The false negative the starter exposed: output stays 'static' and ONE route
+// opts out. That build fails without an adapter just as loudly as output:'server'.
+const oneRoute = modRow({ output: 'static', prerenderFalse: true, withAdapter: false }, 'adapter:on-demand');
+check('a single prerender = false route with no adapter → block', oneRoute?.outcome === 'block', JSON.stringify(oneRoute));
+check('  …and it names the route, not just the output mode',
+  /prerender = false/.test(oneRoute?.message ?? ''), JSON.stringify(oneRoute));
+const oneRouteOk = modRow({ output: 'static', prerenderFalse: true, withAdapter: true }, 'adapter:on-demand');
+check('  …satisfied by an adapter', oneRouteOk?.outcome === 'pass', JSON.stringify(oneRouteOk));
+// Universal means universal: any adapter, not ours.
+const nodeAdapter = modRow({ output: 'server', withAdapter: true, adapterDep: '@astrojs/node' }, 'adapter:on-demand');
+check('  …by ANY adapter, not just Cloudflare', nodeAdapter?.outcome === 'pass', JSON.stringify(nodeAdapter));
+check('all-prerendered → skip, nothing to require',
+  modRow({ output: 'static' }, 'adapter:on-demand')?.outcome === 'skip');
+// A commented-out opt-out is a note, not a route.
+const commentedOut = mkProject({ output: 'static' });
+writeFileSync(join(commentedOut, 'src', 'pages', 'index.astro'), '---\n// export const prerender = false\n---\n<p>hi</p>\n');
+check('  …and a commented-out prerender = false does not demand one',
+  runJson(commentedOut, ['-s', 'modules', '--strict']).json?.results
+    .find(r => r.name === 'adapter:on-demand')?.outcome === 'skip');
+
+// The billing trap: @astrojs/cloudflare's imageService default became
+// 'cloudflare-binding', which provisions a paid product on deploy.
+const noImageService = modRow({ output: 'server', withImage: true, withAdapter: true }, 'adapter:imageService');
+check('adapter + <Image> with no explicit imageService → suggest (the billing trap)',
+  noImageService?.outcome === 'suggest', JSON.stringify(noImageService));
+const explicitImageService = modRow({
+  output: 'server', withImage: true, withAdapter: true,
+  config: "export default { output: 'server', adapter: cloudflare({ imageService: 'compile' }) };\n",
+}, 'adapter:imageService');
+check('  …and setting it explicitly → pass', explicitImageService?.outcome === 'pass', JSON.stringify(explicitImageService));
+check('  …and it never fires without <Image>',
+  modRow({ output: 'server', withImage: false, withAdapter: true }, 'adapter:imageService') === null);
 
 console.log('Astro 7 migration checks fire on a v6-shaped project:');
 // The fixture is compliant by construction, so it only proves these checks stay

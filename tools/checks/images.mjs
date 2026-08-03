@@ -13,6 +13,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, extname, relative } from 'node:path';
 import { transformSmells } from '../lib/cf-image.mjs';
 import { eachDistHtml, contentImgs, attrValue } from '../lib/html.mjs';
+import { SKIP_DIST } from '../lib/dist.mjs';
 
 const SEC = 'images';
 
@@ -278,7 +279,7 @@ function walkDir(dir, callback, root) {
     try { entries = readdirSync(d, { withFileTypes: true }); }
     catch { continue; }
     for (const e of entries) {
-      if (e.name === 'node_modules' || e.name.startsWith('.')) continue;
+      if (e.name === 'node_modules' || e.name.startsWith('.') || SKIP_DIST.has(e.name)) continue;
       const full = join(d, e.name);
       if (e.isDirectory()) stack.push(full);
       else callback(relative(root, full));

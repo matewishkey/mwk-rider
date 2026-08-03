@@ -1,0 +1,32 @@
+{
+  "name": "rider-starter",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The rider starter — a single-locale Astro site that passes `rider --strict` clean. Copy it, rename it, write.",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "wrangler dev",
+    "types": "wrangler types",
+    "check": "wrangler types && astro check",
+    "sync": "astro sync",
+    "audit": "node ../../tools/audit.mjs",
+    "deploy": "astro build && wrangler deploy"
+  },
+  "dependencies": {
+    "@astrojs/check": "^0.9.10",
+    "@astrojs/cloudflare": "^14.1.7",
+    "@astrojs/mdx": "^7.0.5",
+    "@astrojs/rss": "^4.0.19",
+    "@astrojs/sitemap": "^3.7.3",
+    "astro": "^7.1.6",
+    "typescript": "^6.0.3"
+  },
+  "devDependencies": {
+    "wrangler": "^4.42.2"
+  }
+}

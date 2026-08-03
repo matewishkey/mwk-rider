@@ -1,0 +1,41 @@
+---
+import RootLayout from '../layouts/RootLayout.astro';
+import { config as ogConfig } from '../../scripts/og.config.mjs';
+const { brand } = ogConfig;
+
+// This page is PRERENDERED. Only the endpoint it posts to renders on demand.
+//
+// That is deliberate: a prerendered /contact stays in dist/ and in the sitemap,
+// so it carries canonical, OG, JSON-LD and an <h1> like every other page, and it
+// counts in the audit's coverage denominators. Server-render it instead and it
+// would be declared in the sitemap while being invisible to every check that
+// reads built HTML — silently unverified, which is worse than failing.
+---
+<RootLayout title="Contact" description={`Send a message to ${brand.siteName}.`}>
+  <h1>Contact</h1>
+  <p>Fill this in and it lands in an inbox. No account, no tracking, no JavaScript.</p>
+
+  <form method="POST" action="/api/contact">
+    <label for="name">Your name</label>
+    <input id="name" name="name" type="text" required autocomplete="name" />
+
+    <label for="email">Your email</label>
+    <input id="email" name="email" type="email" required autocomplete="email" />
+
+    <label for="message">Message</label>
+    <textarea id="message" name="message" rows="6" required></textarea>
+
+    {/* Honeypot. A human never sees this field, so a human never fills it in;
+        most bots fill every input they find. Free, and it needs no third party.
+        Turnstile is the documented upgrade when this stops being enough — it is
+        not the default because it is one more dashboard step to get started. */}
+    <p style="position:absolute; left:-9999px" aria-hidden="true">
+      <label for="website">Leave this field empty</label>
+      <input id="website" name="website" type="text" tabindex="-1" autocomplete="off" />
+    </p>
+
+    <p><button class="button" type="submit">Send</button></p>
+  </form>
+
+  <p class="muted">Prefer email? <a href={`mailto:${brand.contactEmail}`}>{brand.contactEmail}</a></p>
+</RootLayout>

@@ -7,6 +7,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { eachDistHtml } from '../lib/html.mjs';
+import { distRelative } from '../lib/dist.mjs';
 
 const SEC = 'content';
 
@@ -24,7 +25,7 @@ export async function run({ project, reporter }) {
 
   const media = [], design = [];
   eachDistHtml(project.root, (rel, html) => {
-    const path = rel.replace(/^dist\//, '');
+    const path = distRelative(project.root, rel);
     if (MEDIA_KIT_RE.test(path)) media.push({ rel, html });
     if (DESIGN_KIT_RE.test(path)) design.push({ rel, html });
   });

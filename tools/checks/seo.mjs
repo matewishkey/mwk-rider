@@ -4,7 +4,7 @@
 
 import { eachDistHtml, isContentPage, headingLevels, headingAudit } from '../lib/html.mjs';
 import { readSrcFiles, headMetaFiles } from '../lib/src-scan.mjs';
-import { distFiles, readDist, countMatches, sitemapPages } from '../lib/dist.mjs';
+import { distFiles, readDist, countMatches, sitemapPages, distRelative } from '../lib/dist.mjs';
 
 const SEC = 'seo';
 
@@ -96,7 +96,7 @@ function checkMetaTags(project, reporter, headSrc, headFilePaths = []) {
   // check measure itself.
   const declared = project.hasDist ? sitemapPages(project.root) : null;
   const pages = declared
-    ? all.filter((p) => declared.has(p.rel.replace(/^dist\//, '')))
+    ? all.filter((p) => declared.has(distRelative(project.root, p.rel)))
     : all;
   const denominator = declared ? 'sitemap page(s)' : 'built page(s)';
 

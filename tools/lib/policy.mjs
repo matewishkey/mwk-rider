@@ -33,6 +33,11 @@ const HOUSE_STYLE = [
                                 // 2026-08-03 softening rather than raised by it
   'modules:output:static',      // SSR is a legitimate choice, not a defect
   'modules:adapter:cloudflare', // only meaningful if you deploy to Cloudflare
+  'modules:adapter:imageService', // ditto — and it only ever suggests anyway
+  // modules:adapter:on-demand is deliberately NOT here. It names no host: a
+  // prerender = false route with no adapter fails to build on Cloudflare,
+  // Vercel, Netlify, Node and Deno alike, and a build that cannot run is a
+  // defect on anyone's site.
   'modules:remotePatterns',     // R2 media-domain allowlisting
   'modules:ClientRouter',       // view transitions are a preference
   'modules:engines.node',       // declaring an engines floor is good hygiene, not a defect
