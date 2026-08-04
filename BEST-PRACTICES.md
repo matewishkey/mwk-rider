@@ -372,6 +372,45 @@ thing a version bump leaves behind. Each maps to a documented v7 breaking change
   finding should point. Widths under 640 px are not flagged: a pinned width that
   small is roughly what a phone wants anyway, and flagging a decorative texture
   is the noise that gets a tool ignored.
+- **A large image ships a ladder, not one fixed width.** Everything above judges
+  responsive images that already exist — the smallest rung of a `srcset`, a CSS
+  background that can never have one, an overstated `sizes` measured in a
+  browser. None of them says the thing that is arguably worth more: *this image
+  is large and ships as a single width, so every phone downloads the desktop
+  file*. That is this check. → 💡 `images: srcset:missing`
+
+  A candidate is a built `<img>` with no `srcset` and no `<picture>` ancestor
+  (its `<source>` siblings are the ladder) whose delivered width is knowable —
+  the width a `/cdn-cgi/image/` URL pins, or the intrinsic width of the file it
+  resolves to in `dist/`. A remote host or an AVIF file is unknowable offline,
+  and an unknown width is never a finding.
+
+  **The trap, and why this took three attempts to ship.** A legitimately
+  fixed-width image is common and *correct*: a logo, an avatar, an icon, a
+  diagram rendered at exactly one size. Flagging those is the crying-wolf
+  failure `tools/lib/policy.mjs` exists to prevent, and it is worse than not
+  having the check. So the thresholds are measured rather than chosen. Across
+  three real builds (tasmanvisa-web, matevisky-web, mergodon-com-web), every
+  single-width image that was *meant* to be one came in at ≤ 720 px — badge
+  strips at 200–300, portraits at 240–640, footer logos at 220 — while every one
+  that should have had a ladder was a 1200–1600 px photograph. Hence **1000 px**,
+  which sits in the empty gap between the two populations rather than at a round
+  number someone liked. Two further guards cover the wide-but-legitimate case: a
+  **50 KB** floor when the bytes are knowable (the same build's 1594 px brand
+  lockups are 21 and 25 KB, while its wide photographs start at 46 KB), and a
+  name filter for `logo`/`lockup`/`badge`/`icon`/`avatar`-shaped paths. Each of
+  the two real false positives the sweep produced is excluded by *both*.
+
+  Exempted images are counted, not discarded, so the pass line can say "none
+  needed a ladder (2 of them wider than 1000px, but …)" instead of implying
+  nothing wide was there — which would be a false statement about precisely the
+  images the guards exist for.
+
+  **Advisory in every mode**, and that is the shipping condition issue #12 set:
+  it earns a `🔧` only if a wider real-site sweep shows it staying quiet on
+  correct code. The measured sweep so far: silent on tasmanvisa-web (9 candidates,
+  0 findings) and matevisky-web (7, 0); 7 true findings on mergodon-com-web, all
+  blog and hero photographs pinned to a single desktop width.
 - **Transforms use `format=auto`, not an explicit format.** `format=auto` lets
   Cloudflare negotiate AVIF/webp per the browser's `Accept`; an explicit
   `format=webp` (the default Astro emits for bare markdown `![]()`) means no AVIF
@@ -583,10 +622,27 @@ lacking either, and a tool that says otherwise gets uninstalled. They report
   logo and a short description". Without one canonical page that becomes an email
   thread and inconsistent assets in the wild — the wrong logo, a stale
   description, someone's screenshot. It is the one URL you hand to press,
-  partners, sponsors and directories. A route matching `/media-kit`, `/press` or
-  `/presskit` must carry three things to be worth linking: a downloadable logo
-  asset, a paste-ready paragraph of boilerplate, and a contact route or `mailto:`.
+  partners, sponsors and directories. A route matching `/media`, `/media-kit`,
+  `/press`, `/presskit`, `/newsroom` or `/brand-kit` must carry three things to be
+  worth linking: a downloadable logo asset, a paste-ready paragraph of
+  boilerplate, and a contact route or `mailto:`.
   → `content: mediakit` (`⏭` with no `dist/`)
+
+  **The route list is the check's weak point, and it has failed once.**
+  tasmanvisa-web got a `🔧` for a missing media kit while serving a full
+  bilingual one at `/media/` — the single plain-English name that was not in a
+  list of three (issue #17). Two things came out of that. Bare `/media` is now
+  accepted, and with a **locale-prefixed translated slug** the name list can never
+  be the answer: `/hu/sajto/` matches nothing in English however long the list
+  gets. So the check reads the `hreflang` alternates a matching page emits and
+  accepts those pages too — the site already declares which pages are each
+  other's translations, for search engines, and reading that beats a per-language
+  dictionary of the word "press". Broadening a name list also means a page can
+  match the *route* and not be the thing (`/media/` as a photo gallery), so among
+  several matches the **best** candidate decides, never the first one the walk
+  hits: otherwise a site's real media kit gets reported as "page exists but is
+  missing a downloadable logo asset", which is a wrong finding rather than a
+  missed one.
 - **A design reference page.** This is the one that pays off for the agent
   audience. A `/design` (or `/styleguide`, `/design-kit`, `/tokens`) route that
   renders the site's *actual* tokens and components — colours, type scale,
@@ -939,18 +995,26 @@ and all of it is what users actually report. This domain loads the page in
 Chromium and measures what happened.
 
 - **`playwright` is deliberately not a dependency of this tool.** It is imported
-  dynamically, resolved from **the audited project first**, and the whole domain
-  `⏭`s with the install command when it isn't there — the same shape as
-  `lighthouse` without a key. `git clone && node audit.mjs` has to keep working
-  with no install step and no browser download; a headless Chromium is ~150 MB
-  and cannot be the price of an offline SEO check. Resolving from the project
-  rather than from the tool is the load-bearing half: rider is normally a clone
-  somewhere else entirely, so a bare `import('playwright')` looks in the wrong
-  `node_modules` and reports "not installed" about a project that installed it.
-  Playwright's entry is CommonJS, so its exports arrive on `default` under ESM —
-  destructuring `{ chromium }` yields `undefined`, which is indistinguishable
-  from absent. Both resolutions are tried, and both spellings read.
-  → `⏭ browser: playwright`, `browser: launch`
+  dynamically, and the whole domain `⏭`s with the install command when it isn't
+  there — the same shape as `lighthouse` without a key. `git clone && node
+  audit.mjs` has to keep working with no install step and no browser download; a
+  headless Chromium is ~150 MB and cannot be the price of an offline SEO check.
+  Resolving from **the audited project** is the load-bearing half: rider is
+  normally a clone somewhere else entirely, so a bare `import('playwright')`
+  looks in the wrong `node_modules` and reports "not installed" about a project
+  that installed it. Playwright's entry is CommonJS, so its exports arrive on
+  `default` under ESM — destructuring `{ chromium }` yields `undefined`, which is
+  indistinguishable from absent. Both resolutions are tried, and both spellings
+  read. → `⏭ browser: playwright`, `browser: launch`
+
+  **This is the tool's one exception to "never executes the audited project's
+  code", and it is disclosed rather than hidden.** Importing a driver out of the
+  project's `node_modules` means a hostile repository can reach the auditor
+  process — which four documents flatly denied until issue #19. The exception is
+  bounded: `--url` only (the offline audit never gets here), the auditor's own
+  tree is resolved **first** so a project copy loads only when there is no other,
+  and the run announces which copy it loaded. Distrust the repo? Omit `--url`.
+  → `⏭ browser: playwright:source`, and `SECURITY.md`
 - **A measured page is one page, and the output says which.** Everything below
   is measured on the single URL that was loaded, so the domain announces it up
   front rather than letting a homepage sample read as a site-wide verdict. Pass
@@ -1020,9 +1084,13 @@ came in from audited sites and were closed on 2026-08-03 by shipped checks —
 eager third-party embeds, `dist:size` flagging srcset rungs, CSS
 `background-image` (no srcset, no lazy loading), the two remaining font-hygiene
 traps, cross-origin `preconnect`, the two Astro 7 changes that build clean and
-ship wrong, and a glossary `DefinedTerm` page read as a missing Article. What is
-below is the older, quieter half — plus, where a gap is still open as an issue,
-the issue is the live record and the bullet here is only its summary.
+ship wrong, and a glossary `DefinedTerm` page read as a missing Article. A second
+round closed on 2026-08-04: three false-firing checks, the missing § browser
+section, the positive `srcset` assertion (§ images), a media-kit route list that
+missed `/media/` (§ content), and a threat-model claim four files made that the
+`browser` domain broke (`SECURITY.md`). What is below is the older, quieter half
+— plus, where a gap is still open as an issue, the issue is the live record and
+the bullet here is only its summary.
 
 - **Astro scoped CSS does not reach `innerHTML`-injected DOM.** A component's
   scoped styles are keyed on a `data-astro-cid-*` attribute the compiler stamps
@@ -1045,16 +1113,10 @@ the issue is the live record and the bullet here is only its summary.
 - **hreflang alternates on multi-locale pages.** Paired-locale posts should emit
   `rel="alternate" hreflang=…` (+ `x-default`); single-locale posts should omit
   the block entirely. The fixture smoke test checks this; the audit doesn't yet.
-- **Responsive `srcset`/`sizes`.** Large content images should ship responsive
-  variants, not a single fixed width. Partly covered now from the other side:
-  `images: dist:size` reads the ladders out of the built HTML and judges them by
-  their smallest rung, `images: background-image:fixed-width` flags a CSS
-  background that cannot have a ladder at all, and `browser:
-  images:rendered-size` names an overstated `sizes` when it measures one. What is
-  still missing is the positive assertion — *this large image has no `srcset` and
-  should*. Open as [#12](https://github.com/matewishkey/rider/issues/12), which
-  is the live record; it is unshipped because the threshold has to come from
-  measurement, or it flags the legitimately fixed-width logo.
+- ~~**Responsive `srcset`/`sizes`.**~~ Closed by `💡 images: srcset:missing` —
+  the practice is § images above. The thresholds that kept it in this list came
+  out of a three-build measurement rather than taste; it ships advisory, and
+  earns a `🔧` only if a wider sweep shows it staying quiet on correct code.
 - **Offline heading scan beyond the canonical gate (see also `headings:order`,
   which now names the component rather than the built page).** Today the offline outline
   check only inspects pages with a `<link rel="canonical">`; a page that should

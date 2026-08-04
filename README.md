@@ -209,7 +209,9 @@ Security issues: please use [private reporting](SECURITY.md), not a public issue
 
 ## Safety
 
-The tool is meant to be pointed at projects you don't control, so it **never executes the audited project's code** — config is read as text and parsed, never `import()`ed. It never writes to the project, and makes no network requests unless you pass `--url`. Details in [`SECURITY.md`](SECURITY.md).
+The tool is meant to be pointed at projects you don't control, so it **never executes the audited project's source** — config is read as text and parsed, never `import()`ed. It never writes to the project, and makes no network requests unless you pass `--url`.
+
+One documented exception: with `--url`, the optional `browser` domain imports `playwright`, and the copy it finds is usually the audited project's — so a hostile repo can reach the auditor process that way. Leave `--url` off (or use `-s live -s lighthouse`) when auditing something you actively distrust. Details in [`SECURITY.md`](SECURITY.md).
 
 ## Licence
 

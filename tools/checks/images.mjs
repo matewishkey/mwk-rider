@@ -14,6 +14,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, extname, relative } from 'node:path';
 import { transformSmells } from '../lib/cf-image.mjs';
 import { eachDistHtml, contentImgs, attrValue, srcsetUrls } from '../lib/html.mjs';
+import { imageSize } from '../lib/image-size.mjs';
 import { SKIP_DIST, distDir } from '../lib/dist.mjs';
 
 const SEC = 'images';
@@ -28,6 +29,26 @@ const SIZE_WARN_BG = 200 * 1024;     // CSS background raster without a transfor
 const BG_PINNED_WIDTH_MIN = 640;
 const SIZE_WARN_ASSET = 500 * 1024;  // PNG/JPG in src/assets/
 const SIZE_WARN_DIST = 300 * 1024;   // built content image byte budget
+
+// --- the positive srcset assertion (issue #12) --------------------------------
+// A legitimately fixed-width image is common and CORRECT — a logo, an avatar, an
+// icon, a diagram rendered at exactly one size. Flagging those is the crying-wolf
+// failure lib/policy.mjs exists to prevent, and worse than not checking at all.
+// So these numbers are measured, not chosen: across three real builds, every
+// single-width image that was genuinely meant to be one came in at ≤ 720 px
+// (badge strips at 200–300, portraits at 240–640, footer logos at 220), while
+// every one that should have had a ladder was a 1200–1600 px photograph.
+// See BEST-PRACTICES.md § images for the full measurement.
+const SRCSET_MIN_WIDTH = 1000;
+// Second, independent guard, for the local-file case where bytes are knowable.
+// A wide flat graphic is cheap — tasmanvisa-web's 1594 px brand lockups are 21
+// and 25 KB — and the phone rung of a ladder it doesn't have would save a
+// handful of KB. The wide *photographs* in the same build start around 46 KB.
+const SRCSET_MIN_BYTES = 50 * 1024;
+// Third guard: what the file calls itself. Named by the issue's own sketch, and
+// it independently excludes both real-world false positives the measurement
+// turned up (`/assets/press/…-lockup.png`, `/assets/images/badges/…`).
+const FIXED_WIDTH_OK_RE = /\b(logos?|lockups?|wordmarks?|icons?|badges?|sprites?|avatars?|emblems?|favicons?|qr)\b/i;
 
 const IT_PREFIX_RE = /\/cdn-cgi\/image\//;
 const SVG_OR_FAVICON_RE = /\.(svg|ico)$|\bfavicon\b/i;
@@ -49,6 +70,11 @@ export async function run({ project, reporter }) {
     transformParams: [],
     transformTotal: 0,
     altMissing: [],
+    // Built <img> that ship a single width with no srcset, and the subset of
+    // them wide enough that a phone is downloading a desktop image.
+    singleWidth: [],
+    singleWidthTotal: 0,
+    singleWidthExempt: 0,
     // Totals, so "nothing was wrong" and "there was nothing to look at" report
     // differently. `✅ routed — all content <img> go through a transform` on a
     // page with no images is a pass for work never done.
@@ -170,6 +196,29 @@ export async function run({ project, reporter }) {
       const noQuality = findings.transformParams.filter((f) => f.missingQuality);
       if (noQuality.length > 0) {
         reporter.suggest(SEC, 'transform:quality', `${noQuality.length} transform URL(s) set no quality= (Cloudflare defaults to 85) (e.g. ${truncate(noQuality[0].url, 90)})`, 'add an explicit quality (e.g. quality=80) to cap output size on photographic content');
+      }
+    }
+
+    // The positive assertion: a large image shipping one fixed width. Advisory in
+    // every mode — the threshold is measured (see the constants above) but it is
+    // still a threshold, and art direction can justify a single width.
+    if (findings.singleWidthTotal === 0) {
+      reporter.skip(SEC, 'srcset:missing', 'every content <img> in dist/ already carries a srcset (or its width is not knowable offline) — nothing to check');
+    } else if (findings.singleWidth.length === 0) {
+      const exempt = findings.singleWidthExempt
+        ? ` (${findings.singleWidthExempt} of them wider than ${SRCSET_MIN_WIDTH}px, but named like a logo/badge or under ${humanSize(SRCSET_MIN_BYTES)} — legitimately one size)`
+        : '';
+      reporter.pass(SEC, 'srcset:missing', `none of the ${findings.singleWidthTotal} single-width <img> in dist/ needs a ladder${exempt}`);
+    } else {
+      for (const f of findings.singleWidth) {
+        const weight = f.bytes != null ? `, ${humanSize(f.bytes)}` : '';
+        reporter.suggest(
+          SEC,
+          'srcset:missing',
+          `${f.width}px wide${weight} with no srcset — every phone downloads the ${f.width}px version (${truncate(f.src, 70)})`,
+          'give it a ladder: <Image widths={[400, 800, 1200]} sizes="…"> for a local asset, or a srcset of /cdn-cgi/image/width=…/ URLs for a transform — a logo or diagram that is genuinely one size is fine to leave',
+          { file: f.file },
+        );
       }
     }
 
@@ -322,8 +371,10 @@ function judgeDistSizes(findings) {
 function scanDistHtml(projectRoot, findings) {
   const seenUrl = new Set();
   const seenLadder = new Set();
+  const seenSingle = new Set();
   eachDistHtml(projectRoot, (rel, html) => {
     collectLadders(html, projectRoot, findings, seenLadder);
+    collectSingleWidth(html, rel, projectRoot, findings, seenSingle);
     const re = /\/cdn-cgi\/image\/[^"'`)\s>]+/g;
     let m;
     while ((m = re.exec(html)) !== null) {
@@ -352,6 +403,71 @@ function scanDistHtml(projectRoot, findings) {
       }
     }
   });
+}
+
+/**
+ * Built `<img>` that ship as a single fixed width — the positive half of the
+ * responsive-images practice (issue #12).
+ *
+ * Everything else here judges ladders that already exist: `dist:size` weighs the
+ * smallest rung, `background-image:fixed-width` flags a CSS background that can
+ * never have one, `browser: images:rendered-size` names an overstated `sizes`.
+ * None of them says *this image is large and has no ladder at all*.
+ *
+ * A candidate is an `<img>` with no `srcset`, no `<picture>` ancestor (its
+ * `<source>` siblings are the ladder), whose delivered width is knowable —
+ * either the width a transform URL pins, or the intrinsic width of the file it
+ * resolves to in the build. Deduped by `src`: the same component on 400 pages is
+ * one edit.
+ */
+function collectSingleWidth(html, rel, projectRoot, findings, seen) {
+  // An <img> inside <picture> gets its ladder from the sibling <source> tags.
+  const pictures = [...html.matchAll(/<picture\b[\s\S]*?<\/picture>/gi)].map((m) => [m.index, m.index + m[0].length]);
+
+  for (const m of html.matchAll(/<img\b((?:"[^"]*"|'[^']*'|[^>])*)>/gi)) {
+    const attrs = m[1];
+    if (attrValue(attrs, 'srcset')) continue;
+    if (pictures.some(([from, to]) => m.index > from && m.index < to)) continue;
+    const src = attrValue(attrs, 'src');
+    if (!src || src.startsWith('data:') || src.startsWith('blob:')) continue;
+    // An SVG is resolution-independent — it has no ladder to be missing, even
+    // when someone routes one through a transform that pins a width.
+    if (SVG_OR_FAVICON_RE.test(src)) continue;
+    if (!isContentImageRef(src) && !IT_PREFIX_RE.test(src)) continue;
+    if (seen.has(src)) continue;
+    seen.add(src);
+
+    // Two ways to know what width actually ships. A transform URL states it; a
+    // local build artifact has it in its own bytes. Anything else — a remote
+    // host, an unparsed format (AVIF) — is unknowable offline, and an unknown
+    // width is never a finding.
+    let width = null, bytes = null;
+    if (IT_PREFIX_RE.test(src)) {
+      width = pinnedWidth(src);
+    } else {
+      const path = distPathOf(src, projectRoot);
+      if (path) {
+        try {
+          const buf = readFileSync(join(projectRoot, path));
+          width = imageSize(buf)?.w ?? null;
+          bytes = buf.length;
+        } catch {}
+      }
+    }
+    if (width == null) continue;
+    findings.singleWidthTotal++;
+
+    if (width < SRCSET_MIN_WIDTH) continue;
+    // Wide, but one of the two guards says it is meant to be one size. Counted,
+    // not dropped: the pass line has to be able to say "none needed a ladder"
+    // without implying nothing here was wide, which would be a false statement
+    // about exactly the images the guards exist for.
+    if ((bytes != null && bytes < SRCSET_MIN_BYTES) || FIXED_WIDTH_OK_RE.test(src)) {
+      findings.singleWidthExempt++;
+      continue;
+    }
+    findings.singleWidth.push({ file: rel, src, width, bytes });
+  }
 }
 
 /**

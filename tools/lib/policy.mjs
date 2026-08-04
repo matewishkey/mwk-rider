@@ -107,6 +107,13 @@ const ADVISORY = [
   // fire on a compliant site. It reports where two smart-quote engines would
   // disagree; whether that is a bug is the author's call, never the tool's.
   'content:quotes:ambiguous',
+  // A legitimately fixed-width image is common and correct — a logo, an avatar,
+  // a diagram rendered at one size. The check guards against those three ways
+  // (a measured width floor, a byte floor, a name filter), but it is still a
+  // threshold, and art direction can justify a single width. It ships advisory
+  // and only earns a 🔧 if a wider real-site sweep shows it staying quiet on
+  // correct code — the promotion condition issue #12 set.
+  'images:srcset:missing',
   // Diagnosis, not verdict: what the LCP is waiting for, which third parties
   // weigh the most, and how the simulated numbers compare to the observed ones.
   // The scores next to them are the verdict; these are what make one readable.

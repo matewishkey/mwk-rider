@@ -6,9 +6,14 @@ live in `CLAUDE.md`; the *why* behind each individual check lives in
 
 ## Key decisions
 
-- **Verify, never provision — and never execute.** The tool reports; it never writes to
-  an audited project, and it never runs that project's code. Config is read as text and
-  parsed, never `import()`ed: auditing a repo must never be equivalent to running it.
+- **Verify, never provision — and never execute the project's source.** The tool
+  reports; it never writes to an audited project. Config is read as text and parsed,
+  never `import()`ed: auditing a repo must never be equivalent to running it. The single
+  exception is the optional `browser` domain, which imports `playwright` from the
+  project's `node_modules` when the auditor has no copy of its own — `--url` only,
+  auditor-tree-first, and announced in the output as `browser: playwright:source`.
+  It is documented in `SECURITY.md` rather than papered over (issue #19); a second
+  exception should not be added.
 - **Command-driven, never passive.** No contract `@import`, no auto-loading, nothing
   written into audited projects. If you find yourself wanting an always-on hook, stop —
   that's deliberately not what this is.

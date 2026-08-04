@@ -135,6 +135,32 @@ const jp = imageSize(jpeg(1200, 630));
 check('JPEG 1200×630 parsed (segment skip)', jp?.w === 1200 && jp?.h === 630, JSON.stringify(jp));
 check('non-image bytes → null', imageSize(Uint8Array.from([1, 2, 3, 4]).buffer) === null);
 
+// WebP is what an Astro build is actually made of, so images:srcset:missing can
+// read the width of almost nothing without it. All three container shapes, from
+// the RIFF spec. Verified against 131 real build artifacts by comparing each
+// parsed width to the `768w` descriptor Astro independently wrote for it.
+const RIFF = (chunk, payload) => {
+  const head = [...'RIFF'].map(c => c.charCodeAt(0)).concat([0, 0, 0, 0], [...'WEBP'].map(c => c.charCodeAt(0)), [...chunk].map(c => c.charCodeAt(0)), [0, 0, 0, 0]);
+  return Uint8Array.from(head.concat(payload)).buffer;
+};
+// Lossy: 3-byte frame tag + 3-byte start code, then 14-bit LE width and height.
+const webpLossy = (w, h) => RIFF('VP8 ', [0, 0, 0, 0x9d, 0x01, 0x2a, w & 255, (w >> 8) & 0x3f, h & 255, (h >> 8) & 0x3f]);
+// Lossless: 0x2f signature, then (width-1, height-1) as 14 bits each, packed LE.
+const webpLossless = (w, h) => {
+  const v = ((w - 1) & 0x3fff) | (((h - 1) & 0x3fff) << 14);
+  return RIFF('VP8L', [0x2f, v & 255, (v >>> 8) & 255, (v >>> 16) & 255, (v >>> 24) & 255, 0, 0, 0, 0, 0]);
+};
+// Extended: flags + reserved, then canvas (width-1, height-1) as 24-bit LE.
+const webpExtended = (w, h) => RIFF('VP8X', [0x10, 0, 0, 0,
+  (w - 1) & 255, ((w - 1) >> 8) & 255, ((w - 1) >> 16) & 255,
+  (h - 1) & 255, ((h - 1) >> 8) & 255, ((h - 1) >> 16) & 255]);
+for (const [name, bytes] of [['VP8 lossy', webpLossy(1600, 900)], ['VP8L lossless', webpLossless(1600, 900)], ['VP8X extended', webpExtended(1600, 900)]]) {
+  const got = imageSize(bytes);
+  check(`WebP ${name} 1600×900 parsed`, got?.w === 1600 && got?.h === 900, JSON.stringify(got));
+}
+check('a RIFF container that is not WebP → null',
+  imageSize(Uint8Array.from([...'RIFF', 0, 0, 0, 0, ...'WAVE'].map(c => typeof c === 'string' ? c.charCodeAt(0) : c)).buffer) === null);
+
 console.log('adapter checks are gated on on-demand rendering, not <Image> presence:');
 // <Image> on a fully prerendered build is optimized at build time by Sharp → no
 // adapter needed. The Cloudflare image service only matters when a route renders
@@ -785,6 +811,57 @@ check('a media-kit page with no logo or boilerplate is not a pass',
 check('  …nor is a design page that is a stub',
   row(stub, 'content', 'content/designkit')?.outcome === 'fix');
 
+// Reported by tasmanvisa-web (issue #17): a 🔧 for a missing media kit, on a
+// site serving a full bilingual one at /media/. A fixed list of three English
+// literals was the whole bug — the `data` domain next door already matches its
+// endpoints by pattern, which is why per-locale `rss.hu.xml` passes cleanly.
+for (const route of ['media', 'media-kit', 'press', 'presskit', 'newsroom', 'brand-kit']) {
+  check(`/${route}/ counts as a media kit`,
+    row(mkBuilt({ [`dist/${route}/index.html`]: MEDIA_OK }), 'content', 'content/mediakit')?.outcome === 'pass');
+}
+// A locale-prefixed TRANSLATED slug can never match an English name list,
+// however long it gets — but the site itself already says the two pages are the
+// same page, in the hreflang block it emits for search engines. Reading that is
+// a general answer; a dictionary of the word "press" per language is not.
+const HU = MEDIA_OK.replace('<head>', '<head><link rel="alternate" hreflang="hu" href="https://x.test/hu/sajto/">');
+const bilingual = mkBuilt({
+  'dist/media/index.html': HU.replace(/<a href="\/brand\/logo\.svg" download>logo<\/a>/, ''),
+  'dist/hu/sajto/index.html': MEDIA_OK,
+});
+check('a translated slug counts when the site links it as an hreflang alternate',
+  row(bilingual, 'content', 'content/mediakit')?.outcome === 'pass',
+  JSON.stringify(row(bilingual, 'content', 'content/mediakit')));
+// Broadening the name list means a page can match on route and not be the media
+// kit. Taking whichever the dist walk hit first would turn a site's real media
+// kit into "page exists but is missing a downloadable logo asset" — a wrong
+// finding, which is worse than the missed one it replaced.
+const twoCandidates = mkBuilt({
+  'dist/media/index.html': '<html><body><h1>Media</h1><p>Photo gallery.</p></body></html>',
+  'dist/press-kit/index.html': MEDIA_OK,
+});
+check('  …and with two matching routes the best candidate decides, not the first',
+  row(twoCandidates, 'content', 'content/mediakit')?.outcome === 'pass',
+  JSON.stringify(row(twoCandidates, 'content', 'content/mediakit')));
+// An x-default alternate pointing at `/` must not nominate the homepage: a
+// homepage with a logo, a long paragraph and a contact link would then pass this
+// check for a page that does not exist — a false ✅.
+const rootDefault = mkBuilt({
+  'dist/index.html': MEDIA_OK.replace('<head>', '<head><link rel="alternate" hreflang="x-default" href="/">'),
+  'dist/press/index.html': '<html><body><h1>Press</h1><p>Email us.</p>'
+    + '<link rel="alternate" hreflang="x-default" href="/"></body></html>',
+});
+check('  …and an x-default pointing at / does not nominate the homepage',
+  row(rootDefault, 'content', 'content/mediakit')?.outcome === 'fix',
+  JSON.stringify(row(rootDefault, 'content', 'content/mediakit')));
+
+// The finding text lists the names it accepts, and that list is hand-written
+// next to the pattern — so assert every name in it actually matches.
+const absent = row(mkBuilt({ 'dist/index.html': '<html><body><h1>hi</h1></body></html>' }), 'content', 'content/mediakit');
+for (const named of (absent?.message ?? '').match(/\/[a-z-]+/g) ?? []) {
+  check(`  …and the finding's own list is honest: ${named}`,
+    row(mkBuilt({ [`dist${named}/index.html`]: MEDIA_OK }), 'content', 'content/mediakit')?.outcome === 'pass');
+}
+
 // Astro's Fonts API emits a second @font-face per family carrying fallback
 // metrics, and inlines the same block into every page. Counting either naively
 // reported both real two-font sites as having four families.
@@ -1079,6 +1156,61 @@ check('  …while image-set() is exempt (it does DPR selection at least)',
   bgRow('<style>.c { background-image: image-set(url("/cdn-cgi/image/width=1600/a.jpg") 1x, url("/cdn-cgi/image/width=3200/a.jpg") 2x); }</style>')?.outcome === 'pass');
 check('  …and a small decorative texture is not worth a finding',
   bgRow('<style>.d { background-image: url("/cdn-cgi/image/width=320,format=auto/dots.png"); }</style>')?.outcome === 'pass');
+
+// The positive half of the same practice: a large image with NO ladder at all.
+// The thresholds were measured across three real builds (issue #12) — the whole
+// risk here is flagging a logo or a diagram that is legitimately one size, so
+// every guard gets its own assertion.
+console.log('a large image shipping one fixed width should have a ladder:');
+// imageSize reads the header only, so trailing bytes set the file's weight
+// without touching its dimensions — which is exactly the two-axis input needed.
+const webpFile = (w, h, kb) => {
+  const head = new Uint8Array(webpLossy(w, h));
+  const out = new Uint8Array(Math.max(head.length, kb * 1024));
+  out.set(head);
+  return Buffer.from(out);
+};
+const singleRows = (files, html) => runJson(mkBuilt({ 'dist/index.html': html, ...files }), ['-s', 'images', '--strict'])
+  .json?.results.filter(r => r.id === 'images/srcset-missing') ?? [];
+const ONE_IMG = (src) => `<html><body><img src="${src}" alt="a" width="16" height="9"></body></html>`;
+
+const wide = singleRows({ 'dist/hero.webp': webpFile(1600, 900, 120) }, ONE_IMG('/hero.webp'));
+check('a 1600px 120 KB <img> with no srcset → suggest, naming the width',
+  wide[0]?.outcome === 'suggest' && /1600px/.test(wide[0]?.message ?? ''), JSON.stringify(wide[0]));
+check('  …advisory even under --strict — the promotion condition is a wider sweep',
+  wide.every(r => r.outcome !== 'fix' && r.outcome !== 'block'));
+check('  …and a /cdn-cgi/image/ URL is judged on the width it pins',
+  singleRows({}, ONE_IMG('https://media.x.test/cdn-cgi/image/width=1600,format=auto,quality=80/hero.jpg'))[0]?.outcome === 'suggest');
+
+// Guard 1: the measured width floor. Every single-width image in three real
+// builds that was MEANT to be one came in at or under 720px.
+check('a 640px portrait is not a finding (the measured floor is 1000px)',
+  singleRows({ 'dist/face.webp': webpFile(640, 640, 120) }, ONE_IMG('/face.webp'))[0]?.outcome === 'pass');
+// Guard 2: the byte floor — a wide flat graphic has little to gain from a ladder.
+check('  …nor is a wide but 25 KB graphic, the shape of a brand lockup',
+  singleRows({ 'dist/mark.webp': webpFile(1594, 352, 25) }, ONE_IMG('/mark.webp'))[0]?.outcome === 'pass');
+// Guard 3: the name filter — and it must survive being heavy, since a transform
+// URL carries no weight to judge.
+check('  …nor a heavy one whose path says logo/badge/icon',
+  singleRows({ 'dist/press/site-lockup.webp': webpFile(1594, 352, 120) }, ONE_IMG('/press/site-lockup.webp'))[0]?.outcome === 'pass'
+  && singleRows({}, ONE_IMG('/cdn-cgi/image/width=1600,format=auto/badges/partner.png'))[0]?.outcome === 'pass');
+// The exempt ones are counted, so the pass line cannot imply nothing was wide.
+const exemptRow = singleRows({ 'dist/mark.webp': webpFile(1594, 352, 25) }, ONE_IMG('/mark.webp'))[0];
+check('  …and the pass line says how many were wide-but-exempt',
+  /1 of them wider than 1000px/.test(exemptRow?.message ?? ''), JSON.stringify(exemptRow));
+
+// An <img> already in a ladder, or one whose width nothing can know offline,
+// must never be a finding — the false positive is the only failure mode here.
+check('an <img> with a srcset is not a candidate',
+  singleRows({ 'dist/hero.webp': webpFile(1600, 900, 120) },
+    '<html><body><img src="/hero.webp" srcset="/hero.webp 1600w" alt="a"></body></html>')[0]?.outcome === 'skip');
+check('  …nor is one inside a <picture>, whose <source> is the ladder',
+  singleRows({ 'dist/hero.webp': webpFile(1600, 900, 120) },
+    '<html><body><picture><source srcset="/hero.webp 1600w"><img src="/hero.webp" alt="a"></picture></body></html>')[0]?.outcome === 'skip');
+check('  …nor a remote image whose width is unknowable offline',
+  singleRows({}, ONE_IMG('https://media.x.test/hero.jpg'))[0]?.outcome === 'skip');
+check('  …nor an SVG routed through a transform — it has no ladder to be missing',
+  singleRows({}, ONE_IMG('/cdn-cgi/image/width=1600,format=auto/diagram.svg'))[0]?.outcome === 'skip');
 
 // Cross-origin images. tasmanvisa-web served every hero and card from
 // media.tasmanvisa.com with no preconnect: blog index LCP 5424 ms, ~3500 ms once

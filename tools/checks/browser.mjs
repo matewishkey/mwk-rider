@@ -9,6 +9,19 @@
 // Playwright is NOT a dependency of this tool. It's imported dynamically and the
 // whole domain skips with instructions when it isn't installed, exactly like the
 // lighthouse domain does without a key. `git clone && node audit.mjs` stays true.
+//
+// THE ONE PLACE THIS TOOL RUNS CODE THAT CAME FROM THE AUDITED PROJECT.
+// Every other domain reads project bytes as text — config is parsed with regexes,
+// never `import()`ed, so auditing a repo is not equivalent to running it. This
+// domain has to import a real browser driver, and the copy that exists is
+// usually the one installed in the project (see loadPlaywright below). A
+// hostile repo shipping its own `node_modules/playwright` therefore gets code
+// execution in the auditor process. Three things bound it, and SECURITY.md
+// states it rather than claiming otherwise:
+//   - it needs `--url`; the default offline audit never reaches here
+//   - the tool's own resolution is tried FIRST, so a project copy only loads
+//     when the auditor has none of its own
+//   - whichever copy loads, the run says so out loud (`browser: playwright:source`)
 
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
@@ -18,9 +31,39 @@ import { untrusted, UNTRUSTED_NOTE } from '../lib/untrusted.mjs';
 
 const SEC = 'browser';
 
-function loadFromCwd() {
-  const req = createRequire(join(process.cwd(), 'package.json'));
-  return import(pathToFileURL(req.resolve('playwright')).href);
+/**
+ * Playwright, and where it came from — `{ chromium, from }`, or null.
+ *
+ * Two resolutions, tried in this order:
+ *
+ *   1. **The tool's own tree.** Safest: nothing here came out of the audited
+ *      project. Normally finds nothing, because rider ships no dependencies.
+ *   2. **The audited project's `node_modules`.** The load-bearing one: rider is
+ *      typically a clone somewhere else entirely, so a bare `import('playwright')`
+ *      looks in the wrong tree and reports "not installed" about a project that
+ *      installed it. This is also the step that executes project-supplied code —
+ *      hence the order, and hence `from` being reported.
+ *
+ * Playwright's entry is CommonJS, so under ESM its exports arrive on `default`
+ * rather than as named bindings — destructuring `{ chromium }` silently yields
+ * undefined and looks exactly like "not installed". Both spellings are read.
+ */
+async function loadPlaywright() {
+  const strategies = [
+    ['the auditor’s own node_modules', () => import('playwright')],
+    ['the audited project’s node_modules', () => {
+      const req = createRequire(join(process.cwd(), 'package.json'));
+      return import(pathToFileURL(req.resolve('playwright')).href);
+    }],
+  ];
+  for (const [from, load] of strategies) {
+    try {
+      const mod = await load();
+      const chromium = mod.chromium ?? mod.default?.chromium;
+      if (chromium) return { chromium, from };
+    } catch { /* try the next resolution strategy */ }
+  }
+  return null;
 }
 
 // A page that needs longer than this to become idle has a problem of its own.
@@ -31,26 +74,17 @@ const HEAVY_REQUEST_BYTES = 250 * 1024;
 const OVERSIZED_RATIO = 2.5;
 
 export async function run({ reporter, url, post }) {
-  // Resolve playwright from the AUDITED PROJECT first. The tool is typically a
-  // clone somewhere else entirely, so a bare `import('playwright')` resolves
-  // against the tool's own directory and never finds the copy the user actually
-  // installed in their site. Fall back to the tool's own resolution for the case
-  // where playwright sits alongside it.
-  // playwright's entry is CommonJS, so under ESM its exports arrive on `default`
-  // rather than as named bindings — destructuring `{ chromium }` silently yields
-  // undefined and looks exactly like "not installed".
-  let chromium;
-  for (const load of [loadFromCwd, () => import('playwright')]) {
-    try {
-      const mod = await load();
-      chromium = mod.chromium ?? mod.default?.chromium;
-      if (chromium) break;
-    } catch { /* try the next resolution strategy */ }
-  }
-  if (!chromium) {
+  const loaded = await loadPlaywright();
+  if (!loaded) {
     reporter.skip(SEC, 'playwright', 'playwright not installed — run `npm i -D playwright && npx playwright install chromium` in the project you are auditing, then re-run to enable the browser domain');
     return;
   }
+  const { chromium, from } = loaded;
+  // Say which copy loaded. This domain is the tool's one documented exception to
+  // "never executes the audited project's code" (SECURITY.md), and an exception
+  // nobody can see from the output is indistinguishable from the claim being
+  // false. Issue #19.
+  reporter.skip(SEC, 'playwright:source', `playwright loaded from ${from} — the browser domain is the one place this tool runs code that came from the project it is auditing (see SECURITY.md)`);
 
   let browser;
   try {

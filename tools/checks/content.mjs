@@ -7,15 +7,24 @@
 
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import { eachDistHtml } from '../lib/html.mjs';
-import { distRelative } from '../lib/dist.mjs';
+import { eachDistHtml, attrValue } from '../lib/html.mjs';
+import { distRelative, distDir } from '../lib/dist.mjs';
 
 const SEC = 'content';
 
 // Route shapes, matched on the built path. `/media-kit/index.html`, `/press.html`
 // and `/en/presskit/index.html` all count.
-const MEDIA_KIT_RE = /(^|\/)(media-?kit|press-?kit|press)(\.html|\/index\.html)$/i;
+//
+// Bare `/media` is in the list because it is the name a lot of sites actually
+// use — tasmanvisa-web reported a 🔧 for a missing media kit while serving a
+// full bilingual one at `/media/` (issue #17). The single-word route is if
+// anything the more common spelling on a small business site.
+const MEDIA_KIT_RE = /(^|\/)(media|media-?kit|press-?kit|press|news-?room|brand-?kit)(\.html|\/index\.html)$/i;
 const DESIGN_KIT_RE = /(^|\/)(design|design-?kit|design-?system|style-?guide|styleguide|tokens)(\.html|\/index\.html)$/i;
+
+// What the finding names when the route is absent. Kept next to the pattern it
+// describes; tools/test.mjs asserts each name it lists actually matches.
+const MEDIA_KIT_NAMES = '/media, /media-kit, /press, /presskit, /newsroom or /brand-kit';
 
 export async function run({ project, reporter }) {
   checkAmbiguousQuotes(project, reporter);
@@ -27,14 +36,63 @@ export async function run({ project, reporter }) {
   }
 
   const media = [], design = [];
+  const mediaAlternates = new Set(), designAlternates = new Set();
   eachDistHtml(project.root, (rel, html) => {
     const path = distRelative(project.root, rel);
-    if (MEDIA_KIT_RE.test(path)) media.push({ rel, html });
-    if (DESIGN_KIT_RE.test(path)) design.push({ rel, html });
+    if (MEDIA_KIT_RE.test(path)) { media.push({ rel, html }); collectAlternates(html, mediaAlternates); }
+    if (DESIGN_KIT_RE.test(path)) { design.push({ rel, html }); collectAlternates(html, designAlternates); }
   });
+  addAlternates(project.root, media, mediaAlternates);
+  addAlternates(project.root, design, designAlternates);
 
   checkMediaKit(reporter, media);
   checkDesignKit(reporter, design);
+}
+
+/**
+ * The `hreflang` alternates a page links to, as URL pathnames.
+ *
+ * This is how a translated slug counts. A route name list is English by
+ * construction, so `/hu/sajto/` could never match one however long the list
+ * gets — but the site itself already says the two pages are the same page, in
+ * the alternate block it emits for search engines. Reading that is a general
+ * answer to translated routing; a per-language dictionary of the word "press"
+ * is not. Raised alongside issue #17.
+ */
+function collectAlternates(html, out) {
+  for (const m of html.matchAll(/<link\b((?:"[^"]*"|'[^']*'|[^>])*)>/gi)) {
+    const attrs = m[1];
+    if (!/alternate/i.test(attrValue(attrs, 'rel') ?? '')) continue;
+    if (!attrValue(attrs, 'hreflang')) continue;
+    const href = attrValue(attrs, 'href');
+    if (!href) continue;
+    // Only the path matters. An hreflang href is normally absolute, but a
+    // relative one is legal, and a locale served from another host resolves to a
+    // path this build simply won't have — which costs a failed `existsSync`.
+    let path;
+    try { path = new URL(href, 'https://x.invalid').pathname; } catch { continue; }
+    out.add(path);
+  }
+}
+
+/** Pull each alternate's built HTML in, unless the walk already collected it. */
+function addAlternates(root, pages, paths) {
+  const have = new Set(pages.map((p) => p.rel));
+  for (const path of paths) {
+    const clean = path.split(/[?#]/)[0].replace(/^\//, '');
+    // The site root is never the media kit. An `x-default` alternate pointing at
+    // `/` would otherwise nominate the homepage, and a homepage carrying a logo,
+    // a long paragraph and a contact link would pass this check for a page that
+    // does not exist — a false ✅, which is the worst outcome the tool has.
+    if (clean === '' || clean === '/') continue;
+    for (const candidate of [join(clean, 'index.html'), `${clean.replace(/\/$/, '')}.html`]) {
+      const full = join(distDir(root), candidate);
+      const rel = relative(root, full);
+      if (have.has(rel) || !existsSync(full)) continue;
+      try { pages.push({ rel, html: readFileSync(full, 'utf8') }); have.add(rel); } catch {}
+      break;
+    }
+  }
 }
 
 /**
@@ -47,14 +105,17 @@ export async function run({ project, reporter }) {
  */
 function checkMediaKit(reporter, pages) {
   if (pages.length === 0) {
-    reporter.fix(SEC, 'mediakit', 'no /media-kit, /press or /presskit route in dist/', 'add one page carrying the logo files, a paste-ready description and a contact route — it is the URL you hand to anyone who asks for your assets');
+    reporter.fix(SEC, 'mediakit', `no ${MEDIA_KIT_NAMES} route in dist/`, 'add one page carrying the logo files, a paste-ready description and a contact route — it is the URL you hand to anyone who asks for your assets');
     return;
   }
-  const page = pages[0];
-  const missing = [];
-  if (!hasLogoAsset(page.html)) missing.push('a downloadable logo asset');
-  if (!hasBoilerplate(page.html)) missing.push('a paste-ready description (a paragraph of at least 120 characters)');
-  if (!hasContact(page.html)) missing.push('a contact route or mailto: link');
+  // The BEST candidate, not the first one found. Broadening the name list means
+  // a page can match on its route and not be the media kit (`/media/` as a
+  // gallery, `/press/` as a news index), and taking whichever the dist walk hit
+  // first would turn a site's real media kit into "page exists but is missing a
+  // downloadable logo asset" — a wrong finding, worse than the missed one.
+  const { page, missing } = pages
+    .map((page) => ({ page, missing: mediaKitMissing(page.html) }))
+    .sort((a, b) => a.missing.length - b.missing.length)[0];
 
   if (missing.length === 0) {
     reporter.pass(SEC, 'mediakit', 'logo, boilerplate and a contact route', { file: page.rel });
@@ -81,13 +142,24 @@ function checkDesignKit(reporter, pages) {
     reporter.fix(SEC, 'designkit', 'no /design, /styleguide or /design-kit route in dist/', 'add a page rendering the real tokens and components — colours, type scale, spacing, buttons, cards, form controls — so what exists is visible without reading every component');
     return;
   }
-  const page = pages[0];
-  const evidence = designEvidence(page.html);
+  // Best candidate, same reasoning as the media kit above.
+  const { page, evidence } = pages
+    .map((page) => ({ page, evidence: designEvidence(page.html) }))
+    .sort((a, b) => b.evidence.length - a.evidence.length)[0];
   if (evidence.length >= 2) {
     reporter.pass(SEC, 'designkit', evidence.join(', '), { file: page.rel });
   } else {
     reporter.fix(SEC, 'designkit', `page exists but looks like a stub (${evidence.length ? evidence.join(', ') : 'no tokens or component samples rendered'})`, 'render the tokens themselves — swatches from the real custom properties, the type scale, and one live instance of each component', { file: page.rel });
   }
+}
+
+/** What a page claiming to be the media kit does not carry. Empty = it is one. */
+function mediaKitMissing(html) {
+  const missing = [];
+  if (!hasLogoAsset(html)) missing.push('a downloadable logo asset');
+  if (!hasBoilerplate(html)) missing.push('a paste-ready description (a paragraph of at least 120 characters)');
+  if (!hasContact(html)) missing.push('a contact route or mailto: link');
+  return missing;
 }
 
 function hasLogoAsset(html) {

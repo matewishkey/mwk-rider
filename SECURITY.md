@@ -10,7 +10,15 @@ Expect an acknowledgement within a few days. This is a small project maintained 
 
 This tool is designed to be pointed at **projects you may not control** — that's the whole point of an auditor. So the security properties that matter are about what happens when it reads a hostile repository.
 
-**It never executes the audited project's code.** Config files (`astro.config.*`, `scripts/og.config.mjs`, `package.json`, `tsconfig.json`) are read as text and parsed with regexes, never `import()`ed or evaluated. This is a deliberate constraint, documented at the top of `tools/lib/project.mjs`. An earlier version did dynamically import `scripts/og.config.mjs`, which meant auditing a directory ran whatever that file contained; that was removed. **If you find a path where project content reaches an evaluator, a shell, or a filesystem write, that's a vulnerability — please report it.**
+**It never executes the audited project's source.** Config files (`astro.config.*`, `scripts/og.config.mjs`, `package.json`, `tsconfig.json`) are read as text and parsed with regexes, never `import()`ed or evaluated. This is a deliberate constraint, documented at the top of `tools/lib/project.mjs`. An earlier version did dynamically import `scripts/og.config.mjs`, which meant auditing a directory ran whatever that file contained; that was removed. **If you find a path where project content reaches an evaluator, a shell, or a filesystem write, that's a vulnerability — please report it.**
+
+**The one exception, stated rather than hidden: the optional `browser` domain imports `playwright`, and the copy it finds is usually the audited project's.** A browser domain cannot exist without loading a real browser driver, and the copy that exists is normally the one installed in the site being audited — rider is typically a clone somewhere else, so resolving only from its own tree would report "not installed" about a project that installed it. So a hostile repository shipping its own `node_modules/playwright` can get code execution in the auditor process. That is a real property of this tool, not a claim we can talk our way out of, and it is bounded three ways:
+
+- it needs `--url`. The seven offline domains never reach this code, so the default audit of an unknown repository is unaffected.
+- the tool's **own** resolution is tried first. A project's copy only loads when the auditor has none of its own.
+- whichever copy loads, the run says so: `⏭ browser: playwright:source — playwright loaded from …`.
+
+If you are auditing a repository you genuinely do not trust, run it without `--url` (or with `-s live -s lighthouse`, which skips the browser domain), and the "no project code executes" property holds completely. Reports of any *other* execution path are in scope as above.
 
 **It never writes to the audited project.** The tool only reads. It creates no files, modifies nothing, and installs nothing.
 
@@ -24,6 +32,6 @@ The tool has no other credentials, no config file, no telemetry, and no update m
 
 ## Scope
 
-In scope: anything that lets an audited project's contents cause code execution, file writes outside the tool, credential disclosure, or network requests to unintended hosts.
+In scope: anything that lets an audited project's contents cause code execution, file writes outside the tool, credential disclosure, or network requests to unintended hosts — other than the documented `browser`/`playwright` path above, which is a known trade-off rather than an open report.
 
 Out of scope: a check producing a wrong finding. That's a correctness bug — please open a normal issue for it.

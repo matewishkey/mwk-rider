@@ -82,6 +82,7 @@ const RULES = [
   ['images/assets-size', 'images', 'assets:size', 'A large raster in src/assets/ is repo weight; if it is not imported it also ships as-is.'],
   ['images/dist-size', 'images', 'dist:size', 'An oversized built image is bytes every visitor downloads.'],
   ['images/alt', 'images', 'alt', 'A content image with no alt attribute is a WCAG 1.1.1 failure. alt="" is fine — that means decorative.'],
+  ['images/srcset-missing', 'images', 'srcset:missing', 'A large image shipping one fixed width sends the desktop file to every phone. Advisory: a logo or a diagram is legitimately one size, so the thresholds are measured and it never fails a run.'],
   ['images/transform-params', 'images', 'transform:params', 'Reports when there were no transform URLs to inspect.'],
   ['images/transform-format', 'images', 'transform:format', 'format=auto lets Cloudflare negotiate AVIF/webp; an explicit format forfeits that and can fall back to the raw source.'],
   ['images/transform-quality', 'images', 'transform:quality', 'Without an explicit quality= Cloudflare defaults to 85, which is generous for photographs.'],
@@ -158,6 +159,7 @@ const RULES = [
 
   // --- browser ---------------------------------------------------------------
   ['browser/playwright', 'browser', 'playwright', 'Reports that the optional browser domain could not run because playwright is not installed.'],
+  ['browser/playwright-source', 'browser', 'playwright:source', "Names which node_modules playwright loaded from. This domain is the tool's one exception to never executing the audited project's code, and an exception you cannot see in the output is indistinguishable from the claim being false."],
   ['browser/launch', 'browser', 'launch', 'Reports that Chromium could not be launched.'],
   ['browser/scope', 'browser', 'scope', 'Names the single page every browser finding was measured on — a homepage sample must not read as a site-wide verdict.'],
   ['browser/load', 'browser', 'load', 'The page must finish loading in a real browser before anything else can be measured.'],
