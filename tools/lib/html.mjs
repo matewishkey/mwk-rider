@@ -97,6 +97,38 @@ export function hasAttr(attrs, name) {
 }
 
 /**
+ * The URLs in a `srcset`, in order — "a.webp 480w, b.webp 800w" → ["a.webp", "b.webp"].
+ *
+ * NOT `split(',')`. A srcset URL may contain commas, and on the delivery this
+ * baseline recommends it always does: `/cdn-cgi/image/width=800,format=auto,
+ * quality=80/hero.webp` shatters into three fragments, one of which —
+ * `format=auto` — is shared by every transformed image on the page. `perf:
+ * preload:pair` paired preloads to arbitrary unrelated `<img>` on that
+ * collision and reported byte-identical pairs as mismatched.
+ *
+ * This is the HTML spec's own algorithm: a candidate's URL is a run of
+ * non-whitespace, and only a *trailing* comma ends it (the descriptor-less
+ * `a.webp, b.webp` form). So `a.webp,b.webp` is one URL, exactly as a browser
+ * reads it, and a comma inside a transform path stays where it belongs.
+ */
+export function srcsetUrls(srcset) {
+  const s = String(srcset ?? '');
+  const out = [];
+  let i = 0;
+  while (i < s.length) {
+    while (i < s.length && /[\s,]/.test(s[i])) i++;           // between candidates
+    const start = i;
+    while (i < s.length && !/\s/.test(s[i])) i++;             // the URL
+    const url = s.slice(start, i);
+    if (!url) break;
+    if (url.endsWith(',')) { out.push(url.replace(/,+$/, '')); continue; }
+    out.push(url);
+    while (i < s.length && s[i] !== ',') i++;                 // skip its descriptor
+  }
+  return out.filter(Boolean);
+}
+
+/**
  * Content <img> tags in a document, as { src, hasAlt }.
  *
  * The total matters as much as the offenders: a check that reports "all content
@@ -110,9 +142,7 @@ export function contentImgs(html) {
   for (const m of html.matchAll(/<img\b((?:"[^"]*"|'[^']*'|[^>])*)>/gi)) {
     const attrs = m[1];
     // srcset-only images are still content images; fall back to its first URL.
-    const src = attrValue(attrs, 'src')
-             ?? (attrValue(attrs, 'srcset') ?? '').split(',')[0]?.trim().split(/\s+/)[0]
-             ?? '';
+    const src = attrValue(attrs, 'src') ?? srcsetUrls(attrValue(attrs, 'srcset'))[0] ?? '';
     if (!src || /\.(svg|ico)(\?|#|$)|\bfavicon\b/i.test(src)) continue;
     if (src.startsWith('data:') || src.startsWith('blob:')) continue;
     // Anchor on an attribute-name boundary (start or whitespace), NOT \b — \b

@@ -12,6 +12,7 @@ import { imageSize } from '../lib/image-size.mjs';
 import { collectJsonLd, ldTypes, hasArticleType, classifyPage } from '../lib/jsonld.mjs';
 import { untrusted, capped, UNTRUSTED_NOTE } from '../lib/untrusted.mjs';
 import { declaresImmutableAssets } from '../lib/headers.mjs';
+import { outOfFlowSelectors, inlineStyles, stylesheetHrefs, isOutOfFlow } from '../lib/css-flow.mjs';
 import {
   BEACON_SIGNALS, RUM_SIGNALS, ZARAZ_SIGNALS, GA_THIRD_PARTY_SIGNALS,
   matchSignals, hasSignal,
@@ -357,6 +358,28 @@ async function fetchBytes(url) {
   } catch { return null; }
 }
 
+// The stylesheets the audited pages load, as one out-of-flow selector set.
+// Astro emits per-route sheets, so this is a handful of fetches; capped anyway
+// so a page linking dozens cannot turn one domain into a crawl. A sheet that
+// fails to fetch just isn't in the set — the check then behaves as it always did.
+const MAX_STYLESHEETS = 6;
+
+async function pageOutOfFlow(pages, get) {
+  const css = [];
+  const seen = new Set();
+  for (const page of pages) {
+    css.push(...inlineStyles(page.text));
+    for (const href of stylesheetHrefs(page.text)) {
+      const url = absolutize(href, page.url ?? href);
+      if (seen.has(url) || seen.size >= MAX_STYLESHEETS) continue;
+      seen.add(url);
+      const r = await get(url, { headers: { Accept: 'text/css,*/*;q=0.1', 'Sec-Fetch-Dest': 'style', 'Sec-Fetch-Mode': 'no-cors' } });
+      if (r.ok && r.status === 200) css.push(r.text);
+    }
+  }
+  return outOfFlowSelectors(css);
+}
+
 // Images — content imgs routed + sized + under byte budget -------------------
 
 async function auditImages(home, postPath, base, get, head, reporter) {
@@ -365,6 +388,8 @@ async function auditImages(home, postPath, base, get, head, reporter) {
     const p = await get(postPath);
     if (p.ok && p.status === 200) pages.push(p);
   }
+
+  const flow = await pageOutOfFlow(pages, get);
 
   const imgs = [];
   for (const page of pages) {
@@ -389,9 +414,10 @@ async function auditImages(home, postPath, base, get, head, reporter) {
     return;
   }
 
-  let routedOk = 0, sizedOk = 0;
+  let routedOk = 0, sizedOk = 0, outOfFlow = 0;
   const noQuality = [];
   const noAlt = [];
+  const noSize = [];
   const { shown: inspected, dropped } = capped(imgs, MAX_IMAGE_FINDINGS);
   if (dropped) {
     reporter.skip('images', 'delivery', `${imgs.length} content images found; inspecting the first ${MAX_IMAGE_FINDINGS}. ${dropped} not measured`);
@@ -413,9 +439,16 @@ async function auditImages(home, postPath, base, get, head, reporter) {
     // attrValue, not /\bwidth=/: \b matches inside `data-width=`, so a tag with
     // only data-attributes passed the CLS check. A value is required — a bare
     // `width` reserves no space.
+    // An absolutely-positioned image is out of flow: it has nothing to shift,
+    // and inset/height:100% override the ratio box the attributes would create.
+    // Adding them to satisfy this check would be cargo cult — lib/css-flow.mjs
+    // has the measurement that forced the carve-out. Collected, not reported one
+    // by one: a shared component puts the same defect on every card on the page,
+    // and 20 findings for one fix is what buries the other 1.
     const sized = attrValue(img.attrs, 'width') != null && attrValue(img.attrs, 'height') != null;
     if (sized) sizedOk++;
-    else reporter.fix('images', 'cls', 'no width/height attr → layout shift (CLS)', 'use <Image> (bakes dimensions) or add width+height', { url: img.src });
+    else if (isOutOfFlow(img.attrs, flow)) outOfFlow++;
+    else if (!noSize.includes(img.src)) noSize.push(img.src);
 
     // Transform-param anti-patterns, visible in the URL itself.
     const smells = transformSmells(img.src);
@@ -434,7 +467,9 @@ async function auditImages(home, postPath, base, get, head, reporter) {
   }
   const sampled = `on ${pages.length === 1 ? 'the homepage only' : `${pages.length} pages`}`;
   if (routedOk === inspected.length) reporter.pass('images', 'routed', `${routedOk}/${inspected.length} through an image transform, ${sampled}`);
-  if (sizedOk === inspected.length)  reporter.pass('images', 'cls', `${sizedOk}/${inspected.length} have width+height, ${sampled}`);
+  const flowAside = outOfFlow ? ` (${outOfFlow} absolutely positioned — out of flow, nothing to shift)` : '';
+  if (noSize.length === 0) reporter.pass('images', 'cls', `${sizedOk}/${inspected.length} have width+height${flowAside}, ${sampled}`);
+  else reporter.fix('images', 'cls', `${noSize.length} content <img> carry no width/height → layout shift (CLS)${flowAside}`, 'use <Image> (bakes dimensions) or add width+height', { url: noSize[0] });
   if (noAlt.length === 0) reporter.pass('images', 'alt', `${inspected.length}/${inspected.length} carry an alt attribute, ${sampled}`);
   else reporter.fix('images', 'alt', `${noAlt.length} content <img> have no alt attribute`, 'add alt text (alt="" only if decorative)', { url: noAlt[0] });
   if (noQuality.length) reporter.suggest('images', 'transform:quality', `${noQuality.length} transform URL(s) set no quality= (Cloudflare defaults to 85)`, 'add an explicit quality (e.g. quality=80) to cap output size on photographic content', { url: noQuality[0] });

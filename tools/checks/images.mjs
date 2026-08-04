@@ -13,7 +13,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, extname, relative } from 'node:path';
 import { transformSmells } from '../lib/cf-image.mjs';
-import { eachDistHtml, contentImgs, attrValue } from '../lib/html.mjs';
+import { eachDistHtml, contentImgs, attrValue, srcsetUrls } from '../lib/html.mjs';
 import { SKIP_DIST, distDir } from '../lib/dist.mjs';
 
 const SEC = 'images';
@@ -389,13 +389,6 @@ function collectLadders(html, projectRoot, findings, seenLadder) {
     const srcset = attrValue(m[1], 'srcset');
     if (srcset) add(srcsetUrls(srcset));
   }
-}
-
-// "a.webp 480w, b.webp 800w" → ["a.webp", "b.webp"]. Commas inside a URL are
-// legal but vanishingly rare in built output; splitting on ", " would break on
-// the descriptor-less form, so split on comma and take the first token.
-function srcsetUrls(srcset) {
-  return srcset.split(',').map((s) => s.trim().split(/\s+/)[0]).filter(Boolean);
 }
 
 // A root-relative built asset URL → the path walkDir reports it under, or null

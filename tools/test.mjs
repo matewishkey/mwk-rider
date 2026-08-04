@@ -78,6 +78,31 @@ check('a located finding reports file + line as fields',
   clsRow?.file === 'src/pages/index.astro' && clsRow?.line === 2, JSON.stringify(clsRow));
 check('  …and its name is just the rule', clsRow?.name === 'cls:img-dimensions');
 
+// An out-of-flow image cannot shift the page, and inset/height:100% override the
+// ratio box width/height would create — so demanding them is cargo cult. This is
+// the shape rider's own background-image advice produces, and it fired 20 times
+// on a page its browser domain measured at CLS 0.001.
+const flowDir = tmpProject('rider-cls-flow-');
+writeFileSync(join(flowDir, 'package.json'), JSON.stringify({ name: 'fx', type: 'module', dependencies: { astro: '^7.1.6' } }));
+writeFileSync(join(flowDir, 'astro.config.mjs'), "export default { output: 'static' };\n");
+mkdirSync(join(flowDir, 'src', 'components'), { recursive: true });
+mkdirSync(join(flowDir, 'src', 'pages'), { recursive: true });
+writeFileSync(join(flowDir, 'src', 'pages', 'index.astro'), '<p>x</p>\n');
+writeFileSync(join(flowDir, 'src', 'components', 'CoverImage.astro'),
+  '<div class="frame"><img class="cover-image" src="/hero.png" alt="" loading="lazy"></div>\n'
+  + '<style>\n.frame { position: relative; aspect-ratio: 16/9; }\n.cover-image { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }\n</style>\n');
+const flowRows = runJson(flowDir, ['-s', 'perf']).json?.results ?? [];
+const flowRow = flowRows.find(r => r.id === 'perf/cls-img-dimensions');
+check('an absolutely-positioned fill image is not a CLS finding',
+  flowRow?.outcome === 'pass' && /absolutely positioned/.test(flowRow?.message ?? ''), JSON.stringify(flowRow));
+// The carve-out has to stay narrow: the same tag with the positioning rule
+// removed is still the defect the check exists for.
+writeFileSync(join(flowDir, 'src', 'components', 'CoverImage.astro'),
+  '<div class="frame"><img class="cover-image" src="/hero.png" alt="" loading="lazy"></div>\n'
+  + '<style>\n.cover-image { width: 100%; object-fit: cover; }\n</style>\n');
+check('  …while the same image in normal flow still is',
+  runJson(flowDir, ['-s', 'perf']).json?.results.find(r => r.id === 'perf/cls-img-dimensions')?.outcome === 'fix');
+
 console.log('section scoping (-s seo) returns only that domain:');
 const scoped = runJson(FIXTURE, ['-s', 'seo']);
 check('only seo results', scoped.json?.results.every(r => r.section === 'seo'));
@@ -392,7 +417,7 @@ check('> inside an attribute value does not hide alt',
 check('srcset-only image with no alt is still caught',
   imgsMissingAlt('<img srcset="/a.png 1x, /b.png 2x">').length === 1);
 
-const { attrValue, hasAttr } = await import('./lib/html.mjs');
+const { attrValue, hasAttr, srcsetUrls } = await import('./lib/html.mjs');
 check('data-src does not satisfy src', attrValue('data-src="/a.png"', 'src') === null);
 check('data-width does not satisfy width', hasAttr('data-width="8"', 'width') === false);
 check('unquoted attribute values are read', attrValue('src=/a.png', 'src') === '/a.png');
@@ -464,6 +489,27 @@ check('comment blanking preserves offsets and line count',
   stripComments('a // x\nb').split('\n').length === 2);
 check('  …and leaves a URL alone', /https:\/\/example\.com/.test(stripComments('const u = "https://example.com/x";')));
 
+// A `/*` inside a string literal is not a comment opener. The Content Layer
+// loader line is the common carrier, and the blanking used to run from it to
+// the next real `*/` — swallowing the `schema:` key and reporting a fully
+// schema'd collection as having none. Needs BOTH halves to reproduce.
+const GLOB_CFG = [
+  'const c = defineCollection({',
+  "  loader: glob({ pattern: '**/*.md', base: './src/content/posts' }),",
+  '  schema: z.object({',
+  '    /** A perfectly ordinary JSDoc comment. */',
+  '    title: z.string(),',
+  '  }),',
+  '});',
+].join('\n');
+check("a `/*` inside a string literal does not open a comment", /\bschema\s*:/.test(stripComments(GLOB_CFG)));
+check('  …while a real block comment is still blanked',
+  !/canonical/.test(stripComments('/* rel="canonical" */\nconst x = 1;')));
+check("  …and an apostrophe in .astro prose cannot swallow the next line's comment",
+  !/og:image/.test(stripComments("<p>don't</p>\n// og:image here\n<b>y</b>")));
+check('  …an unterminated /* leaves the file readable rather than blanking it to EOF',
+  /canonical/.test(stripComments('const p = 1; /* oops\nrel="canonical"')));
+
 // Auditing a repo must never be equivalent to running it.
 const rceDir = tmpProject('rider-rce-');
 writeFileSync(join(rceDir, 'package.json'), JSON.stringify({ name: 'fx', type: 'module', dependencies: { astro: '^7.1.6' } }));
@@ -516,6 +562,17 @@ const glossary = '<!doctype html><html><head>' + head('/glossary/agent', '{"@typ
 // Wrappers only — says nothing about what the page is, so it stays a finding.
 const bare = '<!doctype html><html><head>' + head('/bare', '[{"@type":"WebPage"},{"@type":"WebSite"}]')
   + '</head><body><h1>Bare</h1></body></html>';
+// Two images, both without width/height: one absolutely inset to fill a sized
+// parent (out of flow, cannot shift anything) and one plain in-flow shot. Only
+// the second is a CLS defect, and the rule that says so is inside an @media.
+const cover = '<!doctype html><html><head>' + head('/cover', '{"@type":"TechArticle"}')
+  + '<link rel="stylesheet" href="/_astro/cover.css">'
+  + '</head><body><h1>Cover</h1>'
+  + '<div class="frame"><img class="cover-image" src="/_astro/hero.png" alt=""></div>'
+  + '<img class="inline-shot" src="/_astro/shot.png" alt="a shot">'
+  + '</body></html>';
+const coverCss = '.frame { position: relative; aspect-ratio: 16/9; }\\n'
+  + '@media (min-width: 40em) { .cover-image { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; } }\\n';
 const sitemapIndex = '<?xml version="1.0"?><sitemapindex><sitemap><loc>http://HOST/sitemap-0.xml</loc></sitemap></sitemapindex>';
 const sitemap = '<?xml version="1.0"?><urlset><url><loc>http://HOST/</loc></url>'
   + '<url><loc>http://HOST/wiki</loc></url><url><loc>http://HOST/wiki/kettle-clock</loc></url></urlset>';
@@ -527,6 +584,8 @@ const srv = createServer((req, res) => {
     res.end(req.method === 'HEAD' ? undefined : buf);
   };
   const url = req.url.replace(/\\/$/, '') || '/';
+  if (url === '/_astro/cover.css') return send(coverCss, 'text/css');
+  if (url === '/_astro/hero.png' || url === '/_astro/shot.png') return send(png, 'image/png');
   // Served no-cache, exactly as \`astro preview\` serves a hashed asset (measured).
   if (url.startsWith('/_astro/')) {
     const buf = Buffer.from('console.log(1)');
@@ -539,6 +598,7 @@ const srv = createServer((req, res) => {
   if (url === '/wiki/kettle-clock') return send(entry, 'text/html');
   if (url === '/glossary/agent') return send(glossary, 'text/html');
   if (url === '/bare') return send(bare, 'text/html');
+  if (url === '/cover') return send(cover, 'text/html');
   if (url === '/') return send(home, 'text/html');
   res.writeHead(404, { 'content-type': 'text/html', 'content-length': '3' });
   res.end(req.method === 'HEAD' ? undefined : '404');
@@ -610,7 +670,19 @@ check('  …while the same response with no _headers to explain it still fires',
 // When discovery genuinely fails, the ⏭ must name what did not run — "clean"
 // and "didn't check" have to be distinguishable in the output.
 const noPost = runJson(tmpdir(), ['-s', 'live', '--url', `http://127.0.0.1:${port}/wiki/kettle-clock`]);
+
+// The served-side twin of the perf carve-out: the positioning lives in a linked
+// stylesheet (and inside an @media), so the check has to fetch and read it. On
+// tasmanvisa-web the un-carved version reported 20 of these, all on one shape,
+// on a page measured at CLS 0.001 — hence one aggregated finding, not one per tag.
+const coverCls = runJson(tmpdir(), ['-s', 'live', '--url', `http://127.0.0.1:${port}`, '--post', '/cover'])
+  .json?.results.find(r => r.id === 'images/cls');
 srv.kill();
+check('a linked stylesheet positioning an image out of flow spares it the CLS finding',
+  coverCls?.outcome === 'fix' && /^1 content <img>/.test(coverCls?.message ?? '')
+  && /1 absolutely positioned/.test(coverCls?.message ?? ''), JSON.stringify(coverCls));
+check('  …and the in-flow image it does report is named once, not per page',
+  /shot\.png/.test(coverCls?.url ?? ''), JSON.stringify(coverCls?.url));
 const skipRow = noPost.json?.results.find(r => r.id === 'seo/post' && r.outcome === 'skip');
 check('an undiscoverable content page names the skipped checks',
   skipRow != null && /seo\/title/.test(skipRow.message) && /data\/post-jsonld/.test(skipRow.message),
@@ -1046,6 +1118,23 @@ check('  …while a byte-identical pair reports nothing',
   perfRow('perf/preload-pair', IMG,
     '<link rel="preload" as="image" imagesrcset="/h-800.webp 800w, /h-1600.webp 1600w" imagesizes="(max-width: 700px) 100vw, 700px">') === null);
 
+// A Cloudflare transform path carries commas, so splitting a srcset on `,` made
+// every transformed image on the page share the fragment `format=auto`. The
+// preload then paired with an arbitrary unrelated <img> and its srcset "differed"
+// — the check firing hardest on the delivery this baseline recommends.
+const CF = (w, f) => `/cdn-cgi/image/width=${w},format=auto,quality=80/${f}`;
+check('a Cloudflare transform URL is one srcset candidate, not three',
+  JSON.stringify(srcsetUrls(`${CF(400, 'a.jpg')} 400w, ${CF(800, 'a.jpg')} 800w`)) ===
+  JSON.stringify([CF(400, 'a.jpg'), CF(800, 'a.jpg')]));
+check('  …and the descriptor-less form still splits (a.webp, b.webp)',
+  JSON.stringify(srcsetUrls('/a.webp, /b.webp')) === JSON.stringify(['/a.webp', '/b.webp']));
+check('  …while no-space commas are one URL, exactly as a browser reads them',
+  JSON.stringify(srcsetUrls('/a.webp,b.webp')) === JSON.stringify(['/a.webp,b.webp']));
+check('a preload for an image with no <img> on the page pairs with nothing',
+  perfRow('perf/preload-pair',
+    `<img src="${CF(400, 'sydney.jpg')}" srcset="${CF(400, 'sydney.jpg')} 400w, ${CF(800, 'sydney.jpg')} 800w" sizes="50vw" alt="s">`,
+    `<link rel="preload" as="image" imagesrcset="${CF(800, 'hero.webp')} 1x" imagesizes="100vw">`) === null);
+
 // A pass with no message is indistinguishable from a check that never ran —
 // the failure mode this tool cares most about. Asserted as an invariant rather
 // than per-check, so a new check cannot reintroduce it.
@@ -1069,6 +1158,13 @@ const commentSchema = mkBuilt({
 });
 check('  …and a schema mentioned only in a comment does not count',
   row(commentSchema, 'data', 'data/content-schema')?.outcome === 'fix');
+// End to end for the string-literal `/*` bug: the real config shape, where the
+// glob pattern and a JSDoc comment together used to hide the schema entirely.
+const globSchema = mkBuilt({
+  'src/content.config.ts': "import { defineCollection, z } from 'astro:content';\nimport { glob } from 'astro/loaders';\nconst blog = defineCollection({\n  loader: glob({ pattern: '**/*.md', base: './src/content/blog' }),\n  schema: z.object({\n    /** The post title. */\n    title: z.string(),\n  }),\n});\nexport const collections = { blog };",
+});
+check("  …while a glob('**/*.md') loader above a JSDoc'd schema is still seen as schema'd",
+  row(globSchema, 'data', 'data/content-schema')?.outcome === 'pass');
 
 // "More than zero" was the bar for both of these.
 const thinLd = mkBuilt({

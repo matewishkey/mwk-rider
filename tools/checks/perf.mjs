@@ -9,11 +9,12 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, extname, relative } from 'node:path';
 
-import { attrValue, hasAttr, eachDistHtml } from '../lib/html.mjs';
+import { attrValue, hasAttr, eachDistHtml, srcsetUrls } from '../lib/html.mjs';
 import { SKIP_DIST, distDir, distRelative } from '../lib/dist.mjs';
 import { astroBlock, MIN_IMMUTABLE_MAXAGE, CANONICAL_MAXAGE } from '../lib/headers.mjs';
 import { embedProduct, fetchableMarkup } from '../lib/embed-hosts.mjs';
 import { fontFamilies } from '../lib/fonts-config.mjs';
+import { outOfFlowSelectors, inlineStyles, isOutOfFlow } from '../lib/css-flow.mjs';
 
 const SEC = 'perf';
 
@@ -62,7 +63,8 @@ function checkHeaders(project, reporter) {
 
 function checkCls(project, reporter) {
   const offenders = [];
-  let scanned = 0;
+  let scanned = 0, outOfFlow = 0;
+  const flow = sourceOutOfFlow(project.root);
   walkSource(project.root, (relPath) => {
     if (!SCAN_EXTS.has(extname(relPath).toLowerCase())) return;
     let text;
@@ -77,21 +79,41 @@ function checkCls(project, reporter) {
       scanned++;
       // A *value* is required here, not mere presence: a bare `width` reserves
       // no space, so it cannot prevent the layout shift this check exists for.
-      if (attrValue(attrs, 'width') == null || attrValue(attrs, 'height') == null) {
-        offenders.push({ file: relPath, line: lineOf(text, m.index), src });
-      }
+      if (attrValue(attrs, 'width') != null && attrValue(attrs, 'height') != null) continue;
+      // …but an out-of-flow image has nothing to shift, and width/height would
+      // be overridden anyway. See lib/css-flow.mjs for why this carve-out exists.
+      if (isOutOfFlow(attrs, flow)) { outOfFlow++; continue; }
+      offenders.push({ file: relPath, line: lineOf(text, m.index), src });
     }
   });
 
+  const aside = outOfFlow ? ` (${outOfFlow} absolutely positioned — out of flow, nothing to shift)` : '';
   if (scanned === 0) {
     reporter.skip(SEC, 'cls:img-dimensions', 'no raw content <img> in src/ — nothing to check (<Image> bakes dimensions in)');
   } else if (offenders.length === 0) {
-    reporter.pass(SEC, 'cls:img-dimensions', `all ${scanned} content <img> carry width + height`);
+    reporter.pass(SEC, 'cls:img-dimensions', `all ${scanned} content <img> reserve their space${aside}`);
   } else {
     for (const o of offenders) {
       reporter.fix(SEC, 'cls:img-dimensions', `<img src="${truncate(o.src, 60)}"> lacks width/height → layout shift (CLS)`, 'use <Image> from astro:assets (bakes width/height), or add explicit width + height', { file: o.file, line: o.line });
     }
   }
+}
+
+// Every stylesheet the source carries: the `<style>` blocks inside components
+// (where an Astro-scoped rule lives) plus standalone .css under src/. Read once
+// per run — a positioning rule is usually in a different file from the <img>.
+function sourceOutOfFlow(root) {
+  const css = [];
+  walkSource(root, (relPath) => {
+    const ext = extname(relPath).toLowerCase();
+    if (ext !== '.css' && !SCAN_EXTS.has(ext)) return;
+    let text;
+    try { text = readFileSync(join(root, relPath), 'utf8'); }
+    catch { return; }
+    if (ext === '.css') css.push(text);
+    else css.push(...inlineStyles(text));
+  });
+  return outOfFlowSelectors(css);
 }
 
 function isContentImageRef(src) {
@@ -495,7 +517,7 @@ function imageUrls(html) {
     const src = attrValue(m[1], 'src');
     if (src) out.push(src);
     const srcset = attrValue(m[1], 'srcset');
-    if (srcset) out.push(...srcset.split(',').map((s) => s.trim().split(/\s+/)[0]).filter(Boolean));
+    if (srcset) out.push(...srcsetUrls(srcset));
   }
   for (const m of html.matchAll(/background(?:-image)?\s*:[^;"'}]*?url\(\s*(["'`]?)([^"'`)]+)\1\s*\)/gi)) {
     out.push(m[2]);
@@ -564,11 +586,11 @@ function collectPreloadMismatches(head, html, page, out) {
     // Find the <img> this preload is for: the one sharing a URL with it. No
     // match means the image is injected at runtime or lives on another page —
     // not something a static read can call a defect.
-    const wanted = new Set([...(imagesrcset ? srcsetKeys(imagesrcset) : []), ...(href ? [href] : [])]);
+    const wanted = new Set([...(imagesrcset ? srcsetUrls(imagesrcset) : []), ...(href ? [href] : [])]);
     for (const tag of html.matchAll(/<img\b((?:"[^"]*"|'[^']*'|[^>])*)>/gi)) {
       const srcset = attrValue(tag[1], 'srcset');
       const src = attrValue(tag[1], 'src');
-      const keys = new Set([...(srcset ? srcsetKeys(srcset) : []), ...(src ? [src] : [])]);
+      const keys = new Set([...(srcset ? srcsetUrls(srcset) : []), ...(src ? [src] : [])]);
       if (![...keys].some((k) => wanted.has(k))) continue;
 
       const sizes = attrValue(tag[1], 'sizes');
@@ -584,7 +606,6 @@ function collectPreloadMismatches(head, html, page, out) {
 }
 
 const norm = (s) => s.replace(/\s+/g, ' ').trim();
-const srcsetKeys = (s) => s.split(',').map((e) => e.trim().split(/\s+/)[0]).filter(Boolean);
 
 function reportPreloadPairs(issues, reporter) {
   if (issues.length === 0) return;   // nothing to say when no preload as=image exists

@@ -29,13 +29,59 @@ const SKIP_DIR = new Set(['node_modules', 'dist', '.astro', '.git']);
  * `js` is off for .md/.mdx, where slash-star and `//` are prose, not syntax.
  */
 export function stripComments(text, { js = true } = {}) {
-  const blank = (s) => s.replace(/[^\n]/g, ' ');
-  let out = text.replace(/<!--[\s\S]*?-->/g, blank);
-  if (!js) return out;
-  out = out.replace(/\/\*[\s\S]*?\*\//g, blank);
-  // Only after start-of-line or an opener/separator — never after `:` (so
-  // `https://…` survives) or a quote (so a '//' string literal survives).
-  return out.replace(/(^|[\s{(,;])\/\/[^\n]*/gm, (m, lead) => lead + blank(m.slice(lead.length)));
+  const out = text.replace(/<!--[\s\S]*?-->/g, (s) => s.replace(/[^\n]/g, ' '));
+  return js ? blankJsComments(out) : out;
+}
+
+// Only after start-of-line or an opener/separator — never after `:` (so an
+// unquoted `https://…` survives) or after a backslash (so the `\/\/` in a regex
+// literal does). String literals are handled by the scanner itself.
+const LINE_COMMENT_LEAD = /[\s{(,;]/;
+
+/**
+ * Blank `/*…*​/` and `//…` comments, skipping anything inside a string literal.
+ *
+ * A regex pass cannot do this, and the failure was not theoretical: the most
+ * idiomatic line in an Astro Content Layer config —
+ * `loader: glob({ pattern: '**​/*.md' })` — contains a `/*` inside a quoted
+ * string. A plain `/\/\*[\s\S]*?\*\//` treated it as a comment opener and
+ * blanked everything up to the next real `*​/`, swallowing the `schema:` key a
+ * few lines down and reporting a fully-schema'd collection as having none.
+ *
+ * String state resets at every newline, deliberately. A `'` in .astro *prose*
+ * ("don't") is not a string opener, and letting one span lines would suppress
+ * comment stripping for the rest of the file — reintroducing the
+ * comment-satisfies-a-check failure above, which is the worse of the two. The
+ * cost is that a `/*` on a line after a prose apostrophe is missed; the cost of
+ * the alternative is unbounded.
+ */
+function blankJsComments(src) {
+  const c = src.split('');   // UTF-16 units: offsets stay aligned with `src`
+  let quote = null;
+  for (let i = 0; i < c.length; i++) {
+    if (c[i] === '\n') { quote = null; continue; }
+    if (quote) {
+      if (c[i] === '\\') i++;                  // escaped: whatever follows is not a terminator
+      else if (c[i] === quote) quote = null;
+      continue;
+    }
+    if (c[i] === '"' || c[i] === "'" || c[i] === '`') { quote = c[i]; continue; }
+    if (c[i] === '/' && c[i + 1] === '*') {
+      // No closer means this is not a comment — an unterminated one is a syntax
+      // error, so the likelier reading is that we mis-detected an opener.
+      // Blanking to EOF on that guess would void every check on the file.
+      const end = src.indexOf('*/', i + 2);
+      if (end === -1) { i++; continue; }
+      for (let j = i; j < end + 2; j++) if (c[j] !== '\n') c[j] = ' ';
+      i = end + 1;
+      continue;
+    }
+    if (c[i] === '/' && c[i + 1] === '/' && (i === 0 || LINE_COMMENT_LEAD.test(c[i - 1]))) {
+      while (i < c.length && c[i] !== '\n') c[i++] = ' ';
+      i--;
+    }
+  }
+  return c.join('');
 }
 
 /**

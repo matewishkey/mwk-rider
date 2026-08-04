@@ -409,7 +409,32 @@ thing a version bump leaves behind. Each maps to a documented v7 breaking change
 - **HTML revalidates.** HTML routes must *not* be immutable, or deploys won't
   show until the cache expires. → live `perf: cache:html`
 - **Content `<img>` carry width + height.** Explicit dimensions (or `<Image>`,
-  which bakes them) prevent layout shift (CLS). → `perf: cls:img-dimensions`
+  which bakes them) prevent layout shift (CLS). → `perf: cls:img-dimensions`,
+  live `images: cls`
+
+  **…unless CSS takes the image out of flow, in which case demanding them is
+  cargo cult.** An absolutely-positioned image has no siblings to push, and
+  `inset: 0` + `height: 100%` override the intrinsic-ratio box the attributes
+  would establish — adding them changes nothing a browser does. Both checks now
+  read the project's CSS (`<style>` blocks and `.css` under `src/` offline;
+  the page's linked stylesheets when `--url`) and skip an `<img>` whose class,
+  id or inline style puts it at `position: absolute`/`fixed`.
+
+  This is not a corner case, it is the shape rider's *own* advice produces:
+  `images: background-image` pushes a site off CSS backgrounds, and the
+  replacement it names is precisely an absolutely-inset `object-fit: cover`
+  `<img>` — so the more compliant the site, the more of these it has.
+  tasmanvisa-web reported 20 of them, **20 of the 21 required findings in the
+  whole live run**, on a page rider itself measured at CLS 0.001 (`browser`) and
+  0 (`lighthouse`). A heuristic that a measurement in the same run contradicts
+  that loudly is a bug in the heuristic. The reader is a selector scan, not a
+  cascade — it answers the weaker "does any rule take this out of flow?" and errs
+  toward silence, because missing one shifting image costs a finding while crying
+  wolf twenty times costs the domain its credibility (`tools/lib/css-flow.mjs`).
+
+  The live finding is also **aggregated**, one line naming a count and an
+  example, not one per tag. A shared component puts the same defect on every card
+  on the page; twenty findings for one fix is what buried the other one.
 
 - **Render-blocking CSS stays small.** Measured on the *heaviest single page*:
   the bytes of every `<link rel="stylesheet">` it pulls plus its inlined
@@ -517,6 +542,22 @@ thing a version bump leaves behind. Each maps to a documented v7 breaking change
   candidates and download the image twice, so the preload leaves the page slower
   than no preload at all. → `perf: preload:pair`
 
+  **A `srcset` is not `split(',')`, and getting that wrong made this check fire
+  on correct code.** A candidate URL may contain commas, and on the delivery this
+  baseline recommends it always does:
+  `/cdn-cgi/image/width=800,format=auto,quality=80/hero.webp` shattered into
+  three fragments, one of which — `format=auto` — was shared by *every*
+  transformed image on the page. Pairing a preload to an `<img>` by shared
+  fragment then matched an arbitrary unrelated image, whose srcset naturally
+  differed, and the check reported a mismatch on a byte-identical pair. Worse, it
+  routed around the no-match branch that exists exactly for the reporter's case:
+  a preload whose image is a CSS `background-image` has no `<img>` to pair with,
+  and "not something a static read can call a defect" was the correct outcome.
+  All srcset reading now goes through one spec-shaped parser
+  (`srcsetUrls` in `tools/lib/html.mjs`) — a URL is a run of non-whitespace and
+  only a *trailing* comma ends a candidate, exactly as a browser reads it.
+  Reported by tasmanvisa-web.
+
   Which page is "cross-origin" is decided per page from its own canonical link
   (falling back to `site:` in astro.config): a page declaring neither is not
   counted, because guessing the site's origin from the build would invent
@@ -594,6 +635,21 @@ by **pattern**, so single-locale and per-locale naming both pass.*
   already fixed for meta tags and then repeated here. All five dogfood builds
   found it. Now: comments blanked, each `defineCollection` body checked for a
   `schema:`, and the unschema'd ones named. → `data: content:schema`
+
+  **Blanking comments requires knowing what is a comment**, and the regex that
+  did it read a `/*` inside a *string literal* as an opener. The carrier is the
+  single most idiomatic line in a Content Layer config —
+  `loader: glob({ pattern: '**/*.md' })` — so the blanking ran from the glob
+  pattern to the next real `*/`, swallowing the `schema:` key a few lines below
+  and reporting a ~35-field Zod schema as absent. It needs *both* halves to
+  fire, which is why every two-line test of it looked fine. The scanner is now
+  string-aware (`stripComments` in `tools/lib/src-scan.mjs`), and string state
+  resets at each newline on purpose: an apostrophe in `.astro` prose ("don't")
+  is not a string opener, and letting one span lines would suppress comment
+  stripping for the rest of the file — reintroducing the
+  comment-satisfies-a-check failure above, which is the worse of the two.
+  The blast radius was every `src-scan` consumer, not this check alone.
+  Reported by tasmanvisa-web.
 - **JSON-LD emitted, covering both core shapes.** The built pages carry
   `application/ld+json` with an Article-family type per post and a site-wide
   `WebSite`. Read from `dist/` and **parsed**, not grepped: the old check required
@@ -872,6 +928,87 @@ Lab scores are noisy — treat one run as a sample, not a verdict.
   since it is the authority on its own check.
 
 
+## browser (`--url`) — what only a real browser sees
+
+*Check file: `tools/checks/browser.mjs`. Needs `playwright` installed in the
+audited project.* Every other domain reads bytes — source files, built HTML, or
+the HTML a server hands back. A page is not its bytes. A script that throws, an
+asset that 404s only once the page asks for it, an image downloaded at 4× the box
+it lands in, the layout jumping as a font swaps: none of that is in the response,
+and all of it is what users actually report. This domain loads the page in
+Chromium and measures what happened.
+
+- **`playwright` is deliberately not a dependency of this tool.** It is imported
+  dynamically, resolved from **the audited project first**, and the whole domain
+  `⏭`s with the install command when it isn't there — the same shape as
+  `lighthouse` without a key. `git clone && node audit.mjs` has to keep working
+  with no install step and no browser download; a headless Chromium is ~150 MB
+  and cannot be the price of an offline SEO check. Resolving from the project
+  rather than from the tool is the load-bearing half: rider is normally a clone
+  somewhere else entirely, so a bare `import('playwright')` looks in the wrong
+  `node_modules` and reports "not installed" about a project that installed it.
+  Playwright's entry is CommonJS, so its exports arrive on `default` under ESM —
+  destructuring `{ chromium }` yields `undefined`, which is indistinguishable
+  from absent. Both resolutions are tried, and both spellings read.
+  → `⏭ browser: playwright`, `browser: launch`
+- **A measured page is one page, and the output says which.** Everything below
+  is measured on the single URL that was loaded, so the domain announces it up
+  front rather than letting a homepage sample read as a site-wide verdict. Pass
+  `--post <path>` to measure a content page instead. → `⏭ browser: scope`
+- **Nothing is measured until the page actually loads.** A navigation that times
+  out, hangs on a pending request, or returns a non-2xx is a `🛑 block`, not a
+  quiet run of zero findings — a domain that reports "no errors" about a page it
+  never opened is the failure this whole file exists to prevent.
+  → `browser: load`
+- **An uncaught exception is a defect even when the HTML is perfect.** A script
+  that throws leaves buttons dead, menus shut and forms inert while every static
+  check still passes: the markup it was supposed to animate is right there. It is
+  a `🔧`. Console errors are a separate, softer signal — each one is something
+  the page tried to do and could not, but plenty are third-party noise, so they
+  are `💡`. → `browser: js:errors` (`🔧`), `browser: console` (`💡`)
+- **A request the browser could not complete is a missing asset.** 404s on
+  sub-resources are invisible to a static read — the HTML referencing them is
+  well-formed, and only fetching the page's own request list finds them. A
+  connection-level failure is reported differently on purpose: it may be the
+  network the audit ran on (an ad blocker, a DNS filter, a captive portal), not
+  the site, and the fix text says to re-check from elsewhere before treating it
+  as a site bug. Blaming a site for the auditor's network is how a tool loses
+  trust. → `browser: requests`
+- **"Oversized" means oversized *for its box*, which only a browser knows.** The
+  offline checks compare bytes to a fixed budget; a 1280w hero is fine and a
+  1280w thumbnail is not, and nothing in the bytes distinguishes them.
+  `naturalWidth` over the rendered width does. Over 2.5× is reported.
+
+  The finding names the **cause, not the symptom**, when it can see it: `sizes`
+  — not the layout — is what picks a srcset rung, so an overstated `sizes` is
+  usually the whole explanation. tasmanvisa-web claimed `100vw` for a card
+  rendering at 355 px in a 393 px viewport, and the browser dutifully fetched
+  1280w/167 KB where 1000w/133 KB was correct. Advisory: the ratio is a
+  heuristic, and art direction can justify it. → `💡 browser: images:rendered-size`
+- **Measured CLS outranks inferred CLS.** `perf: cls:img-dimensions` and
+  `images: cls` infer shift risk from missing `width`/`height`. This is the real
+  number, from `PerformanceObserver`, and it includes what the static reads
+  cannot see at all: font swaps, late-injected DOM, embeds that resize
+  themselves. Graded on the Core Web Vitals bands (good ≤ 0.1, poor > 0.25).
+
+  When the two disagree, the measurement is the one that is right, and the
+  disagreement is a bug in the heuristic. That is not hypothetical: 20 static
+  `images: cls` findings landed on a page this check measured at 0.001, all on
+  absolutely-positioned fill images that cannot shift anything. The heuristic now
+  reads the CSS — see `images` above and `tools/lib/css-flow.mjs`.
+  → `browser: cls:measured`
+- **A third party is a domain you don't own, not an origin that isn't this one.**
+  `media.example.com` serving your own images is not third-party weight; counting
+  it as such would flag the cross-origin image host `perf: preconnect` exists to
+  recommend. The comparison is on the registrable domain (approximated —
+  this tool ships no Public Suffix List). Over 250 KB per origin is reported,
+  advisory: third-party weight blocks your own content, but the call on whether
+  a given tag is worth it is the site owner's. → `💡 browser: third-party`
+- **Console text and asset URLs are written by the page being audited.** They
+  land in whatever reads this output, agent or human, so they are truncated and
+  fenced like every other untrusted string the tool relays.
+  → `⏭ browser: untrusted-input`
+
 ## Gaps / candidate practices (not yet enforced)
 
 The queue. Each becomes a real check when a reporter hits it or we decide it's
@@ -928,9 +1065,7 @@ the issue is the live record and the bullet here is only its summary.
   `transform:format` check catches the same `format=webp` smell more cheaply.
 - **BreadcrumbList JSON-LD.** The fixture emits it; not asserted by `data`.
 - ~~**Runtime behaviour needs a headless browser.**~~ Closed by the `browser`
-  domain: uncaught exceptions, failed/404 sub-requests, measured CLS, and images
-  oversized relative to their rendered box are now checked with real Chromium
-  (optional — `playwright` is not a dependency of this tool).
+  domain — the practice is § browser above.
 - **Zaraz consent banner actually renders + GA waits for consent.** The
   `analytics` live check confirms the Zaraz loader is present, but the consent
   modal and whether tags hold until consent are decided by client JS at runtime

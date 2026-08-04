@@ -7,7 +7,7 @@
 // Needs a free PSI API key in $PAGESPEED_API_KEY. Without one it skips
 // gracefully (the tool still works for everything else).
 
-import { attrValue } from '../lib/html.mjs';
+import { attrValue, srcsetUrls } from '../lib/html.mjs';
 
 const SEC = 'lighthouse';
 // No timeout meant a host that accepts the connection and never answers hung the
@@ -174,7 +174,7 @@ function describeElement(snippet) {
   const attrs = snippet.match(/^<img\b((?:"[^"]*"|'[^']*'|[^>])*)>?/i)?.[1];
   if (!attrs) return truncate(snippet, 140);
 
-  const src = attrValue(attrs, 'src') ?? attrValue(attrs, 'srcset')?.split(',')[0]?.trim().split(/\s+/)[0] ?? '?';
+  const src = attrValue(attrs, 'src') ?? srcsetUrls(attrValue(attrs, 'srcset'))[0] ?? '?';
   const parts = [`img ${truncate(src.split('/').pop(), 46)}`];
   // Named whether present or not: "no fetchpriority" is the finding as often as
   // a wrong value is, and an attribute silently absent from a summary reads as
