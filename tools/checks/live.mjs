@@ -283,7 +283,7 @@ async function auditSeo(home, postPath, base, get, head, reporter) {
     } else {
       reporter.pass('seo', 'og:image-resolves', untrusted(ct, 60), { url: ogImg });
       // 200 + image/* is necessary but not sufficient: a screenshot of a 404
-      // page is *also* a valid 200 image/png (the bug behind mergodon/td-rider#5).
+      // page is *also* a valid 200 image/png (the bug this exists for: a 404 page served as a valid PNG).
       // Verify the served bytes are a real card by their intrinsic dimensions.
       await checkOgCard(ogImg, h, reporter, base);
     }
@@ -319,7 +319,7 @@ function rebaseOnAudited(assetUrl, html, base) {
 // A resolvable og:image isn't proof it's a real card. A generator that screenshots
 // an error page (e.g. requesting a no-trailing-slash URL on a trailingSlash:'always'
 // site → 404) uploads a valid PNG that passes status + content-type — exactly how
-// mergodon/td-rider#5 shipped a 404 screenshot as a post's OG image. Verify the served bytes:
+// A real site shipped a 404 screenshot as a post's OG image. Verify the served bytes:
 // they must clear the OG minimum (600×315 — below that platforms crop/reject) and
 // match the dimensions the page declares. The same-viewport case (a 404 shot at the
 // real 1200×630 viewport) can't be told apart from headers/bytes; preventing *that*

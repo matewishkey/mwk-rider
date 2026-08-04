@@ -67,8 +67,9 @@ When an audited site hits a problem worth preventing everywhere:
    project's house style? Unclassified means universal, which means it fails the
    build of every stranger who doesn't share the opinion. Ask: could a
    well-built Astro site reasonably do this differently?
-4. **Verify.** `node tools/audit.mjs` in `examples/_fixture-i18n/` must stay
-   `0 🔧` (in both default and `--strict`), and run it against at least one real site (drift there is expected and
+4. **Verify.** `node tools/audit.mjs` in **both** `examples/_fixture-i18n/` and
+   `examples/starter/` must stay
+   `0 🔧 / 0 🛑` (in both default and `--strict`), and run it against at least one real site (drift there is expected and
    informational — it's how we confirm the check fires on the wild case).
 5. **Ship it.** The check is now permanent.
 
@@ -878,12 +879,13 @@ worth it — following *How we add a practice* above. Listed so we don't lose th
 
 **The live queue is the issue tracker**, not this list:
 [matewishkey/rider issues](https://github.com/matewishkey/rider/issues). Seven
-came in from audited sites and all were closed on 2026-08-03 by shipped checks —
+came in from audited sites and were closed on 2026-08-03 by shipped checks —
 eager third-party embeds, `dist:size` flagging srcset rungs, CSS
 `background-image` (no srcset, no lazy loading), the two remaining font-hygiene
 traps, cross-origin `preconnect`, the two Astro 7 changes that build clean and
 ship wrong, and a glossary `DefinedTerm` page read as a missing Article. What is
-below is the older, quieter half.
+below is the older, quieter half — plus, where a gap is still open as an issue,
+the issue is the live record and the bullet here is only its summary.
 
 - **Astro scoped CSS does not reach `innerHTML`-injected DOM.** A component's
   scoped styles are keyed on a `data-astro-cid-*` attribute the compiler stamps
@@ -913,7 +915,9 @@ below is the older, quieter half.
   background that cannot have a ladder at all, and `browser:
   images:rendered-size` names an overstated `sizes` when it measures one. What is
   still missing is the positive assertion — *this large image has no `srcset` and
-  should*.
+  should*. Open as [#12](https://github.com/matewishkey/rider/issues/12), which
+  is the live record; it is unshipped because the threshold has to come from
+  measurement, or it flags the legitimately fixed-width logo.
 - **Offline heading scan beyond the canonical gate (see also `headings:order`,
   which now names the component rather than the built page).** Today the offline outline
   check only inspects pages with a `<link rel="canonical">`; a page that should

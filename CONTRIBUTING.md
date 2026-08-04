@@ -8,7 +8,7 @@ By submitting a pull request you agree that your contribution is licensed under 
 
 ## Getting set up
 
-There is nothing to install. You need Node 22.12 or newer, and that's it — no `npm install`, no root `package.json`, no API keys.
+There is nothing to install. You need Node 22 or newer, and that's it — no `npm install`, no root `package.json`, no API keys.
 
 ```bash
 git clone https://github.com/matewishkey/rider.git
@@ -44,7 +44,7 @@ When a check can't determine an answer, report `⏭` with the reason. Never let 
 ## Before you open a PR
 
 - [ ] `node tools/test.mjs` passes.
-- [ ] `node tools/audit.mjs` inside `examples/_fixture-i18n/` is `0 🔧 / 0 🛑`, in default **and** `--strict`.
+- [ ] `node tools/audit.mjs` inside **both** `examples/_fixture-i18n/` and `examples/starter/` is `0 🔧 / 0 🛑`, in default **and** `--strict`.
 - [ ] Any new check is classified in `tools/lib/policy.mjs` and has both test halves.
 - [ ] You ran it against a real Astro site that isn't the fixture, and the result made sense.
 

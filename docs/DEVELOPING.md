@@ -80,6 +80,14 @@ the alternative is a starter that quietly stops complying with the tool that shi
   `perf: font:styles` firing correctly on a real site and `perf: embed:eager` staying
   quiet on one that had already moved its Maps iframe behind a facade.
 
+  Round 4 (2026-08-03) widened it to every Astro project on the box — six, spanning
+  Astro 5.18 through 7.1 — and is the round that proves the *severity split* works rather
+  than any single check. Five of the six are below the 7+ baseline and every one of them
+  reported `💡 modules: astro:version … [baseline]`, not a finding: a stranger on Astro 6
+  does not get a red build. Four sites fired a total of 19 🔧 and, on inspection, all 19
+  were real gaps — no false positive to fix, which is the first round that could say so.
+  Widening the sample costs one loop over `~/projects`; do it each time the check set moves.
+
   **Audit those repos, never edit them.** A checkout next door is not permission; anything
   found goes back as an issue filed into that repo.
 
@@ -97,7 +105,10 @@ the alternative is a starter that quietly stops complying with the tool that shi
   lab scores are noisy; re-run before trusting a number.
 
   **The key is provisioned on the dev box** — `$PAGESPEED_API_KEY`, in `~/.secrets`, with
-  `mergodon/td-sops` (`apps/td-rider.enc.env`) as the record. Rotate in both. It was absent
+  `mergodon/td-sops` (`apps/td-rider.enc.env` — the filename predates this repo's rename
+  and is deliberately left alone; the `td-rider` repo it was named after was deleted on
+  2026-08-03, the secrets file is the only thing that still carries the name) as the
+  record. Rotate in both. It was absent
   until 2026-08-03, and that gap hid a real bug for a whole release: the diagnostics were
   written against a hand-built response, and the first live call showed Lighthouse had
   **renamed the audit ids** out from under them (`lcp-discovery-insight` etc.). A renamed
