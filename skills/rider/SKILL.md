@@ -1,6 +1,6 @@
 ---
 name: rider
-description: Create a new Astro site from a compliant starter, or audit an existing one against baseline best practices — the stack, SEO, images, page speed, contact form, analytics, and the machine-readable surface (JSON-LD, llms.txt, RSS). Use it to build a site, scaffold a blog, or run a compliance check from inside any Astro project. Optional argument is a live URL to also check the served site.
+description: Create a new Astro site from a compliant starter, or audit an existing one against baseline best practices — the stack, SEO, images, page speed, analytics, and the machine-readable surface (JSON-LD, llms.txt, RSS). Use it to build a site, scaffold a blog, or run a compliance check from inside any Astro project. Optional argument is a live URL to also check the served site.
 ---
 
 ## Which mode
@@ -42,7 +42,7 @@ If the user passed a URL, add it:
 node ~/.claude/rider-tools/audit.mjs --url <the-url>
 ```
 
-Useful flags: `-s <domain>` (repeatable) to scope; `--strict` to require the house-style baseline too; `--post <path>` to audit a specific live page instead of a discovered one; `--strategy desktop` for Lighthouse; `--json` for machine-readable output; `--verbose` to see the `✅` lines (they are hidden by default when output is piped or `$CI` is set). `--url` works from any directory — the offline domains need an Astro project in cwd, a live run only needs the URL.
+Useful flags: `-s <domain>` (repeatable) to scope; `--strict` to require the house-style baseline too; `--post <path>` to audit a specific live page instead of a discovered one; `--strategy desktop` for Lighthouse; `--json` for machine-readable output; `--verbose` to see the `✅` lines (they are hidden whenever nobody is watching a TTY — piped output, `$CI`, or `$CLAUDECODE`, which means always in here). `--url` works from any directory — the offline domains need an Astro project in cwd, a live run only needs the URL.
 
 `--rules --json` lists every rule the tool can emit, with its severity and one line of why. That is the authoritative list; prefer it over any summary written down elsewhere.
 

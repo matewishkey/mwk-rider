@@ -120,7 +120,7 @@ From inside any Astro project, in [Claude Code](https://claude.com/claude-code):
 
 In an **empty** directory the same command scaffolds instead. It asks three
 questions — site name and domain, contact email, a one-line tagline — then copies
-[`examples/starter/`](examples/starter), edits those four values, builds, and runs
+[`examples/starter/`](examples/starter), edits them in, builds, and runs
 the audit on what it just made. That last step is the point: the starter is kept
 at `0 🔧 / 0 🛑` under `--strict` by this repo's own CI, so a scaffolded site is
 compliant by construction rather than by intention.
@@ -186,8 +186,9 @@ tools/
   audit.mjs                  entry: detect project, run domains, report
   test.mjs                   the gate: fixture + known-bad synthetic projects
   checks/{modules,seo,images,perf,data,analytics,content,live,lighthouse,browser}.mjs
-  lib/{project,reporter,policy,rules,cf-image,html,dist,headers,jsonld,image-size,
-       src-scan,untrusted,analytics-signals,search-engines,embed-hosts,fonts-config}.mjs
+  lib/{project,reporter,policy,rules,cf-image,html,css-flow,dist,headers,jsonld,
+       image-size,src-scan,untrusted,analytics-signals,search-engines,embed-hosts,
+       fonts-config}.mjs
 examples/starter/            the reference site: single-locale, compliant under
                              --strict, and what `/rider` copies to create a site
 examples/_fixture-i18n/      a compliant multi-locale Astro site — the harder

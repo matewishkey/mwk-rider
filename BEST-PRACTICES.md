@@ -390,17 +390,17 @@ thing a version bump leaves behind. Each maps to a documented v7 breaking change
   enforces this at build; raw `<img>` and bare markdown can slip through.
   Checked on built `dist/` HTML and live. → `images: alt` (required)
 
-## perf — page-speed levers
-
-*Check file: `tools/checks/perf.mjs` (offline) and cache checks in
-`tools/checks/live.mjs` (served).*
-
   Every `<img>` tag counts, on every page. The check used to de-duplicate by
   `src` across the whole build, so the *first* occurrence of an image decided the
   verdict for all of them: the same photo used with alt on the homepage and
   without alt on a post was reported as fine. Four of five independent dogfood
   builds found that — a silent false negative with exit 0, which is the worst
   outcome this tool has. Each offending page is now its own finding, named.
+
+## perf — page-speed levers
+
+*Check file: `tools/checks/perf.mjs` (offline) and cache checks in
+`tools/checks/live.mjs` (served).*
 - **Hashed assets are immutable.** `public/_headers` marks `/_astro/*`
   `public, max-age=31536000, immutable` so repeat visits don't re-validate every
   JS/CSS/font. (A plain `astro dev` server doesn't apply `_headers` — the live
@@ -995,7 +995,7 @@ Chromium and measures what happened.
   disagreement is a bug in the heuristic. That is not hypothetical: 20 static
   `images: cls` findings landed on a page this check measured at 0.001, all on
   absolutely-positioned fill images that cannot shift anything. The heuristic now
-  reads the CSS — see `images` above and `tools/lib/css-flow.mjs`.
+  reads the CSS — see `perf` above and `tools/lib/css-flow.mjs`.
   → `browser: cls:measured`
 - **A third party is a domain you don't own, not an origin that isn't this one.**
   `media.example.com` serving your own images is not third-party weight; counting

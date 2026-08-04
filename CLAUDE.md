@@ -35,7 +35,7 @@ This repo is **rider**: a single on-demand slash command (`/rider`) that checks 
   DNS does — a find-and-replace over the repo is the wrong tool for a provenance comment.
 - **Two example sites, upgraded together.** `examples/_fixture-i18n/` is the multi-locale exerciser (i18n, search, preview routes); `examples/starter/` is the single-locale reference and what create mode copies. Both must be `0 🔧 / 0 🛑` in default **and** `--strict`, and CI runs them as a matrix. **Raising the baseline means upgrading both in the same commit** — a floor moved in one makes the other's clean run a lie. Testing/deploy discipline lives in `docs/DEVELOPING.md`.
 - **The starter is the baseline's existence proof, not a second copy of it.** The checks define compliant; `examples/starter/` is a site that is. `references/CREATE.md` describes only the *interaction* and is forbidden from restating the rules — it points at `--rules --json` for what, and `BEST-PRACTICES.md` for why. A third prose copy of the baseline is how all three drift.
-- **Create mode copies, never composes.** It copies `~/.claude/rider-starter` verbatim and edits four values. Writing files from memory is exactly how a scaffold stops matching the reference the audit keeps clean; if the link is missing it says "re-run ./install.sh" and stops.
+- **Create mode copies, never composes.** It copies `~/.claude/rider-starter` verbatim and edits four files. Writing files from memory is exactly how a scaffold stops matching the reference the audit keeps clean; if the link is missing it says "re-run ./install.sh" and stops.
 
 ## Install
 
