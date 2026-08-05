@@ -1088,9 +1088,11 @@ ship wrong, and a glossary `DefinedTerm` page read as a missing Article. A secon
 round — three false-firing checks, the missing § browser section, the positive
 `srcset` assertion (§ images), a media-kit route list that missed `/media/`
 (§ content), and a threat-model claim four files made that the `browser` domain
-broke (`SECURITY.md`) — is **fixed in the tree but still open on the tracker**,
-because those commits have not been pushed yet; each carries its `Closes #N`, so
-the issues close when they land. Until then the tracker is the honest status.
+broke (`SECURITY.md`) — closed on 2026-08-05, when the branch that had been
+stranded locally finally reached `main` (PR #20). Only three of those closed
+themselves: `Closes #N` fires on the number, and one commit wrote "closes the
+four actionable open issues" as prose, so #13–#16 had to be closed by hand.
+Worth remembering the next time a commit means to close something.
 What is below is the older, quieter half
 — plus, where a gap is still open as an issue, the issue is the live record and
 the bullet here is only its summary.
