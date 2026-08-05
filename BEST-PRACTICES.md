@@ -1085,10 +1085,13 @@ eager third-party embeds, `dist:size` flagging srcset rungs, CSS
 `background-image` (no srcset, no lazy loading), the two remaining font-hygiene
 traps, cross-origin `preconnect`, the two Astro 7 changes that build clean and
 ship wrong, and a glossary `DefinedTerm` page read as a missing Article. A second
-round closed on 2026-08-04: three false-firing checks, the missing § browser
-section, the positive `srcset` assertion (§ images), a media-kit route list that
-missed `/media/` (§ content), and a threat-model claim four files made that the
-`browser` domain broke (`SECURITY.md`). What is below is the older, quieter half
+round — three false-firing checks, the missing § browser section, the positive
+`srcset` assertion (§ images), a media-kit route list that missed `/media/`
+(§ content), and a threat-model claim four files made that the `browser` domain
+broke (`SECURITY.md`) — is **fixed in the tree but still open on the tracker**,
+because those commits have not been pushed yet; each carries its `Closes #N`, so
+the issues close when they land. Until then the tracker is the honest status.
+What is below is the older, quieter half
 — plus, where a gap is still open as an issue, the issue is the live record and
 the bullet here is only its summary.
 

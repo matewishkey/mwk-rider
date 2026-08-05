@@ -107,6 +107,20 @@ const ADVISORY = [
   // fire on a compliant site. It reports where two smart-quote engines would
   // disagree; whether that is a bug is the author's call, never the tool's.
   'content:quotes:ambiguous',
+  // A skipped heading level is real but usually comes from a shared header or
+  // footer's level rather than from the content, so the check reports where the
+  // outline jumps and leaves the call to the author. `headings:h1` — zero or
+  // several <h1> — stays universal; that one is not a judgement call.
+  'seo:headings:order',
+  // Declared card dimensions are a layout HINT: a platform can reserve space
+  // before fetching the image. The card renders fine without them, and two
+  // well-built dogfood sites had exactly these two as their only required
+  // finding — the signal that the severity was wrong rather than the sites.
+  // Both the source-read pair and their live twins; all four only ever suggest.
+  'seo:meta:og:image:width',
+  'seo:meta:og:image:height',
+  'seo:og:image:width',
+  'seo:og:image:height',
   // A legitimately fixed-width image is common and correct — a logo, an avatar,
   // a diagram rendered at one size. The check guards against those three ways
   // (a measured width floor, a byte floor, a name filter), but it is still a

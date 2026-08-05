@@ -93,6 +93,22 @@ the alternative is a starter that quietly stops complying with the tool that shi
   were real gaps — no false positive to fix, which is the first round that could say so.
   Widening the sample costs one loop over `~/projects`; do it each time the check set moves.
 
+  Round 5 (2026-08-04, `images: srcset:missing`) is the one to copy when a check needs a
+  **threshold**, because a pass/fail sweep is the wrong instrument for one. Run the
+  candidate *population* out of the real builds first and look at the distribution, then
+  put the number in the gap between the two clusters. Here that was every single-width
+  built `<img>` by intrinsic width and bytes: the ones meant to be one size stopped at
+  720 px and the ones needing a ladder started at 1200 px, so 1000 px is a measured
+  boundary rather than a round number, and the same run named the two false positives the
+  guards then had to exclude. A number picked first and sanity-checked after would have
+  shipped 640 px (the neighbouring check's floor) and fired on correct code.
+
+  **Most sibling repos have no `dist/` and the dist-reading checks are the interesting
+  half**, so a real-site round usually means building them. Check `git check-ignore -q dist`
+  first and skip any repo where it is not ignored — building there would drop hundreds of
+  untracked files into someone's working tree. Two of the four Astro repos on the box
+  failed that test in round 5.
+
   **Audit those repos, never edit them.** A checkout next door is not permission; anything
   found goes back as an issue filed into that repo.
 
@@ -135,6 +151,8 @@ the alternative is a starter that quietly stops complying with the tool that shi
       starter carries every `BASELINE_DEPS` entry, but it cannot assert taste.
 - [ ] If a check was added: it's classified in `tools/lib/policy.mjs`, and sanity-checked
       against an off-baseline site so you can see which mode it lands in.
+- [ ] If it introduced a **threshold**: the number sits in a gap you measured, and the
+      run that measured it is written down. See round 5 above.
 - [ ] If `tools/checks/*.mjs` changed: also run it against a real site — drift there is
       expected and informational, and it's how you confirm the check fires in the wild.
 - [ ] If `skills/rider/**` or `install.sh` changed: re-run `./install.sh`, then confirm

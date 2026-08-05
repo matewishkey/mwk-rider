@@ -629,7 +629,13 @@ const srv = createServer((req, res) => {
   res.writeHead(404, { 'content-type': 'text/html', 'content-length': '3' });
   res.end(req.method === 'HEAD' ? undefined : '404');
 });
-srv.listen(0, '127.0.0.1', function () { console.log(this.address().port); });
+// process.stdout.write, NOT console.log: the port is a NUMBER, and console.log
+// runs a number through util.inspect, which colorizes it when FORCE_COLOR is
+// set — as Claude Code and many CI runners do. The reader below then built
+// "http://127.0.0.1:\x1b[33m40567\x1b[39m", every live assertion failed, and
+// the run still said PASS on the 78 rule ids it had left. A gate that goes red
+// (or silently narrows) because of the terminal it ran in is not a gate.
+srv.listen(0, '127.0.0.1', function () { process.stdout.write(String(this.address().port) + '\\n'); });
 `);
 const srv = spawn('node', [srvFile], { stdio: ['ignore', 'pipe', 'ignore'] });
 const port = await new Promise((resolve, reject) => {

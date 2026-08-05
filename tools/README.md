@@ -1,6 +1,10 @@
 # rider tools
 
-The engine behind `/rider`. Detects an Astro project, runs domain checks, reports `✅ / 🔧 / 🛑 / ⏭`, exits non-zero on findings. Zero dependencies — Node 22 built-ins only.
+The engine behind `/rider`. Detects an Astro project, runs domain checks, reports `✅ / 🔧 / 🛑 / 💡 / ⏭`, exits non-zero on findings. Zero dependencies — Node 22 built-ins only.
+
+**The check set moves faster than this page.** `--rules --json` is the authoritative
+list of what the tool checks and which of it binds you — it is generated from the code,
+so it cannot drift. The table below is orientation, not an inventory.
 
 ## Usage
 
@@ -15,6 +19,8 @@ node ~/.claude/rider-tools/audit.mjs --url … --strategy desktop # Lighthouse o
 node ~/.claude/rider-tools/audit.mjs --strict    # require the house-style baseline too
 node ~/.claude/rider-tools/audit.mjs --json     # machine-readable
 node ~/.claude/rider-tools/audit.mjs --quiet    # hide ✅ lines; findings, 💡 and ⏭ still print
+node ~/.claude/rider-tools/audit.mjs --verbose  # show ✅ even when piped or under $CI
+node ~/.claude/rider-tools/audit.mjs --rules --json  # every rule id, severity and why; runs nothing
 node ~/.claude/rider-tools/audit.mjs --help
 ```
 
@@ -22,10 +28,10 @@ node ~/.claude/rider-tools/audit.mjs --help
 
 | Domain | Checks |
 |---|---|
-| `modules` | Astro 7+, Node ≥ 22.12, TypeScript ≤ 6.x, baseline integrations, `output: 'static'`, strict TS, `<ClientRouter>`, custom 404, adapter iff `<Image>` under SSR, remotePatterns (if og.config declares a media domain), Astro 7 migration residue (`astro7:experimental`, `astro7:markdown`, `astro7:db`, `astro7:transitions`) |
-| `seo` | Head meta emitted (asserted against `dist/` when built, source otherwise); no `keywords` anti-pattern; `dist/robots.txt` with a `Sitemap:` line; `<lastmod>` in the built sitemap; one `<h1>` per content page; brand fields (if og.config present) |
-| `images` | `<img>` + CSS `background-image` routed through an image transform; no oversized raster in `src/assets/`; no oversized built image in `dist/` |
-| `perf` | `public/_headers` marks `/_astro/*` immutable; content `<img>` carry width/height (CLS); render-blocking CSS on the heaviest page and total webfont weight stay inside budget; woff2 not ttf/otf |
+| `modules` | Astro 7+, Node ≥ 22.12, TypeScript ≤ 6.x, baseline integrations, `output: 'static'`, strict TS (and a `tsconfig` `exclude` that still excludes `dist`), `compressHTML`, `<ClientRouter>`, custom 404, self-hosted fonts, at most one search engine, an adapter iff a route renders on demand (plus the Cloudflare-specific `imageService` call), remotePatterns (if og.config declares a media domain), Astro 7 migration residue (`astro7:experimental`, `astro7:markdown`, `astro7:db`, `astro7:transitions`) |
+| `seo` | Head meta emitted (asserted against `dist/` when built, source otherwise); no `keywords` anti-pattern; a canonical that is not shared site-wide; `dist/robots.txt` with a `Sitemap:` line; `<lastmod>` in the built sitemap; one `<h1>` per content page (a skipped level is advisory); brand fields (if og.config present) |
+| `images` | `<img>` + CSS `background-image` routed through an image transform, and no background pinned to one width; no oversized raster in `src/assets/`; no oversized built image in `dist/` (a `srcset` judged as a ladder, by its smallest rung); `alt` on every content `<img>`; transform params (`format=auto`, an explicit `quality=`); a large image shipping one fixed width with no `srcset` at all (advisory) |
+| `perf` | `public/_headers` marks `/_astro/*` immutable; content `<img>` carry width/height (CLS) unless CSS takes them out of flow; render-blocking CSS on the heaviest page and total webfont weight stay inside budget; woff2 not ttf/otf; every declared font family leads a stack and sets `styles`; a heavy third-party embed sits behind a facade; a cross-origin image host gets `preconnect` (with `crossorigin`) and a `preload` matching its `<img>` |
 | `content` | A media-kit page (logo, paste-ready boilerplate, a contact route) and a design/styleguide page that renders the real tokens. Both house style — `💡` unless `--strict` |
 | `analytics` | What delivers analytics (Cloudflare Web Analytics by default; Zaraz when you need a tag manager) — advisory, never a finding. Plus a hardcoded GA/GTM snippet in `src/` + `dist/`, which fires before consent |
 | `data` | JSON-LD parsed out of `dist/` (an Article-family type + `WebSite`, and it must be valid JSON); `/llms.txt` from `getCollection()` with a draft/preview filter; the built RSS feed has items; Zod-validated content schema |
@@ -43,11 +49,11 @@ differently still gets useful answers. See `../BEST-PRACTICES.md`.
 
 ## Lighthouse key resolution
 
-The `lighthouse` domain calls the PageSpeed Insights API and needs a free key, resolved in order:
-Set `$PAGESPEED_API_KEY`.
+The `lighthouse` domain calls the PageSpeed Insights API and needs a free key: set
+`$PAGESPEED_API_KEY`. That environment variable is the only secret the tool reads, and
+the only place it talks to an external API.
 
 No key → the domain `⏭ skips` (everything else still runs). Score → outcome: `≥90 ✅`, `50–89 💡`, `<50 🔧`. Transient PSI `500`s get up to 3 attempts (2 retries).
-
 
 ## Outcomes
 
@@ -81,16 +87,22 @@ tools/
   audit.mjs              entry — arg parsing, project detection, domain dispatch
   lib/
     project.mjs          cwd → Astro-project detection + config/source loading
-    policy.mjs           universal vs house-style classification (drives --strict)
-    image-size.mjs       PNG/JPEG intrinsic dimensions from raw bytes
+    policy.mjs           universal vs house-style vs advisory (drives --strict)
+    image-size.mjs       PNG/JPEG/WebP intrinsic dimensions from raw bytes
     src-scan.mjs         read src/ once; find head-meta by behaviour, not filename
     reporter.mjs         outcome collection, human/JSON output, exit code
     rules.mjs            the rule catalogue behind --rules --json
     untrusted.mjs        fence bytes fetched from an audited site before printing
     cf-image.mjs         Cloudflare transform-URL param parsing (shared offline + live)
-    html.mjs             dist/served HTML scanning — headings, alt text, content-page gate
+    html.mjs             dist/served HTML scanning — headings, alt text, srcset, content-page gate
+    css-flow.mjs         which elements CSS takes out of flow (so CLS checks don't false-fire)
     dist.mjs             read the build output (find + read files under dist/)
+    headers.mjs          parse public/_headers into rules the cache checks can ask
     jsonld.mjs           parse the JSON-LD a page emits; Article-family types
+    fonts-config.mjs     the Astro Fonts API config, as declared families
+    analytics-signals.mjs  what a beacon/tag-manager/GA snippet looks like
+    embed-hosts.mjs      which third-party iframe hosts are heavy enough to need a facade
+    search-engines.mjs   the search libraries that imply an index endpoint
   checks/
     modules.mjs          baseline stack
     seo.mjs              discoverability meta
@@ -102,4 +114,5 @@ tools/
     live.mjs             HTTP checks against a served site (--url)
     lighthouse.mjs       measured PSI scores + Core Web Vitals (--url + key)
     browser.mjs          real-Chromium runtime checks (--url + playwright)
+  test.mjs               the gate — `node tools/test.mjs`, exit 0 = every assertion ok
 ```
