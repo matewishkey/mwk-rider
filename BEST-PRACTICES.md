@@ -1120,6 +1120,27 @@ the cache headers.
   The caveat now attaches to `perf: cache:html` only when the asset probe showed
   the server ignoring `_headers`.
 
+- **The canonical URL answers directly.** A `<link rel="canonical">` is a claim
+  that this exact string is the page's address; a canonical that redirects is a
+  claim the server contradicts. Found on the starter itself on 2026-09-02: Astro
+  builds `about/index.html` and declares `trailingSlash: 'never'`, so every
+  canonical was `/about`, and Workers' default `assets.html_handling`
+  (`auto-trailing-slash`) serves a folder index only at `/about/` and answers
+  `/about` with a 307. Every canonical on the site redirected, and the live audit
+  said clean, because every fetch it made followed redirects. A search engine
+  that follows it indexes the slash form the site never declares; every shared
+  link pays a round trip first. The obvious fix — `assets.html_handling:
+  drop-trailing-slash` in `wrangler.jsonc` — does nothing here: the adapter
+  regenerates the assets block into `dist/server/wrangler.json` at build and
+  drops the key (measured, wrangler 4.118; the dev log says "Using redirected
+  Wrangler configuration"). The fix that holds is on Astro's side:
+  `build.format: 'file'` emits `about.html`, which the host serves at `/about`
+  directly and redirects `/about/` and `/about.html` to. Its one side effect is
+  that `Astro.url.pathname` then carries `.html`, so the starter strips it in
+  the single place a page declares its own URL. Fetched with redirects
+  *disabled* on the homepage and the content page, re-rooted onto the audited
+  origin. → `seo: canonical:direct` (live)
+
 ## lighthouse (`--url`) — the measured score
 
 *Check file: `tools/checks/lighthouse.mjs`. Needs a PSI key.* Where the static

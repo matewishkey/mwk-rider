@@ -19,7 +19,11 @@ interface Props {
 const { entry, title: titleProp, description: descriptionProp } = Astro.props;
 const { brand, mediaDomain } = ogConfig;
 
-const pageUrl = new URL(Astro.url.pathname, brand.siteUrl).toString();
+// The page's own address, as declared everywhere below. With build.format
+// 'file' Astro's pathname carries the `.html` the file is written to; the URL
+// the host serves it at does not, so it is stripped here — `/about.html` → `/about`,
+// `/index.html` → `/`. This is the one place the two forms meet.
+const pageUrl = new URL(Astro.url.pathname.replace(/\/index\.html$/, '/').replace(/\.html$/, ''), brand.siteUrl).toString();
 
 const title = entry
   ? `${entry.data.title} · ${brand.siteName}`

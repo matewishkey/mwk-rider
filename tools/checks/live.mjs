@@ -237,6 +237,43 @@ const POST_ONLY_CHECKS = [
   'seo/og-image-card', 'seo/headings-h1', 'seo/headings-order', 'data/post-jsonld',
 ];
 
+/**
+ * The canonical URL must answer directly — 200, not a redirect.
+ *
+ * Found on the starter itself, 2026-09-02: Astro builds `about/index.html` and
+ * declares `trailingSlash: 'never'`, so every canonical is `/about`; Workers'
+ * default `html_handling` (auto-trailing-slash) serves a folder index only at
+ * `/about/` and answers `/about` with a 307. Every canonical on the site
+ * redirected and the live audit said clean, because every fetch here follows
+ * redirects. A search engine that follows it indexes a URL the site never
+ * declares as its own, and every share link pays a round trip first. The
+ * declared URL and the served URL have to be the same string.
+ */
+async function checkCanonicalDirect(pages, base, reporter) {
+  const declared = pages
+    .map(({ html, path }) => ({ path, href: html.match(/<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']+)["']/)?.[1] }))
+    .filter((p) => p.href);
+  if (!declared.length) { reporter.skip('seo', 'canonical:direct', 'no canonical declared on the fetched pages — canonical checks above say so'); return; }
+  const bad = [];
+  for (const { path, href } of declared) {
+    let url;
+    // Re-root the declared canonical onto the audited base: the site declares
+    // its production origin and we are fetching a local or staging one.
+    try { const u = new URL(href, base); url = base.replace(/\/$/, '') + u.pathname + u.search; } catch { continue; }
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(NET_TIMEOUT_MS), headers: NAV_HEADERS, redirect: 'manual' });
+      if (res.status >= 300 && res.status < 400) bad.push(`${path} declares ${new URL(href, base).pathname} → ${res.status} to ${res.headers.get('location') ?? '?'}`);
+      else if (res.status !== 200) bad.push(`${path} declares ${new URL(href, base).pathname} → ${res.status}`);
+    } catch (err) { bad.push(`${path} declares ${href} → ${err.message}`); }
+  }
+  if (bad.length) {
+    reporter.fix('seo', 'canonical:direct', `the canonical URL redirects or fails — ${bad.join('; ')}`,
+      "serve the canonical form directly. Astro + @astrojs/cloudflare: set build.format: 'file' (about.html is served at /about; the adapter regenerates wrangler's assets block at build and drops html_handling, so that key cannot fix it) and strip .html where the page declares its own URL. A plain Workers static site: set assets.html_handling to match trailingSlash");
+  } else {
+    reporter.pass('seo', 'canonical:direct', `${declared.length} canonical URL(s) answer 200 with no redirect`);
+  }
+}
+
 async function auditSeo(home, postPath, base, get, head, reporter) {
   assertHas(reporter, 'seo', 'home:canonical', home.text, /<link[^>]+rel=["']canonical["']/, 'homepage missing <link rel="canonical">');
   checkLdTypes(reporter, 'home:jsonld-website', home.text, (t) => t.has('WebSite'),
@@ -244,6 +281,7 @@ async function auditSeo(home, postPath, base, get, head, reporter) {
   checkHeadings(reporter, 'home', home.text);
 
   if (!postPath) {
+    await checkCanonicalDirect([{ html: home.text, path: '/' }], base, reporter);
     // Name what didn't run. Two dogfood runs printed "audit clean — exit 0"
     // having skipped this whole block: silence read exactly like a pass.
     reporter.skip('seo', 'post', `no content page found in the sitemap, homepage links or /llms.txt — these did NOT run: ${POST_ONLY_CHECKS.join(', ')}. Pass --post <path> to audit a specific page`);
@@ -258,6 +296,7 @@ async function auditSeo(home, postPath, base, get, head, reporter) {
     return;
   }
   const h = postRes.text;
+  await checkCanonicalDirect([{ html: home.text, path: '/' }, { html: h, path: postPath }], base, reporter);
   const checks = [
     ['title',        /<title>[^<]+<\/title>/,                              '<title> missing/empty'],
     ['description',  /<meta[^>]+name=["']description["'][^>]+content=["'][^"']+["']/, 'meta description missing'],

@@ -796,6 +796,10 @@ const srv = createServer((req, res) => {
   if (url === '/og/card.avif') return send(avifCard, 'image/avif');
   if (url.startsWith('/og/')) return send(png, 'image/png');
   if (url === '/avifcard') return send(avifCardPage, 'text/html');
+  // A page whose canonical is /slashy but which the server only serves at
+  // /slashy/ — the Workers auto-trailing-slash default, as seen on the starter.
+  if (req.url === '/slashy') { res.writeHead(307, { location: '/slashy/' }); return res.end(); }
+  if (url === '/slashy') return send('<!doctype html><html><head>' + head('/slashy', '{"@type":"TechArticle"}') + '</head><body><h1>Slashy</h1></body></html>', 'text/html');
   if (url === '/sitemap-index.xml') return send(sitemapIndex.split('HOST').join(host), 'application/xml');
   if (url === '/sitemap-0.xml') return send(sitemap.split('HOST').join(host), 'application/xml');
   if (url === '/wiki/kettle-clock') return send(entry, 'text/html');
@@ -827,6 +831,11 @@ const liveRows = live.json?.results ?? [];
 check('live run completes without a tooling error', (live.json?.errors ?? ['?']).length === 0,
   JSON.stringify(live.json?.errors));
 check('live actually produced findings', liveRows.length > 0, `${liveRows.length} rows`);
+check('a canonical that answers 200 directly → pass',
+  liveRows.find(r => r.id === 'seo/canonical-direct')?.outcome === 'pass', JSON.stringify(liveRows.find(r => r.id === 'seo/canonical-direct')));
+const slashy = runJson(tmpdir(), ['-s', 'live', '--url', `http://127.0.0.1:${port}`, '--post', '/slashy']).json?.results.find(r => r.id === 'seo/canonical-direct');
+check('  …a canonical the server answers with a 307 to the slash form → fix, naming the redirect',
+  slashy?.outcome === 'fix' && /307/.test(slashy.message ?? ''), JSON.stringify(slashy));
 check('a served /llms.txt is read, not just looked for',
   liveRows.find(r => r.id === 'data/llms-txt-served')?.outcome === 'pass',
   JSON.stringify(liveRows.find(r => r.id === 'data/llms-txt-served')));

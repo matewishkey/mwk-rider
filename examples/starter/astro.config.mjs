@@ -14,6 +14,19 @@ const lastmods = postLastmods(process.cwd());
 export default defineConfig({
   site: brandConfig.brand.siteUrl,
   trailingSlash: 'never',
+  // Emit `about.html`, not `about/index.html`. Trailing slashes on prerendered
+  // pages are the host's business, not Astro's (Astro docs, trailingSlash), and
+  // Workers' default html_handling serves a folder index only at `/about/` —
+  // so with the directory format every canonical on this site answered with a
+  // 307 to the slash form, and the live audit said clean because it followed
+  // the redirect. A file is served at `/about` directly, which is what
+  // trailingSlash: 'never' means; `/about/` and `/about.html` redirect to it.
+  // `assets.html_handling` in wrangler.jsonc is not an option here: the adapter
+  // regenerates that block at build and drops the key (measured, wrangler
+  // 4.118). The one side effect — Astro.url.pathname carrying `.html` — is
+  // normalised in SEO.astro, the one place the page declares its own address.
+  // Found by the live audit on 2026-09-02; `seo: canonical:direct` now catches it.
+  build: { format: 'file' },
 
   // Static, with exactly one exception.
   //

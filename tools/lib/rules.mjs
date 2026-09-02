@@ -73,6 +73,7 @@ const RULES = [
   ['seo/title', 'seo', 'title', 'Live only: the content page must render a non-empty <title>.'],
   ['seo/description', 'seo', 'description', 'Live only: the meta description is the snippet a search result shows.'],
   ['seo/canonical', 'seo', 'canonical', 'Live only: the content page must carry a canonical link.'],
+  ['seo/canonical-direct', 'seo', 'canonical:direct', 'Live only: the canonical URL must answer 200 itself — a canonical that redirects declares a URL the site does not serve.'],
   ['seo/og-title', 'seo', 'og:title', 'Live only: og:title is the headline of the social card.'],
   ['seo/og-image', 'seo', 'og:image', 'Live only: the content page must declare a social card image.'],
   ['seo/og-image-width', 'seo', 'og:image:width', 'Live only: declared card width.'],
