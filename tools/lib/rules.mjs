@@ -42,6 +42,8 @@ const RULES = [
   ['modules/fonts', 'modules', 'fonts', "A font CDN costs a DNS+TLS round-trip on the critical path, ships no fallback metrics, and leaks every visitor's IP."],
   ['modules/404-custom', 'modules', '404:custom', 'A branded 404 rather than the host default.'],
   ['modules/remotepatterns', 'modules', 'remotePatterns', 'A media domain not in image.remotePatterns makes transforms on it fail.'],
+  ['modules/icons', 'modules', 'icons', 'An icon package is a dependency for a dozen paths and invites importing a whole set; inline the glyphs in use.'],
+  ['modules/icons-font', 'modules', 'icons:font', 'An icon font is a webfont on the critical path that ships every glyph whether used or not.'],
   ['modules/astro7-experimental', 'modules', 'astro7:experimental', 'Flags Astro 7 stabilized are config errors under `experimental:`, not no-ops.'],
   ['modules/astro7-markdown', 'modules', 'astro7:markdown', 'remark/rehype options in v7 need @astrojs/markdown-remark installed.'],
   ['modules/astro7-db', 'modules', 'astro7:db', '@astrojs/db was removed in v7.'],

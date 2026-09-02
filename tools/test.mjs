@@ -278,6 +278,18 @@ const rpDerived = rpRow("import { config as brandConfig } from './scripts/og.con
 check('  …derived from og.config → pass, and says so', rpDerived?.outcome === 'pass' && /derived/.test(rpDerived.message ?? ''), JSON.stringify(rpDerived));
 const rpMissing = rpRow("export default { output: 'static' };\n");
 check('  …absent while og.config names a media domain → fix', rpMissing?.outcome === 'fix', JSON.stringify(rpMissing));
+// Icons — inline SVG, not a package and not a font (#31). House style in both.
+const iconPkg = runJson(mkLegacyProject({ deps: { 'astro-icon': '^1.1.5', '@iconify-json/lucide': '^1.2.0' } }), ['-s', 'modules']).json?.results.find(r => r.id === 'modules/icons');
+check('an icon package in dependencies → suggest by default, naming both packages',
+  iconPkg?.outcome === 'suggest' && /astro-icon/.test(iconPkg.message ?? '') && /@iconify-json\/lucide/.test(iconPkg.message ?? ''), JSON.stringify(iconPkg));
+check('  …and fix under --strict',
+  runJson(mkLegacyProject({ deps: { 'react-icons': '^5.0.0' } }), ['-s', 'modules', '--strict']).json?.results.find(r => r.id === 'modules/icons')?.outcome === 'fix');
+check('  …while a site with none → pass',
+  runJson(mkLegacyProject({}), ['-s', 'modules', '--strict']).json?.results.find(r => r.id === 'modules/icons')?.outcome === 'pass');
+const iconFont = runJson(mkBuilt({ 'dist/index.html': '<p>x</p>', 'dist/_astro/app.css': '@font-face{font-family:"Font Awesome 6 Free";src:url(fa.woff2)}' }), ['-s', 'modules', '--strict']).json?.results.find(r => r.id === 'modules/icons-font');
+check('an icon font declared in the built CSS → fix under --strict', iconFont?.outcome === 'fix' && /Font Awesome/.test(iconFont.message ?? ''), JSON.stringify(iconFont));
+check('  …ordinary CSS → pass',
+  runJson(mkBuilt({ 'dist/index.html': '<p>x</p>', 'dist/_astro/app.css': 'body{font-family:Inter,sans-serif}' }), ['-s', 'modules', '--strict']).json?.results.find(r => r.id === 'modules/icons-font')?.outcome === 'pass');
 check('  …and with no media domain declared there is nothing to check',
   runJson(mkProject({}), ['-s', 'modules', '--strict']).json?.results.find(r => r.id === 'modules/remotepatterns') == null);
 check('  …and it names the route, not just the output mode',

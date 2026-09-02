@@ -1,5 +1,6 @@
 ---
 import type { CollectionEntry } from 'astro:content';
+import Icon from '../components/Icon.astro';
 import { ClientRouter } from 'astro:transitions';
 import SEO from '../components/SEO.astro';
 import SiteHeader from '../components/SiteHeader.astro';
@@ -53,7 +54,7 @@ const year = new Date().getFullYear();
       <footer class="muted">
         <p>
           © {year} {brand.siteName} ·
-          <a href="/rss.xml">RSS</a> ·
+          <a href="/rss.xml"><Icon name="rss" size={14} /> RSS</a> ·
           <a href="/llms.txt">llms.txt</a> ·
           <a href="/media-kit">Media kit</a> ·
           <a href="/design">Design</a>

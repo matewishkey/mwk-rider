@@ -364,6 +364,8 @@ export async function run({ project, reporter }) {
     reporter.skip(SEC, 'fonts', 'no third-party font CDN referenced in src/ — this check only looks for that; perf:font:* measures the fonts actually shipped in dist/');
   }
 
+  checkIcons(project, deps, reporter);
+
   // image.remotePatterns includes the media domain (only checkable if og.config declares one)
   const mediaDomain = project.ogConfig?.mediaDomain ?? project.ogConfig?.brand?.mediaDomain;
   if (mediaDomain) {
@@ -557,4 +559,62 @@ function checkMdxReachable(project, deps, reporter) {
       "widen a glob (pattern: '**/*.{md,mdx}') and strip either extension in generateId, or drop @astrojs/mdx if the site has no MDX",
       { file: 'src/content.config.ts' });
   }
+}
+
+/**
+ * Icons are inline SVG, not a package and not a font.
+ *
+ * An icon package (astro-icon + an Iconify collection, react-icons, a
+ * FontAwesome or Tabler bundle) is a dependency for a dozen paths, and its shape
+ * invites importing a whole set. An icon FONT is worse: a webfont on the
+ * critical path, a flash of missing glyphs, and every icon downloaded whether
+ * the page uses it or not. The baseline is a `src/lib/icons.ts` of copied
+ * bodies and one component that inlines them — the fixture went from a package
+ * to seventeen inline glyphs in one change (issue #31, 2026-09-02).
+ *
+ * House style: a site is not broken for using a package, so 💡 by default and
+ * 🔧 under --strict. The package list is names, so a site that vendors its own
+ * SVGs is never flagged; the font check reads the CSS the build actually shipped.
+ */
+const ICON_PACKAGES = [
+  /^astro-icon$/, /^@iconify(-json)?\//, /^@iconify\//, /^react-icons$/, /^lucide(-[\w-]+)?$/,
+  /^@fortawesome\//, /^font-awesome$/, /^@tabler\/icons/, /^@phosphor-icons\//, /^@heroicons\//,
+  /^@material-symbols\//, /^material-icons$/, /^bootstrap-icons$/, /^feather-icons$/,
+];
+const ICON_FONT_RE = /font-family\s*:\s*["']?\s*(Font ?Awesome|Material (Icons|Symbols)|icomoon|Glyphicons|bootstrap-icons|feather|IcoFont|Ionicons|fontello|Font Awesome \d)/i;
+
+function checkIcons(project, deps, reporter) {
+  const packages = Object.keys(deps).filter((d) => ICON_PACKAGES.some((re) => re.test(d)));
+  if (packages.length) {
+    reporter.fix(SEC, 'icons', `icon package(s) in dependencies: ${packages.join(', ')}`, 'copy the bodies of the glyphs the pages actually use into src/lib/icons.ts and inline them through one component — no package, nothing on the critical path');
+  } else {
+    reporter.pass(SEC, 'icons', 'no icon package in dependencies');
+  }
+
+  // An icon font is only visible in the built CSS — it may come from a package
+  // above, a CDN stylesheet, or a hand-written @font-face.
+  const distDir = join(project.root, 'dist');
+  if (!existsSync(distDir)) { reporter.skip(SEC, 'icons:font', 'no dist/ — build the site to check the shipped CSS for an icon font'); return; }
+  const hit = findInDist(distDir, /\.css$/, ICON_FONT_RE);
+  if (hit) {
+    reporter.fix(SEC, 'icons:font', `an icon font is declared in ${hit.file} (${hit.match})`, 'replace the font with inline SVG for the glyphs in use — a webfont on the critical path for icons costs a connection, a flash of missing glyphs, and every icon whether used or not');
+  } else {
+    reporter.pass(SEC, 'icons:font', 'no icon font in the built CSS');
+  }
+}
+
+/** First file under `dir` matching `nameRe` whose text matches `re`, with the match. Bounded walk. */
+function findInDist(dir, nameRe, re, budget = { n: 3000 }) {
+  let entries;
+  try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return null; }
+  for (const e of entries) {
+    if (budget.n-- <= 0) return null;
+    const full = join(dir, e.name);
+    if (e.isDirectory()) { const r = findInDist(full, nameRe, re, budget); if (r) return r; continue; }
+    if (!nameRe.test(e.name)) continue;
+    let text; try { text = readFileSync(full, 'utf8'); } catch { continue; }
+    const m = text.match(re);
+    if (m) return { file: relative(dir, full), match: m[1] ?? m[0] };
+  }
+  return null;
 }

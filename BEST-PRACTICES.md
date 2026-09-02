@@ -258,6 +258,20 @@ whole fixture run, so a new check cannot quietly reintroduce a mute pass.
   how, is a defensible choice. → `modules: fonts`
 - **Custom `src/pages/404.astro`.** A branded 404, not the host default. →
   `modules: 404:custom`
+- **Icons are inline SVG — no package, no font.** The glyphs a site uses are
+  bodies copied once into `src/lib/icons.ts` from any permissive set (Lucide,
+  Tabler, Phosphor are all MIT/ISC and attribution-free), and one component
+  inlines them with `currentColor`. Nothing loads that the page does not draw,
+  nothing sits on the critical path, and there is no dependency. An icon
+  *package* (astro-icon plus an Iconify collection, react-icons, a FontAwesome
+  bundle) is a dependency for a dozen paths whose shape invites importing a
+  whole set; an icon *font* is worse — a webfont on the critical path, a flash
+  of missing glyphs, every icon downloaded whether used or not. The fixture
+  went from a package to seventeen inline glyphs in one change (issue #31,
+  2026-09-02); the starter ships two. The baseline names no set, because naming
+  one is recommending a dependency (§ *Own it before you buy it*). House style,
+  both: a site is not broken for choosing a package.
+  → `modules: icons` (dependencies), `modules: icons:font` (the built CSS)
 - **Media domain in `image.remotePatterns`.** R2-hosted content (`media.<domain>`)
   must be allowlisted or transforms/`<Image>` on it fail. (Only checkable when
   `scripts/og.config.mjs` declares the media domain.) → `modules: remotePatterns`

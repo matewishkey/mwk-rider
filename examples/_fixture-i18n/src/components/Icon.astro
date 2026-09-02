@@ -1,0 +1,25 @@
+---
+/**
+ * An inline SVG icon. `name` accepts the old `lucide:tag` spelling as well as
+ * `tag`, so call sites did not have to change when the package went.
+ * Decorative by default (aria-hidden); pass `label` for one that carries meaning.
+ */
+import { ICONS, type IconName } from '../lib/icons';
+
+interface Props { name: string; size?: number; class?: string; label?: string }
+const { name, size = 16, class: className, label } = Astro.props;
+const key = name.replace(/^[\w-]+:/, '') as IconName;
+const body = ICONS[key];
+if (!body) throw new Error(`Icon "${name}" is not in src/lib/icons.ts — copy its body there`);
+---
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 24 24"
+  width={size}
+  height={size}
+  class={className}
+  aria-hidden={label ? undefined : 'true'}
+  role={label ? 'img' : undefined}
+  aria-label={label}
+  set:html={body}
+/>

@@ -37,19 +37,6 @@ export const config = {
     // curl-grepping for 'cloudflareinsights' — if absent, no data flows.
     cloudflareAnalyticsToken: null,
 
-    // Icon family — per-site choice for visual cohesion.
-    // Drives the Iconify collection name used in <Icon name="<family>:<icon>" />
-    // throughout the site. Common families:
-    //   lucide     — minimal stroke-based; suits technical/dev sites (default here)
-    //   phosphor   — multiple weights; suits warm/friendly brands
-    //   heroicons  — Tailwind-aligned; suits SaaS / dashboard aesthetics
-    //   tabler     — comprehensive set; suits content-heavy sites
-    //   material-symbols — Google's; suits Android-aligned products
-    // Install the matching collection: `npm i @iconify-json/<family>`.
-    // Different families have different icon names — e.g. Lucide's `search`
-    // is `magnifying-glass` in Phosphor — so swapping isn't drop-in.
-    // Pick once, stay with it; document in .rider/VOICE.md § Images.
-    iconFamily: 'lucide',
     siteName: 'rider i18n fixture',
     siteUrl: 'http://localhost:4321',
     logoUrl: null,

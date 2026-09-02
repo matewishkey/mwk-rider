@@ -39,6 +39,8 @@ const HOUSE_STYLE = [
   // Vercel, Netlify, Node and Deno alike, and a build that cannot run is a
   // defect on anyone's site.
   'modules:remotePatterns',     // R2 media-domain allowlisting
+  'modules:icons',              // an icon package is a choice, not a defect
+  'modules:icons:font',         // ditto — worse, but still a choice
   'modules:ClientRouter',       // view transitions are a preference
   'modules:engines.node',       // declaring an engines floor is good hygiene, not a defect
   'modules:astro:version',      // being a major behind is worth knowing, not a failure

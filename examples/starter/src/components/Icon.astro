@@ -1,0 +1,24 @@
+---
+/**
+ * An inline SVG icon from src/lib/icons.ts. Decorative by default
+ * (aria-hidden); pass `label` for one that carries meaning on its own.
+ */
+import { ICONS, type IconName } from '../lib/icons';
+
+interface Props { name: IconName; size?: number; class?: string; label?: string }
+const { name, size = 16, class: className, label } = Astro.props;
+const body = ICONS[name];
+if (!body) throw new Error(`Icon "${name}" is not in src/lib/icons.ts — copy its body there`);
+---
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 24 24"
+  width={size}
+  height={size}
+  class={className}
+  aria-hidden={label ? undefined : 'true'}
+  role={label ? 'img' : undefined}
+  aria-label={label}
+  style="vertical-align:-0.125em"
+  set:html={body}
+/>
