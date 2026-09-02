@@ -69,7 +69,7 @@ When a check can't determine an answer, report `⏭` with the reason. Never let 
 
 - [ ] `node tools/test.mjs` passes.
 - [ ] `node ../../tools/audit.mjs` inside **both** `examples/_fixture-i18n/` and `examples/starter/` is `0 🔧 / 0 🛑`, in default **and** `--strict`.
-- [ ] `npm run verify -- --strict` inside **both** examples is `0 🔧 / 0 🛑`. CI runs this, so
+- [ ] `node ../../tools/verify-example.mjs --strict` inside **both** examples is `0 🔧 / 0 🛑`. CI runs this, so
       an offline-only pass can still go red — it is the only thing that exercises `live`,
       `lighthouse` and `browser` against a real build.
 - [ ] Any new check is classified in `tools/lib/policy.mjs` and has both test halves.

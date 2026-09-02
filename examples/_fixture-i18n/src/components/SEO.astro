@@ -50,19 +50,14 @@ const description = entry
   ? entry.data.excerpt
   : (descriptionProp ?? brand.tagline ?? `${siteName} — content site`);
 
-// Resolve OG URL — mediaDomain null = fixture mode → relative to siteUrl
+// The cards are committed under public/og/ and ship with the site, so they are
+// always on the site's own origin. The media domain is for content photos; the
+// starter routed its cards there too and got a 404 og:image on the first site
+// with a bucket (2026-09-02).
 function resolveOg(): string {
   if (entry?.data.ogImage) return entry.data.ogImage;
-  if (entry) {
-    const slug = urlSlug(entry.id);
-    const localePart = `${lang}/`;
-    return mediaDomain
-      ? `https://${mediaDomain}/og/${localePart}${slug}.png`
-      : new URL(`/og/${localePart}${slug}.png`, siteUrl).toString();
-  }
-  return mediaDomain
-    ? `https://${mediaDomain}/og/default.png`
-    : new URL('/og/default.png', siteUrl).toString();
+  if (entry) return new URL(`/og/${lang}/${urlSlug(entry.id)}.png`, siteUrl).toString();
+  return new URL('/og/default.png', siteUrl).toString();
 }
 const ogImage = resolveOg();
 

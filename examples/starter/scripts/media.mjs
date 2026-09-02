@@ -47,7 +47,11 @@ const kb = Math.round(statSync(file).size / 1024);
 // caps what any screen can get. Say so; do not block.
 if (width < 1600) console.warn(`note: ${width}px wide — the responsive ladder tops out at 1600, so large screens get this size. Fine for most photos.`);
 
-const r = spawnSync('npx', ['wrangler', 'r2', 'object', 'put', `${config.mediaBucket}/${key}`,
+// `--remote` is not optional: wrangler 4 writes to a LOCAL emulation of the
+// bucket by default and prints "Resource location: local" in the noise. The
+// first run of this script did exactly that, reported success, and the edge
+// served a 404. Measured on wrangler 4.118, 2026-09-02.
+const r = spawnSync('npx', ['wrangler', 'r2', 'object', 'put', `${config.mediaBucket}/${key}`, '--remote',
   '--file', file, '--content-type', type, '--cache-control', 'public, max-age=31536000, immutable'],
   { stdio: 'inherit' });
 if (r.status !== 0) fail(`upload failed (wrangler exit ${r.status}) — is wrangler logged in, and does the bucket exist?`);

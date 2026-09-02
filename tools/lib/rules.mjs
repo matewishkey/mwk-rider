@@ -188,6 +188,7 @@ const RULES = [
 
   // --- project ---------------------------------------------------------------
   ['project/offline-domains', 'project', 'offline-domains', 'Reports that cwd is not an Astro project, so only the --url domains ran.'],
+  ['project/dist-stale', 'project', 'dist:stale', 'A dist/ older than the source is a different site — every dist-read check judges a build that no longer matches.'],
 ];
 
 /** Domains that only exist with `--url`; every rule in them is url-only. */

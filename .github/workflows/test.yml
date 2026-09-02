@@ -1,5 +1,5 @@
 # This repo's own gate. Runs the smoke test, audits both bundled example sites
-# in both severity modes, and then audits each one LIVE (`npm run verify`) —
+# in both severity modes, and then audits each one LIVE (`verify-example.mjs`) —
 # still keyless, so it works on forked PRs where secrets are unavailable. PSI is
 # the only domain that needs a key and it skips cleanly without one. The tool itself has no dependencies;
 # the examples are real Astro sites and are installed + built so the
@@ -112,6 +112,8 @@ jobs:
         working-directory: examples/${{ matrix.site }}
         run: npx playwright install --with-deps chromium
 
+      # By path, not `npm run verify`: the starter is copied verbatim into new
+      # sites, so a script pointing at ../../tools/ would ship broken (#33).
       - name: Verify examples/${{ matrix.site }} live (--strict)
         working-directory: examples/${{ matrix.site }}
-        run: npm run verify -- --strict
+        run: node ../../tools/verify-example.mjs --strict

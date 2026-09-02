@@ -11,7 +11,7 @@ import { spawnSync, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync, existsSync, utimesSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { imageSize } from './lib/image-size.mjs';
 
@@ -106,7 +106,9 @@ check('  …while the same image in normal flow still is',
 
 console.log('section scoping (-s seo) returns only that domain:');
 const scoped = runJson(FIXTURE, ['-s', 'seo']);
-check('only seo results', scoped.json?.results.every(r => r.section === 'seo'));
+// `project:*` rows ride along with any scope — a stale dist/ is as wrong for
+// `-s seo` as for a full run, and the live block below exempts them the same way.
+check('only seo results (plus the project-level notices)', scoped.json?.results.every(r => r.section === 'seo' || r.section === 'project'));
 
 console.log('non-Astro dir is rejected:');
 const nonAstro = spawnSync('node', [AUDIT], { cwd: tmpdir(), encoding: 'utf8' });
@@ -439,6 +441,22 @@ const siteOnly = row(mkBuilt({ 'dist/index.html': PAGE_LD({ '@type': 'WebSite' }
 check('  …while WebSite alone → fix', siteOnly?.outcome === 'fix', JSON.stringify(siteOnly));
 const brokenLd = row(mkBuilt({ 'dist/index.html': '<html><head><script type="application/ld+json">{"@type": "Article",}<\/script></head></html>' }), 'data', 'data/jsonld-parses');
 check('  …and JSON-LD that does not parse is its own finding', brokenLd?.outcome === 'fix', JSON.stringify(brokenLd));
+
+// A stale dist/ — the build is older than the source it came from. The audit
+// said clean on a site whose build was BROKEN, reading the dist/ the last good
+// build left behind (#34). mkBuilt writes src then dist, so a fresh one passes;
+// touching a source file afterwards is the whole reproduction.
+const freshDir = mkBuilt({ 'dist/index.html': PAGE_LD({ '@type': 'WebSite' }) });
+const fresh = runJson(freshDir, ['-s', 'modules']).json?.results.find(r => r.id === 'project/dist-stale');
+check('dist/ newer than src/ → pass', fresh?.outcome === 'pass', JSON.stringify(fresh));
+const later = new Date(Date.now() + 120_000);
+utimesSync(join(freshDir, 'src', 'pages', 'index.astro'), later, later);
+const stale = runJson(freshDir, ['-s', 'modules']).json?.results.find(r => r.id === 'project/dist-stale');
+check('  …a source file newer than dist/ → fix, before any dist-read check speaks',
+  stale?.outcome === 'fix' && /older than the source/.test(stale.message ?? ''), JSON.stringify(stale));
+check('  …and with no dist/ there is nothing to compare',
+  runJson(mkBuilt({}), ['-s', 'modules']).json?.results.find(r => r.id === 'project/dist-stale') == null
+  || runJson(mkProject({}), ['-s', 'modules']).json?.results.find(r => r.id === 'project/dist-stale') == null);
 
 // JSON-LD properties — what is INSIDE the node. `jsonld:shapes` reads the @type
 // and stops, so a BlogPosting with a bare-string author, a relative image and a

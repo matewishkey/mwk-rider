@@ -33,7 +33,9 @@ function resolveOgUrl(entry: CollectionEntry<'blog'>, siteUrl: string, mediaDoma
   if (entry.data.ogImage) return entry.data.ogImage;
   const slug = urlSlug(entry.id);
   const localePart = locale ? `${locale}/` : '';
-  if (mediaDomain) return `https://${mediaDomain}/og/${localePart}${slug}.png`;
+  // Cards are committed under public/og/ and ship with the site; they are never
+  // in the media bucket, so the media domain plays no part here (starter, 2026-09-02).
+  void mediaDomain;
   return new URL(`/og/${localePart}${slug}.png`, siteUrl).toString();
 }
 

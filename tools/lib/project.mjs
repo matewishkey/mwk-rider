@@ -8,7 +8,7 @@
 // you audited the directory. Config values are extracted with regexes instead:
 // less precise, but auditing a repo must never be equivalent to running it.
 
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 export async function detectProject(cwd) {
@@ -36,6 +36,11 @@ export async function detectProject(cwd) {
     contentConfig: readFileIfExists(join(cwd, 'src', 'content.config.ts'))
                 ?? readFileIfExists(join(cwd, 'src', 'content', 'config.ts')),
     hasDist: existsSync(join(cwd, 'dist')),
+    // Is dist/ older than the source it was built from? Every dist-reading
+    // check judges the build, and a build the source has moved past is a
+    // different site — the audit said clean on one whose build was BROKEN,
+    // because it read the dist/ the last good build left behind (#34).
+    distStale: existsSync(join(cwd, 'dist')) ? staleDist(cwd) : null,
     ogConfig: null,
   };
 
@@ -75,4 +80,35 @@ function readFirstFile(cwd, names) {
     if (t != null) return t;
   }
   return null;
+}
+
+/**
+ * `{ src, dist }` newest mtimes when source is newer than the build, else null.
+ *
+ * Source is everything a build reads: src/, public/, scripts/, the config and
+ * package.json. Not node_modules and not dist itself. Walks are bounded — a
+ * few thousand stats — and never follow symlinks.
+ */
+function staleDist(cwd) {
+  const src = Math.max(
+    ...['src', 'public', 'scripts'].map((d) => newestMtime(join(cwd, d))),
+    ...['astro.config.mjs', 'astro.config.ts', 'astro.config.js', 'astro.config.mts', 'package.json']
+      .map((f) => { try { return statSync(join(cwd, f)).mtimeMs; } catch { return 0; } }),
+  );
+  const dist = newestMtime(join(cwd, 'dist'));
+  return src > dist ? { src, dist } : null;
+}
+
+function newestMtime(dir, budget = { n: 5000 }) {
+  let newest = 0;
+  let entries;
+  try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return 0; }
+  for (const e of entries) {
+    if (budget.n-- <= 0) break;
+    const full = join(dir, e.name);
+    if (e.isSymbolicLink()) continue;
+    if (e.isDirectory()) { if (e.name !== 'node_modules') newest = Math.max(newest, newestMtime(full, budget)); continue; }
+    try { newest = Math.max(newest, statSync(full).mtimeMs); } catch { /* raced away */ }
+  }
+  return newest;
 }

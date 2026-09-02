@@ -172,7 +172,7 @@ the alternative is a starter that quietly stops complying with the tool that shi
   **not** belong in its assertions — one was hardcoded and adding a fixture post broke a
   test that was still checking the right thing.
 
-- **The gate audits live too, since 2026-09-01 — `npm run verify` in either example.**
+- **The gate audits live too, since 2026-09-01 — `node ../../tools/verify-example.mjs` inside either example.**
   It builds the site, serves it the way its adapter demands, audits it with `--url`, and
   tears down; CI runs it `--strict` on both, with Chromium installed so the browser domain
   participates. Starter 89 checks against 55 offline; fixture 90 against 57.
@@ -224,7 +224,7 @@ the alternative is a starter that quietly stops complying with the tool that shi
 - [ ] If any `tools/**` changed: `node ../../tools/audit.mjs` inside **both**
       `examples/_fixture-i18n/` and `examples/starter/` is `0 🔧 / 0 🛑`, in default
       **and** `--strict`. Build each first — most of the interesting checks read `dist/`.
-- [ ] If any `tools/**` changed: `npm run verify -- --strict` inside **both** examples is
+- [ ] If any `tools/**` changed: `node ../../tools/verify-example.mjs --strict` inside **both** examples is
       `0 🔧 / 0 🛑`. It builds and serves for you, and it is the only thing that puts the
       `live`, `lighthouse` and `browser` domains in front of a real build — the offline
       run above reaches 7 of the 10 domains.

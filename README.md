@@ -197,7 +197,7 @@ skills/rider/
 tools/
   audit.mjs                  entry: detect project, run domains, report
   test.mjs                   the offline half of the gate: fixture + known-bad projects
-  verify-example.mjs         the live half: build, serve, audit with --url (npm run verify)
+  verify-example.mjs         the live half: build, serve, audit with --url, run from inside an example
   checks/{modules,seo,images,perf,data,analytics,content,live,lighthouse,browser}.mjs
   lib/{project,reporter,policy,rules,cf-image,html,css-flow,dist,headers,jsonld,
        image-size,src-scan,untrusted,analytics-signals,search-engines,embed-hosts,
@@ -221,7 +221,7 @@ SECURITY.md                  what the tool reads, what it never executes, how to
 
 ## Contributing
 
-See [`CONTRIBUTING.md`](CONTRIBUTING.md). The short version: `node tools/test.mjs` is the offline half of the gate and `npm run verify` inside either example is the live half — CI runs both, a new check needs both test halves (stays quiet on the compliant example sites **and** fires on a known-bad project), it must be classified in [`tools/lib/policy.mjs`](tools/lib/policy.mjs) or it will start failing strangers' builds, and anything that moves the baseline updates **both** `examples/` sites in the same commit.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md). The short version: `node tools/test.mjs` is the offline half of the gate and `node ../../tools/verify-example.mjs` inside an example inside either example is the live half — CI runs both, a new check needs both test halves (stays quiet on the compliant example sites **and** fires on a known-bad project), it must be classified in [`tools/lib/policy.mjs`](tools/lib/policy.mjs) or it will start failing strangers' builds, and anything that moves the baseline updates **both** `examples/` sites in the same commit.
 
 Security issues: please use [private reporting](SECURITY.md), not a public issue.
 

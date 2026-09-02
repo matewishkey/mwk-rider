@@ -168,6 +168,14 @@ function nearest(input) {
 // Offline domains (skip if cwd isn't an Astro project but a --url run was requested)
 if (project) {
   const ctx = { project, reporter };
+  // Say it before any dist-reading check speaks: a clean report on a stale
+  // build reads exactly like a clean site, and one of those was unbuildable.
+  if (project.distStale) {
+    const ago = Math.round((project.distStale.src - project.distStale.dist) / 60000);
+    reporter.fix('project', 'dist:stale', `dist/ is older than the source — src/, public/, scripts/ or the config changed ${ago < 1 ? 'under a minute' : `${ago} min`} after the last build, so every dist-read check below judges a build that no longer matches`, 'rebuild, then audit');
+  } else if (project.hasDist) {
+    reporter.pass('project', 'dist:stale', 'dist/ is newer than every source file');
+  }
   for (const [name, loader] of Object.entries(OFFLINE)) {
     if (wanted && !wanted.has(name)) continue;
     try {

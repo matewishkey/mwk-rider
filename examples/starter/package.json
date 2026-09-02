@@ -14,9 +14,7 @@
     "types": "wrangler types",
     "check": "wrangler types && astro check",
     "sync": "astro sync",
-    "audit": "node ../../tools/audit.mjs",
     "deploy": "node scripts/og.mjs && astro build && wrangler deploy",
-    "verify": "node ../../tools/verify-example.mjs",
     "og": "node scripts/og.mjs",
     "media": "node scripts/media.mjs"
   },
