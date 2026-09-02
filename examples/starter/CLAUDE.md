@@ -55,8 +55,8 @@ each one earns it.
 
 ## Operator steps — the things nobody can do from the code
 
-Two dashboard tasks, once each. Until they are done the site works and the
-contact form fails closed.
+Three tasks, once each. Until they are done the site works, the contact form
+fails closed, and post photos live next to their posts instead of in a bucket.
 
 1. **Cloudflare Web Analytics.** Dashboard → Web Analytics → add this site, copy
    the site token into `scripts/og.config.mjs`. Free, cookieless, no banner.
@@ -67,6 +67,19 @@ contact form fails closed.
 2. **Cloudflare Email Service.** Onboard the sending domain, then verify the
    destination address in `wrangler.jsonc` → `send_email[0].destination_address`.
    Sending to a verified destination is free on any plan.
+3. **A media bucket.** Photos in posts never enter git; they go to one R2 bucket
+   behind a custom domain, and Cloudflare resizes them at the edge. Create the
+   bucket and attach a subdomain of the site's own domain to it:
+   ```bash
+   npx wrangler r2 bucket create <site>-media
+   npx wrangler r2 bucket domain add <site>-media --domain media.<your domain> --zone-id <zone id>
+   ```
+   then set `mediaBucket` and `mediaDomain` in `scripts/og.config.mjs`. From then
+   on `npm run media -- <file> blog/<post id>/<name>.jpg` uploads a photo and
+   prints the `cover:` block for its frontmatter. Until the bucket exists, a
+   `cover:` that points at a file next to the post still works — Astro resizes
+   it at build, which is fine for a few images and wrong for a library of them.
+   `wrangler r2 object list <site>-media` is the inventory; there is no manifest.
 
 ## Working on it
 

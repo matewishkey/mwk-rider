@@ -1,0 +1,46 @@
+---
+/**
+ * A post's lead image, from whichever lane the frontmatter chose.
+ *
+ * A local file goes through Astro's <Image>, which resizes at build and bakes
+ * width/height into the tag. An R2 key goes through Cloudflare's transform URL
+ * with a srcset ladder, and width/height come from the frontmatter because the
+ * build never sees the bytes. Either way the tag carries dimensions, so the
+ * layout does not shift when the image arrives — the thing `perf: cls:*` and
+ * the browser domain measure.
+ *
+ * It is the first image on the page, so it loads eagerly with high priority:
+ * lazy-loading the LCP element is the single most common way to lose the
+ * Lighthouse performance score on a content page.
+ */
+import { Image } from 'astro:assets';
+import type { CollectionEntry } from 'astro:content';
+import { CONTENT_SIZES, LADDER, mediaSrc, mediaSrcset } from '../lib/media';
+
+interface Props { entry: CollectionEntry<'blog'> }
+const { entry } = Astro.props;
+const { cover, coverAlt } = entry.data;
+---
+{cover && 'key' in cover && (
+  <img
+    src={mediaSrc(cover.key, Math.min(1200, cover.width))}
+    srcset={mediaSrcset(cover.key, cover.width)}
+    sizes={CONTENT_SIZES}
+    width={cover.width}
+    height={cover.height}
+    alt={coverAlt}
+    loading="eager"
+    fetchpriority="high"
+    decoding="async"
+  />
+)}
+{cover && !('key' in cover) && (
+  <Image
+    src={cover}
+    widths={[...LADDER.filter((w) => w <= cover.width)]}
+    sizes={CONTENT_SIZES}
+    alt={coverAlt ?? ''}
+    loading="eager"
+    fetchpriority="high"
+  />
+)}

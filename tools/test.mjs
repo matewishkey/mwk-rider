@@ -258,6 +258,26 @@ check('  …and adapter:cloudflare defers instead of double-reporting it',
 // opts out. That build fails without an adapter just as loudly as output:'server'.
 const oneRoute = modRow({ output: 'static', prerenderFalse: true, withAdapter: false }, 'adapter:on-demand');
 check('a single prerender = false route with no adapter → block', oneRoute?.outcome === 'block', JSON.stringify(oneRoute));
+
+// remotePatterns — checked as text, never evaluated. The starter derives the
+// hostname from og.config (`hostname: brandConfig.mediaDomain`) so the domain
+// has one home; demanding the literal would force a second copy. Undriven until
+// 2026-09-02, when the starter's media lane tripped it.
+const rpDir = (astroConfig) => {
+  const dir = mkProject({ config: astroConfig });
+  mkdirSync(join(dir, 'scripts'), { recursive: true });
+  writeFileSync(join(dir, 'scripts', 'og.config.mjs'), "export const config = { mediaDomain: 'media.x.test', brand: { siteName: 'x' } };\n");
+  return dir;
+};
+const rpRow = (astroConfig) => runJson(rpDir(astroConfig), ['-s', 'modules', '--strict']).json?.results.find(r => r.id === 'modules/remotepatterns') ?? null;
+const rpLiteral = rpRow("export default { output: 'static', image: { remotePatterns: [{ protocol: 'https', hostname: 'media.x.test' }] } };\n");
+check('media domain literal in image.remotePatterns → pass', rpLiteral?.outcome === 'pass', JSON.stringify(rpLiteral));
+const rpDerived = rpRow("import { config as brandConfig } from './scripts/og.config.mjs';\nexport default { output: 'static', image: { remotePatterns: brandConfig.mediaDomain ? [{ protocol: 'https', hostname: brandConfig.mediaDomain }] : [] } };\n");
+check('  …derived from og.config → pass, and says so', rpDerived?.outcome === 'pass' && /derived/.test(rpDerived.message ?? ''), JSON.stringify(rpDerived));
+const rpMissing = rpRow("export default { output: 'static' };\n");
+check('  …absent while og.config names a media domain → fix', rpMissing?.outcome === 'fix', JSON.stringify(rpMissing));
+check('  …and with no media domain declared there is nothing to check',
+  runJson(mkProject({}), ['-s', 'modules', '--strict']).json?.results.find(r => r.id === 'modules/remotepatterns') == null);
 check('  …and it names the route, not just the output mode',
   /prerender = false/.test(oneRoute?.message ?? ''), JSON.stringify(oneRoute));
 const oneRouteOk = modRow({ output: 'static', prerenderFalse: true, withAdapter: true }, 'adapter:on-demand');
@@ -1672,13 +1692,27 @@ check('  …while a single incidental image from one → suggest, not a build fa
 check('  …and same-origin images need nothing',
   perfRow('perf/preconnect', '<img src="/local.webp" alt="a">')?.outcome === 'pass');
 
-// The trap: a preconnect that looks like the fix and is not.
-const bare = perfRow('perf/preconnect-crossorigin', TWO_REMOTE, '<link rel="preconnect" href="https://media.x.test">');
-check('a preconnect with no crossorigin → fix (images cannot reuse that connection)',
-  bare?.outcome === 'fix', JSON.stringify(bare));
-check('  …and with it → pass, with the preconnect check satisfied too',
-  perfRow('perf/preconnect-crossorigin', TWO_REMOTE, '<link rel="preconnect" href="https://media.x.test" crossorigin>')?.outcome === 'pass'
-  && perfRow('perf/preconnect', TWO_REMOTE, '<link rel="preconnect" href="https://media.x.test" crossorigin>')?.outcome === 'pass');
+// The trap: a preconnect that looks like the fix and is not — one whose CORS
+// mode does not match the images'. Until 2026-09-02 this check had it backwards
+// and demanded `crossorigin` on every image-host preconnect; a plain <img> is a
+// no-cors fetch and cannot reuse an anonymous CORS connection (MDN: match the
+// resource's CORS and credentials mode). Both directions are driven here.
+const PRE = '<link rel="preconnect" href="https://media.x.test">';
+const PRE_CORS = '<link rel="preconnect" href="https://media.x.test" crossorigin>';
+const TWO_REMOTE_CORS = TWO_REMOTE.replace(/<img /g, '<img crossorigin ');
+const bareOk = perfRow('perf/preconnect-crossorigin', TWO_REMOTE, PRE);
+check('plain <img> + bare preconnect → pass (a no-cors fetch reuses a no-cors connection)',
+  bareOk?.outcome === 'pass' && perfRow('perf/preconnect', TWO_REMOTE, PRE)?.outcome === 'pass', JSON.stringify(bareOk));
+const corsOnPlain = perfRow('perf/preconnect-crossorigin', TWO_REMOTE, PRE_CORS);
+check('  …plain <img> + crossorigin preconnect → fix (the trap this check used to prescribe)',
+  corsOnPlain?.outcome === 'fix' && /cannot reuse/.test(corsOnPlain.message ?? ''), JSON.stringify(corsOnPlain));
+check('  …<img crossorigin> + crossorigin preconnect → pass',
+  perfRow('perf/preconnect-crossorigin', TWO_REMOTE_CORS, PRE_CORS)?.outcome === 'pass');
+const bareOnCors = perfRow('perf/preconnect-crossorigin', TWO_REMOTE_CORS, PRE);
+check('  …<img crossorigin> + bare preconnect → fix (the other direction is just as dead)',
+  bareOnCors?.outcome === 'fix', JSON.stringify(bareOnCors));
+check('  …and the missing-preconnect suggestion prescribes the matching form, bare for plain <img>',
+  !/crossorigin/.test(perfRow('perf/preconnect', TWO_REMOTE)?.fix ?? perfRow('perf/preconnect', TWO_REMOTE)?.suggestion ?? 'crossorigin'));
 
 // A preload that disagrees with its <img> downloads the image twice.
 const IMG = '<img src="/h.webp" srcset="/h-800.webp 800w, /h-1600.webp 1600w" sizes="(max-width: 700px) 100vw, 700px" alt="h">';

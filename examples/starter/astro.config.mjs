@@ -29,6 +29,15 @@ export default defineConfig({
   // that reads built HTML — silently unverified.
   output: 'static',
 
+  // The media bucket's custom domain, once it exists. Post covers from R2 are
+  // raw <img> tags pointing at Cloudflare's transform URL and never pass
+  // through Astro's image service, so strictly this is not needed for them —
+  // it is here so that <Image src="https://media.…"> also works, and because
+  // the audit treats a media domain that is not allow-listed as a mistake.
+  image: {
+    remotePatterns: brandConfig.mediaDomain ? [{ protocol: 'https', hostname: brandConfig.mediaDomain }] : [],
+  },
+
   // Astro 7 changed this default from `true` to `'jsx'`, which strips whitespace
   // by JSX rules — including the newline between prose and an inline element, so
   //

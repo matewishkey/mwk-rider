@@ -368,8 +368,17 @@ export async function run({ project, reporter }) {
   const mediaDomain = project.ogConfig?.mediaDomain ?? project.ogConfig?.brand?.mediaDomain;
   if (mediaDomain) {
     const escaped = mediaDomain.replace(/\./g, '\\.');
+    // Either the literal hostname, or a remotePatterns entry that reads it from
+    // the brand config (`hostname: brandConfig.mediaDomain`). The starter does
+    // the latter so the domain has exactly one home; a check that demanded the
+    // literal would force a second copy that create mode then has to keep in
+    // step. The text is not evaluated — the pattern is "a remotePatterns block
+    // whose hostname is some expression ending in .mediaDomain".
+    const derived = /remotePatterns[\s\S]{0,400}?hostname\s*:\s*[\w$.]+\.mediaDomain\b/.test(cfg);
     if (new RegExp(escaped).test(cfg)) {
       reporter.pass(SEC, 'remotePatterns', mediaDomain);
+    } else if (derived) {
+      reporter.pass(SEC, 'remotePatterns', `${mediaDomain} — derived from og.config's mediaDomain in astro.config`);
     } else {
       reporter.fix(SEC, 'remotePatterns', `${mediaDomain} not in image.remotePatterns`, `add { protocol: 'https', hostname: '${mediaDomain}' } to image.remotePatterns`);
     }

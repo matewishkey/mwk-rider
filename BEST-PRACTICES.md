@@ -408,6 +408,32 @@ thing a version bump leaves behind. Each maps to a documented v7 breaking change
 *Check files: `tools/checks/images.mjs` (offline: source + built `dist/`) and
 `tools/checks/live.mjs` (served HTML). Shared param logic: `tools/lib/cf-image.mjs`.*
 
+- **Where media lives (2026-09-02).** Two lanes, and which one is not a
+  preference. *Site chrome* — logo, favicon, one hero, the OG cards — is a
+  handful of files that never change, lives in the repo under `src/assets/`,
+  and goes through Astro's `<Image>` at build, which is what lets the starter
+  build with no Cloudflare account. *Content media* — photos in posts, anything
+  editorial, anything that grows — never enters git. It goes to one R2 bucket
+  per site behind `media.<domain>`, and every page requests it through
+  Cloudflare's transform URL (`/cdn-cgi/image/width=…,quality=80,format=auto/…`)
+  so the edge produces each size on demand and nothing is resized at build.
+  Git stores every version of every binary forever, so a photo edited twice
+  costs three copies in every clone, and it drags optimisation back into the
+  build. **The bucket is the media repo**; `wrangler r2 object list` is the
+  inventory and there is no manifest to drift. A post references a *key*
+  (`blog/<id>/cover.jpg`), never a URL, so the domain has one home. Keys follow
+  the content so a post and its media share a name. The one thing the build
+  cannot do for a file it never sees is read its dimensions, so the upload path
+  records them into the frontmatter — reading a number, not resizing — and the
+  tag carries width/height like any other. In the starter: `Cover.astro` renders
+  either lane, `src/lib/media.ts` builds the URLs, `npm run media` uploads and
+  prints the frontmatter, `astro.config` derives `remotePatterns` from the same
+  brand file. No new check: the delivery half is already every rule below plus
+  `modules: remotePatterns`, `perf: preconnect`, and the live image loop that
+  fetches every served content image with a browser Accept header. Exercised
+  by setting a media domain and a key on a starter post: the audit found the
+  missing preconnect and the missing remote pattern in the first run, and a
+  wrong `crossorigin` rule in the second — all three fixed in the same change.
 - **Content images go through an image transform.** Either Astro build-time
   optimization for local assets (`/_astro/…`) or Cloudflare Image
   Transformations for R2 content (`/cdn-cgi/image/…`) — never a raw full-size
@@ -649,11 +675,19 @@ thing a version bump leaves behind. Each maps to a documented v7 breaking change
   A host serving one incidental image (an avatar, a badge) is `💡`, not `🔧`:
   the advice is still right, but it is not what cost 900 ms, and failing a build
   over it is the crying-wolf failure `policy.mjs` exists to prevent.
-- **A preconnect to an image host carries `crossorigin`.** Images are CORS-mode
-  fetches, so a bare `<link rel="preconnect">` opens an anonymous connection the
-  image cannot reuse and the browser opens a second. It is a separate finding
-  precisely because it *looks* fixed — the worse state to be in than missing.
-  → `perf: preconnect:crossorigin`
+- **A preconnect to an image host matches its images' CORS mode.** A browser
+  pools connections by credentials mode. A plain `<img>` is a no-cors,
+  credentialed fetch; a `<link rel="preconnect" … crossorigin>` opens an
+  anonymous CORS connection that fetch cannot reuse, so the browser opens a
+  second and the hint bought nothing. The reverse is just as dead: an
+  `<img crossorigin>` with a bare preconnect. It is a separate finding precisely
+  because it *looks* fixed — worse than missing. → `perf: preconnect:crossorigin`
+  **Corrected 2026-09-02.** Until then this check demanded `crossorigin` on every
+  image-host preconnect, on the claim that "images are CORS-mode fetches". They
+  are not, unless the tag says so; that rule is right for fonts and `fetch()`
+  and wrong for nearly every image on a content site. MDN's preconnect example
+  for a generic origin is bare, and the rule it states is *match the resource's
+  CORS and credentials mode*. The starter's own media lane tripped it.
 - **A preload for an image matches the tag byte for byte.** A head
   `<link rel="preload" as="image">` whose `imagesrcset`/`imagesizes` differ from
   the `<img>`'s `srcset`/`sizes` makes the browser resolve two different

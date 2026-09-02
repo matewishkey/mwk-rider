@@ -3,6 +3,8 @@ title: Why this site is static
 date: 2026-07-24
 dateModified: 2026-07-28
 tags: [meta, hosting]
+cover: ../../assets/blog/why-static/cover.png
+coverAlt: Two grey circles on a pale field, standing in for a photograph of the thing this post is about.
 excerpt: A content site has no good reason to run a server on every request, and several good reasons not to. What that buys you, and the one exception here.
 ---
 

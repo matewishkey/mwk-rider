@@ -46,7 +46,7 @@ Everything else has a default. Colours, fonts and layout are *"change them on
    - `public/logo.svg` — replace the placeholder wordmark with the site name.
      Set in type, that is a finished logo and needs nothing further. If they ask
      for a drawn mark or artwork instead, **suggest an image model rather than
-     drawing one badly by hand** — Replicate, say. Two things to be straight
+     drawing one badly by hand**. Two things to be straight
      about when you do: it needs *their* API key, and it bills them per image.
      Generate the file, save it into `public/`, and stop there — the key never
      goes into the site, and the build stays static with nothing calling out to
@@ -64,12 +64,12 @@ Everything else has a default. Colours, fonts and layout are *"change them on
    unset, and the missing Twitter handles. Both are true and both are the
    owner's to resolve. Anything else means you broke something — fix it before
    handing over.
-6. **Print the two operator TODOs** (below) and nothing more.
+6. **Print the three operator TODOs** (below) and nothing more.
 
-## The two operator TODOs
+## The three operator TODOs
 
-Both are dashboard steps only the site owner can do. Say plainly that the site
-works without them, and what does not work until they are done.
+All three are steps only the site owner can do. Say plainly that the site works
+without them, and what does not work until they are done.
 
 1. **Cloudflare Web Analytics** — dashboard → Web Analytics → add the site, paste
    the token into `scripts/og.config.mjs`. Until then the site collects no
@@ -77,6 +77,11 @@ works without them, and what does not work until they are done.
 2. **Cloudflare Email Service** — onboard the sending domain, verify the
    destination address. Until then the contact form fails closed: it redirects
    back with an error rather than pretending to have sent.
+3. **A media bucket** — the site's `CLAUDE.md` § Operator steps has the two
+   wrangler commands. Until then a post's `cover:` is a file next to the post
+   and Astro resizes it at build, which is fine for a few images; once the
+   bucket exists, `npm run media` moves photos to R2 and Cloudflare resizes
+   them at the edge.
 
 ## Must not
 

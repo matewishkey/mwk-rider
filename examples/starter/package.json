@@ -17,7 +17,8 @@
     "audit": "node ../../tools/audit.mjs",
     "deploy": "node scripts/og.mjs && astro build && wrangler deploy",
     "verify": "node ../../tools/verify-example.mjs",
-    "og": "node scripts/og.mjs"
+    "og": "node scripts/og.mjs",
+    "media": "node scripts/media.mjs"
   },
   "dependencies": {
     "@astrojs/cloudflare": "^14.1.7",

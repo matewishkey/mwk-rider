@@ -113,7 +113,7 @@ const RULES = [
   ['perf/font-format', 'perf', 'font:format', 'woff2 has been universally supported for years and is roughly half the bytes of ttf/otf.'],
   ['perf/embed-eager', 'perf', 'embed:eager', 'A heavy third-party iframe in the built HTML loads with the page; loading="lazy" does not defer one high on it. A facade does.'],
   ['perf/preconnect', 'perf', 'preconnect', 'A cross-origin image host with no preconnect costs DNS + TLS before the first byte of the LCP image moves.'],
-  ['perf/preconnect-crossorigin', 'perf', 'preconnect:crossorigin', 'Images are CORS-mode fetches, so a preconnect without crossorigin opens a connection they cannot reuse — it looks fixed and is not.'],
+    ['perf/preconnect-crossorigin', 'perf', 'preconnect:crossorigin', 'A preconnect must match its images\' CORS mode — a plain <img> is no-cors, so a crossorigin preconnect opens a connection it cannot reuse, and vice versa.'],
   ['perf/preload-pair', 'perf', 'preload:pair', "A preload as=image whose imagesrcset/imagesizes differ from the tag's downloads the image twice."],
   ['perf/cache-astro', 'perf', 'cache:_astro', 'Live only: the real Cache-Control on a hashed asset. Neither astro dev nor astro preview applies _headers.'],
   ['perf/cache-html', 'perf', 'cache:html', 'Live only: HTML marked immutable means a deploy stays invisible until the cache expires.'],

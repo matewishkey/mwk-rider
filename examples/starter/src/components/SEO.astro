@@ -51,6 +51,11 @@ const breadcrumb = entry ? breadcrumbLd(entry, brand) : null;
 <title>{title}</title>
 <meta name="description" content={description} />
 <link rel="canonical" href={pageUrl} />
+{/* Open the connection to the media bucket before the parser reaches the first
+    photo — DNS + TLS are several round trips on a mobile link. Bare on purpose:
+    a plain <img> is a no-cors fetch and cannot reuse a `crossorigin` preconnect's
+    anonymous connection, so that attribute here would buy nothing. */}
+{mediaDomain && <link rel="preconnect" href={`https://${mediaDomain}`} />}
 
 <meta property="og:title" content={entry?.data.title ?? titleProp ?? brand.siteName} />
 <meta property="og:description" content={description} />

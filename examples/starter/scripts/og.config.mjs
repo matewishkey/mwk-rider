@@ -5,10 +5,19 @@
 // point: one file to change, not fourteen.
 
 export const config = {
-  // Set this to a Cloudflare custom domain if you serve images from R2.
-  // Left null, images resolve relative to siteUrl and no remote-pattern
-  // allowlisting is needed.
-  mediaDomain: null,
+  // --- content media: an R2 bucket behind a custom domain --------------------
+  // Photos in posts never enter git. They live in one R2 bucket per site,
+  // served from `media.<your domain>`, and every page requests them through
+  // Cloudflare's transform URL (/cdn-cgi/image/width=…,format=auto/…) so the
+  // edge produces each size on demand and nothing is resized at build.
+  //
+  // Both null until the bucket exists (CLAUDE.md § Operator steps). Until then,
+  // a post's `cover` is a local file under src/assets/ and Astro resizes it at
+  // build — the right lane for a handful of chrome images, the wrong one for a
+  // growing library of photos. `npm run media` moves a file to R2 and prints
+  // the frontmatter to paste.
+  mediaDomain: null,   // e.g. 'media.example.com' — the custom domain on the bucket
+  mediaBucket: null,   // e.g. 'example-media'    — the R2 bucket name, for npm run media
 
   brand: {
     // --- who you are --------------------------------------------------------

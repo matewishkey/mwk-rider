@@ -2,6 +2,7 @@
 import type { GetStaticPaths } from 'astro';
 import { render } from 'astro:content';
 import RootLayout from '../../layouts/RootLayout.astro';
+import Cover from '../../components/Cover.astro';
 import { publishedPosts } from '../../lib/posts';
 
 export const getStaticPaths = (async () => {
@@ -20,6 +21,7 @@ const { Content } = await render(post);
       {' · '}
       {post.data.tags.map((tag) => <><a href={`/blog/tag/${tag}`}>{tag}</a>{' '}</>)}
     </p>
+    <Cover entry={post} />
     <Content />
   </article>
   <p><a href="/blog">← All posts</a></p>
