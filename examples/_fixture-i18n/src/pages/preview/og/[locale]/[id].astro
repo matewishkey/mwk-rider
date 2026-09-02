@@ -1,112 +1,33 @@
 ---
 /**
- * Multi-locale OG template page per.
+ * The generated card for one post, at its real size.
  * Route: /preview/og/<locale>/<id>
  *
- * This is what Playwright screenshots into og/<locale>/<id>.png. The same
- * page is the live QA preview — visit /preview/og/en/welcome in a browser
- * to see exactly what the OG will look like, with hot reload while
- * iterating on CSS.
+ * This used to be the HTML template Playwright screenshotted into the PNG.
+ * Since 2026-09-02 the cards are drawn by scripts/og.mjs (satori + sharp) on
+ * every build, so there is no template to preview — the review affordance is
+ * the finished PNG, which is also the only thing anyone will ever see. Edit
+ * the template in og.mjs, rebuild, reload.
  */
 import type { CollectionEntry } from 'astro:content';
 import { getCollection } from 'astro:content';
-import { config } from '../../../../../scripts/og.config.mjs';
+import PreviewLayout from '../../../../layouts/PreviewLayout.astro';
 import { urlSlug } from '../../../../lib/slug';
 
 export async function getStaticPaths() {
   const posts = await getCollection('blog');
-  return posts.map((post) => ({
-    params: { locale: post.data.locale, id: urlSlug(post.id) },
-    props: { post },
-  }));
+  return posts
+    .filter((post) => !post.data.draft && !post.data.previewOnly)
+    .map((post) => ({ params: { locale: post.data.locale, id: urlSlug(post.id) }, props: { post } }));
 }
 
-interface Props {
-  post: CollectionEntry<'blog'>;
-}
-
+interface Props { post: CollectionEntry<'blog'> }
 const { post } = Astro.props;
-const { brand } = config;
-const tagsLine = (post.data.tags ?? []).slice(0, 3).join(' · ');
-const siteHost = (brand.siteUrl ?? '').replace(/^https?:\/\//, '');
+const src = `/og/${post.data.locale}/${urlSlug(post.id)}.png`;
 ---
-
-<html>
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="robots" content="noindex, nofollow" />
-    <title>OG: {post.data.title}</title>
-    <style define:vars={{
-      bg: brand.palette.background,
-      text: brand.palette.text,
-      primary: brand.palette.primary,
-      secondary: brand.palette.secondary,
-      muted: brand.palette.muted,
-      fontFamily: brand.fontName,
-    }}>
-      html, body { margin: 0; padding: 0; }
-      body { background: #222; }
-      .og {
-        width: 1200px;
-        height: 630px;
-        background: var(--bg);
-        color: var(--text);
-        font-family: var(--fontFamily), system-ui, sans-serif;
-        padding: 72px;
-        display: flex;
-        flex-direction: column;
-        justify-content: space-between;
-        box-sizing: border-box;
-      }
-      .brand {
-        font-size: 28px;
-        color: var(--muted);
-        letter-spacing: 0.05em;
-        display: flex;
-        align-items: center;
-        gap: 16px;
-      }
-      .brand img { height: 32px; width: auto; }
-      .locale-pill {
-        display: inline-block;
-        padding: 4px 12px;
-        background: var(--secondary);
-        color: var(--bg);
-        font-size: 18px;
-        font-weight: 700;
-        border-radius: 4px;
-        letter-spacing: 0.1em;
-      }
-      .title {
-        font-size: 72px;
-        line-height: 1.05;
-        color: var(--primary);
-        font-weight: 700;
-        word-break: break-word;
-        max-width: 95%;
-      }
-      .footer {
-        display: flex;
-        justify-content: space-between;
-        align-items: flex-end;
-        font-size: 26px;
-        color: var(--secondary);
-      }
-      .footer .url { color: var(--muted); }
-    </style>
-  </head>
-  <body>
-    <div class="og">
-      <div class="brand">
-        {brand.logoUrl && <img src={brand.logoUrl} alt="" />}
-        <span>{brand.siteName ?? ''}</span>
-        <span class="locale-pill">{post.data.locale.toUpperCase()}</span>
-      </div>
-      <div class="title">{post.data.title}</div>
-      <div class="footer">
-        <div class="tags">{tagsLine}</div>
-        <div class="url">{siteHost}</div>
-      </div>
-    </div>
-  </body>
-</html>
+<PreviewLayout title={`OG: ${post.data.title}`}>
+  <h1>{post.data.title}</h1>
+  <p class="muted">{post.data.locale} · <code>{src}</code> · 1200×630, drawn by <code>scripts/og.mjs</code></p>
+  <img src={src} width="1200" height="630" alt={`Social card for ${post.data.title}`} style="max-width:100%;height:auto;border:1px solid #333" />
+  <p><a href="/preview/og">← All cards</a></p>
+</PreviewLayout>

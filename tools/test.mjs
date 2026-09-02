@@ -34,8 +34,8 @@ function check(name, cond, detail = '') {
 // drift at the end: a new check must not ship uncatalogued.
 const seenRuleIds = new Set();
 
-function runJson(cwd, args = []) {
-  const r = spawnSync('node', [AUDIT, '--json', ...args], { cwd, encoding: 'utf8' });
+function runJson(cwd, args = [], { env } = {}) {
+  const r = spawnSync('node', [AUDIT, '--json', ...args], { cwd, encoding: 'utf8', env: env ?? process.env });
   let parsed = null;
   try { parsed = JSON.parse(r.stdout); } catch {}
   for (const row of parsed?.results ?? []) if (row.id) seenRuleIds.add(row.id);
@@ -765,7 +765,18 @@ const head = (canonical, ld) => '<link rel="canonical" href="' + canonical + '">
   + '<meta property="og:image" content="/og/card.png">'
   + '<meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">'
   + '<script type="application/ld+json">' + ld + '<\\/script>';
-const home = '<!doctype html><html><head>' + head('/', '{"@type":"WebSite"}')
+const bigPng = Buffer.concat([
+  Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a]),
+  Buffer.from([0,0,0,13]), Buffer.from('IHDR'),
+  Buffer.from([0,0,0x06,0x40,0,0,0x03,0x84,8,6,0,0,0]),
+]);
+// GA_HOME: the same home with Google Analytics loaded straight from Google —
+// what \`analytics: ga:raw\` exists to catch, driven from a second instance of
+// this server so the main run stays clean (#30).
+const gaTag = process.env.GA_HOME
+  ? '<script async src="https://www.googletagmanager.com/gtag/js?id=G-TEST"><\\/script><script src="https://www.google-analytics.com/analytics.js"><\\/script>'
+  : '';
+const home = '<!doctype html><html><head>' + head('/', '{"@type":"WebSite"}') + gaTag
   + '<script src="/_astro/app.Ab12Cd34.js"><\\/script>'
   + '</head><body><h1>Home</h1><a href="/wiki">Wiki</a><a href="/wiki/kettle-clock">An entry</a></body></html>';
 const entry = '<!doctype html><html><head>' + head('/wiki/kettle-clock', '{"@type":"TechArticle"}')
@@ -804,7 +815,7 @@ const srv = createServer((req, res) => {
   };
   const url = req.url.replace(/\\/$/, '') || '/';
   if (url === '/_astro/cover.css') return send(coverCss, 'text/css');
-  if (url === '/_astro/hero.png' || url === '/_astro/shot.png') return send(png, 'image/png');
+  if (url === '/_astro/hero.png' || url.startsWith('/_astro/shot.png')) return send(png, 'image/png');
   // Served no-cache, exactly as \`astro preview\` serves a hashed asset (measured).
   if (url.startsWith('/_astro/')) {
     const buf = Buffer.from('console.log(1)');
@@ -812,8 +823,14 @@ const srv = createServer((req, res) => {
     return res.end(req.method === 'HEAD' ? undefined : buf);
   }
   if (url === '/og/card.avif') return send(avifCard, 'image/avif');
+  if (url === '/og/big.png') return send(bigPng, 'image/png');
   if (url.startsWith('/og/')) return send(png, 'image/png');
   if (url === '/avifcard') return send(avifCardPage, 'text/html');
+  // Declares 1200×630, serves 1600×900: a real card, wrong meta (og:image:dimensions).
+  if (url === '/mismatch') return send('<!doctype html><html><head>' + head('/mismatch', '{"@type":"TechArticle"}').split('/og/card.png').join('/og/big.png') + '</head><body><h1>Mismatch</h1></body></html>', 'text/html');
+  // More content images than the live loop inspects, so the cap has to be named (images: delivery).
+  if (url === '/manyimgs') return send('<!doctype html><html><head>' + head('/manyimgs', '{"@type":"TechArticle"}') + '</head><body><h1>Many</h1>'
+    + Array.from({ length: 26 }, (_, i) => '<img src="/_astro/shot.png?' + i + '" width="10" height="10" alt="s">').join('') + '</body></html>', 'text/html');
   // A page whose canonical is /slashy but which the server only serves at
   // /slashy/ — the Workers auto-trailing-slash default, as seen on the starter.
   if (req.url === '/slashy') { res.writeHead(307, { location: '/slashy/' }); return res.end(); }
@@ -854,6 +871,27 @@ check('a canonical that answers 200 directly → pass',
 const slashy = runJson(tmpdir(), ['-s', 'live', '--url', `http://127.0.0.1:${port}`, '--post', '/slashy']).json?.results.find(r => r.id === 'seo/canonical-direct');
 check('  …a canonical the server answers with a 307 to the slash form → fix, naming the redirect',
   slashy?.outcome === 'fix' && /307/.test(slashy.message ?? ''), JSON.stringify(slashy));
+
+// Four rules that had an emitter and no test until 2026-09-02 (#30).
+const mismatch = runJson(tmpdir(), ['-s', 'live', '--url', `http://127.0.0.1:${port}`, '--post', '/mismatch']).json?.results.find(r => r.id === 'seo/og-image-dimensions');
+check('a real card whose meta declares other dimensions → og:image:dimensions suggest',
+  mismatch?.outcome === 'suggest' && /1600×900/.test(mismatch.message ?? ''), JSON.stringify(mismatch));
+const many = runJson(tmpdir(), ['-s', 'live', '--url', `http://127.0.0.1:${port}`, '--post', '/manyimgs']).json?.results.find(r => r.id === 'images/delivery');
+check('more content images than the live loop inspects → images: delivery names the cap',
+  many?.outcome === 'skip' && /26 content images/.test(many.message ?? ''), JSON.stringify(many));
+const gaSrv = spawn(process.execPath, [srvFile], { stdio: ['ignore', 'pipe', 'inherit'], env: { ...process.env, GA_HOME: '1' } });
+const gaPort = await new Promise((resolve, reject) => {
+  const timer = setTimeout(() => reject(new Error('GA server did not start')), 10000);
+  gaSrv.stdout.once('data', (d) => { clearTimeout(timer); resolve(String(d).trim()); });
+});
+// House style: which delivery replaces the snippet is our call, so a default
+// run suggests and --strict requires. Both branches driven.
+const gaRaw = runJson(tmpdir(), ['-s', 'live', '--url', `http://127.0.0.1:${gaPort}`]).json?.results.find(r => r.id === 'analytics/ga-raw');
+check('GA loaded straight from a Google origin on the served page → ga:raw suggest by default',
+  gaRaw?.outcome === 'suggest', JSON.stringify(gaRaw));
+const gaRawStrict = runJson(tmpdir(), ['-s', 'live', '--strict', '--url', `http://127.0.0.1:${gaPort}`]).json?.results.find(r => r.id === 'analytics/ga-raw');
+check('  …and fix under --strict', gaRawStrict?.outcome === 'fix', JSON.stringify(gaRawStrict));
+gaSrv.kill();
 check('a served /llms.txt is read, not just looked for',
   liveRows.find(r => r.id === 'data/llms-txt-served')?.outcome === 'pass',
   JSON.stringify(liveRows.find(r => r.id === 'data/llms-txt-served')));
@@ -1150,6 +1188,17 @@ createServer((req, res) => {
   // it was instead.
   const firstRows = rowsFor('/broken');
   const launchFailed = firstRows.some(r => r.id === 'browser/launch' && r.outcome === 'skip');
+  // browser: launch — the skip for "playwright resolves, Chromium does not". Driven
+  // by pointing the browsers path at an empty directory, which is what a CI box
+  // that ran npm ci and not playwright install looks like (#30).
+  if (!launchFailed && firstRows.some(r => r.section === 'browser')) {
+    const noBrowsers = mkdtempSync(join(tmpdir(), 'rider-nobrowser-'));
+    const rows = runJson(FIXTURE_DIR, ['-s', 'browser', '--url', `http://127.0.0.1:${navPort}/broken`],
+      { env: { ...process.env, PLAYWRIGHT_BROWSERS_PATH: noBrowsers } }).json?.results ?? [];
+    const launch = rows.find(r => r.id === 'browser/launch');
+    check('Chromium missing → browser: launch skip that says how to install it',
+      launch?.outcome === 'skip' && /playwright install/.test(launch.message ?? ''), JSON.stringify(launch));
+  }
   const broken = firstRows.find(r => r.id === 'browser/nav-reach');
   if (launchFailed) {
     console.log('  ⏭ nav:reach not exercised — playwright is installed but Chromium is not (npx playwright install chromium)');

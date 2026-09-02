@@ -5,16 +5,13 @@ import { config as ogConfig } from '../../../../scripts/og.config.mjs';
 import { urlSlug } from '../../../lib/slug';
 
 const posts = await getCollection('blog');
-const { mediaDomain, brand } = ogConfig;
+const { brand } = ogConfig;
 const siteUrl = brand.siteUrl ?? '';
 
+// Cards ship with the site under /og/; the media domain is for photos, never cards.
 function resolveOg(post: typeof posts[number]): string {
   if (post.data.ogImage) return post.data.ogImage;
-  const slug = urlSlug(post.id);
-  const localePart = `${post.data.locale}/`;
-  return mediaDomain
-    ? `https://${mediaDomain}/og/${localePart}${slug}.png`
-    : `${siteUrl}/og/${localePart}${slug}.png`;
+  return `${siteUrl}/og/${post.data.locale}/${urlSlug(post.id)}.png`;
 }
 
 const rows = posts.map((p) => ({
@@ -34,7 +31,7 @@ for (const row of rows) {
 ---
 <PreviewLayout title="OG previews">
   <h1>OG previews</h1>
-  <p>One card per (locale, post). Click a slug to see the live template at <code>/preview/og/&lt;locale&gt;/&lt;slug&gt;</code>.</p>
+  <p>One card per (locale, post). Click a slug to see the generated card at <code>/preview/og/&lt;locale&gt;/&lt;slug&gt;</code>.</p>
 
   {Array.from(byLocale.entries()).map(([locale, items]) => (
     <section>
