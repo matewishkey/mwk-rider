@@ -11,7 +11,11 @@ import { join, relative } from 'node:path';
 import { readSrcFiles, stripComments } from '../lib/src-scan.mjs';
 import { eachDistHtml } from '../lib/html.mjs';
 import { distFiles, readDist, countMatches, sitemapPages, distRelative } from '../lib/dist.mjs';
-import { collectJsonLd, ldTypes, hasArticleType } from '../lib/jsonld.mjs';
+import {
+  collectJsonLd, ldTypes, hasArticleType, ARTICLE_TYPES, nodesOfType,
+  articleProblems, authorProblems, dateProblems, urlProblems, breadcrumbProblems,
+  deprecatedShapes,
+} from '../lib/jsonld.mjs';
 import { installedEngines, describeEngine } from '../lib/search-engines.mjs';
 
 const SEC = 'data';
@@ -160,7 +164,7 @@ function checkJsonLd(project, reporter) {
   // Judged over the pages the site declares in its sitemap, for the same reason
   // seo's coverage checks are: "every built page" counts OG templates.
   const declared = sitemapPages(project.root);
-  const objects = [], broken = [], without = [];
+  const objects = [], broken = [], without = [], perPage = [];
   let pages = 0, pagesWithLd = 0;
   eachDistHtml(project.root, (rel, html) => {
     if (declared && !declared.has(distRelative(project.root, rel))) return;
@@ -169,6 +173,7 @@ function checkJsonLd(project, reporter) {
     if (found.objects.length) pagesWithLd++;
     else without.push(rel);
     objects.push(...found.objects);
+    perPage.push({ rel, objects: found.objects });
     for (const b of found.broken) broken.push(`${rel}: ${b}`);
   });
 
@@ -204,6 +209,8 @@ function checkJsonLd(project, reporter) {
     const missing = [!article ? 'an Article-family type (Article/BlogPosting/NewsArticle/TechArticle…)' : null, !site ? 'WebSite' : null].filter(Boolean).join(' and ');
     reporter.fix(SEC, 'jsonld:shapes', `dist/ emits ${types.size ? [...types].sort().join(', ') : 'no @type at all'} — missing ${missing}`, 'emit an Article-family shape per post and a site-wide WebSite shape');
   }
+
+  checkJsonLdProperties(perPage, reporter);
 }
 
 function listPages(root) {
@@ -226,3 +233,139 @@ function listPages(root) {
 }
 
 function short(rel) { return rel.replace(/^src\/pages\//, ''); }
+
+/**
+ * What is *inside* the structured data, not just that it is there.
+ *
+ * `jsonld:shapes` reads the @type and stops. That is the whole gap this closes:
+ * a BlogPosting whose author is a bare string, whose image is a relative path
+ * and whose dates are `toLocaleDateString()` output declares itself perfectly
+ * and earns nothing. Google reads the type, finds the properties unusable, and
+ * drops the rich result — with no error, in the page or in an audit that only
+ * counted types.
+ *
+ * Everything here is a documented Google requirement or a value that is broken
+ * on its face. Presence of a breadcrumb is the one taste call, and it is the one
+ * thing here that is house style.
+ */
+function checkJsonLdProperties(perPage, reporter) {
+  const articlePages = perPage
+    .map((p) => ({ rel: p.rel, nodes: nodesOfType(p.objects, ARTICLE_TYPES) }))
+    .filter((p) => p.nodes.length);
+
+  if (!articlePages.length) {
+    const why = 'no Article-family node on any page — jsonld:shapes reports that';
+    for (const name of ['jsonld:article-props', 'jsonld:author', 'jsonld:breadcrumb']) reporter.skip(SEC, name, why);
+  } else {
+    // --- the documented Article properties ---------------------------------
+    const missingRequired = [], missingRecommended = [];
+    for (const { rel, nodes } of articlePages) {
+      for (const n of nodes) {
+        const m = articleProblems(n);
+        if (m.required.length) missingRequired.push(`${rel}: ${m.required.join(', ')}`);
+        if (m.recommended.length) missingRecommended.push(`${rel}: ${m.recommended.join(', ')}`);
+      }
+    }
+    if (missingRequired.length) {
+      reporter.fix(SEC, 'jsonld:article-props', `${missingRequired.length} Article node(s) missing a required property — ${sample(missingRequired)}`,
+        'add author and headline to the Article builder — Google documents author as required, and a node without a headline has nothing to show',
+        { file: missingRequired[0].split(':')[0] });
+    } else if (missingRecommended.length) {
+      reporter.suggest(SEC, 'jsonld:article-props', `${missingRecommended.length} Article node(s) missing a recommended property — ${sample(missingRecommended)}`,
+        'add image and datePublished — no image is no thumbnail in the result, and no date is no date');
+    } else {
+      reporter.pass(SEC, 'jsonld:article-props', `author + headline + image + datePublished on all ${articlePages.length} Article page(s)`);
+    }
+
+    // --- author shape ------------------------------------------------------
+    const authorBad = [];
+    for (const { rel, nodes } of articlePages) {
+      for (const n of nodes) {
+        if (n.author === undefined || n.author === null) continue;  // article-props' finding, not this one
+        for (const p of authorProblems(n)) authorBad.push(`${rel}: ${p}`);
+      }
+    }
+    if (authorBad.length) {
+      reporter.fix(SEC, 'jsonld:author', `${authorBad.length} author problem(s) — ${sample(authorBad)}`,
+        'emit author as { "@type": "Person" | "Organization", name, url } — a bare string cannot say which it is',
+        { file: authorBad[0].split(':')[0] });
+    } else {
+      reporter.pass(SEC, 'jsonld:author', 'every author is a typed Person or Organization with a name');
+    }
+
+    // --- breadcrumbs -------------------------------------------------------
+    // Presence is house style: a breadcrumb earns a nicer result, and a flat
+    // blog is not wrong for having no hierarchy to describe. Being *malformed*
+    // is not house style — see below.
+    const noCrumb = articlePages.filter((p) => !nodesOfType(perPage.find((x) => x.rel === p.rel).objects, new Set(['BreadcrumbList'])).length);
+    if (noCrumb.length) {
+      reporter.fix(SEC, 'jsonld:breadcrumb', `${noCrumb.length}/${articlePages.length} Article page(s) emit no BreadcrumbList — ${sample(noCrumb.map((p) => p.rel))}`,
+        'emit a BreadcrumbList alongside the Article shape — it is what puts the trail, rather than the bare URL, in the result');
+    } else {
+      reporter.pass(SEC, 'jsonld:breadcrumb', `on all ${articlePages.length} Article page(s)`);
+    }
+  }
+
+  // --- values that are broken wherever they appear --------------------------
+  // Judged over every node on every page, not just Article ones: a relative
+  // logo on an Organization is as dead as a relative image on a BlogPosting.
+  const dateBad = [], urlBad = [], crumbBad = [];
+  let crumbs = 0;
+  for (const { rel, objects } of perPage) {
+    for (const n of objects) {
+      for (const p of dateProblems(n)) dateBad.push(`${rel}: ${p}`);
+      for (const p of urlProblems(n)) urlBad.push(`${rel}: ${p}`);
+    }
+    for (const n of nodesOfType(objects, new Set(['BreadcrumbList']))) {
+      crumbs++;
+      for (const p of breadcrumbProblems(n)) crumbBad.push(`${rel}: ${p}`);
+    }
+  }
+
+  if (dateBad.length) {
+    reporter.fix(SEC, 'jsonld:dates', `${dateBad.length} date(s) are not ISO 8601 — ${sample(dateBad)}`,
+      'emit dates with .toISOString() — a formatted date ("5 January 2024") is not a date to a parser',
+      { file: dateBad[0].split(':')[0] });
+  } else {
+    reporter.pass(SEC, 'jsonld:dates', 'every datePublished/dateModified is ISO 8601');
+  }
+
+  // Advisory by construction. A relative IRI resolves against the document base
+  // and works, so this is never a defect — it is a value that stops working the
+  // moment the block leaves the page it was served on.
+  if (urlBad.length) {
+    reporter.suggest(SEC, 'jsonld:urls', `${urlBad.length} URL value(s) are relative — ${sample(urlBad)}`,
+      'resolve them against the site URL — relative values are legal and resolve against the page, but only while the block stays on it');
+  } else {
+    reporter.pass(SEC, 'jsonld:urls', 'every URL value in the structured data is absolute');
+  }
+
+  // Markup for rich results Google has retired. Not wrong, just no longer paid
+  // for — Google says leaving it causes no errors, so this never fails a run.
+  const dead = [];
+  for (const { rel, objects } of perPage) {
+    for (const d of deprecatedShapes(objects)) dead.push(`${rel}: ${d}`);
+  }
+  if (dead.length) {
+    const kinds = [...new Set(dead.map((d) => d.split(': ')[1]))];
+    reporter.suggest(SEC, 'jsonld:deprecated', `${kinds.length} retired rich-result shape(s) still emitted — ${kinds.join('; ')}`,
+      'drop them, or keep them knowingly — Google ignores unsupported structured data without error, so this costs bytes and maintenance rather than ranking');
+  } else {
+    reporter.pass(SEC, 'jsonld:deprecated', 'no retired rich-result shapes (SearchAction, HowTo, FAQPage)');
+  }
+
+  if (!crumbs) {
+    reporter.skip(SEC, 'jsonld:breadcrumb-shape', 'no BreadcrumbList emitted — nothing to validate');
+  } else if (crumbBad.length) {
+    reporter.fix(SEC, 'jsonld:breadcrumb-shape', `${crumbBad.length} BreadcrumbList problem(s) — ${sample(crumbBad)}`,
+      'positions must run 1..n in order and every item needs a name; only the last may omit its item URL',
+      { file: crumbBad[0].split(':')[0] });
+  } else {
+    reporter.pass(SEC, 'jsonld:breadcrumb-shape', `${crumbs} BreadcrumbList(s) well formed`);
+  }
+}
+
+/** First few of a list, with a count for the rest — the house message shape. */
+function sample(list, n = 2) {
+  return list.slice(0, n).join('; ') + (list.length > n ? ` … +${list.length - n} more` : '');
+}

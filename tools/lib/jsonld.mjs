@@ -93,3 +93,214 @@ export function classifyPage(types) {
   for (const t of types) if (CONTENT_PAGE_TYPES.has(t)) return { kind: 'content', type: t };
   return { kind: 'none', type: null };
 }
+
+// ---------------------------------------------------------------------------
+// Property-level validation.
+//
+// `jsonld:emitted`, `jsonld:parses` and `jsonld:shapes` answer "is there
+// structured data, does it parse, and does it declare the right @type". None of
+// them looks *inside* the node. A BlogPosting with a bare-string author and a
+// relative image URL passes all three and earns nothing: Google reads the type,
+// finds the properties unusable, and drops the rich result silently. There is no
+// error anywhere — the page looks marked up, in the source and in the audit.
+//
+// Everything asserted below is a documented Google requirement or an outright
+// broken value, never a preference. Sources are on each function.
+
+/** A node's @type as an array, however it was written. */
+function typesOf(node) {
+  const t = node?.['@type'];
+  if (typeof t === 'string') return [t];
+  if (Array.isArray(t)) return t.filter((x) => typeof x === 'string');
+  return [];
+}
+
+/** Nodes whose @type is in `set`. */
+export function nodesOfType(objects, set) {
+  return objects.filter((o) => typesOf(o).some((t) => set.has(t)));
+}
+
+/**
+ * Is this an absolute URL?
+ *
+ * A relative one is NOT broken, and an earlier draft of this check said it was.
+ * JSON-LD 1.1 resolves relative IRIs against the base IRI, which for a block
+ * embedded in HTML is the document's own location — so a compliant processor
+ * reads `/og/default.png` exactly as intended (https://www.w3.org/TR/json-ld11/
+ * § base IRI). Google documents no rule either way: grepping sd-policies,
+ * intro-structured-data, article and breadcrumb for "absolute" and "relative
+ * URL" returns nothing, and what IS documented is that image URLs must be
+ * crawlable, which is a different property.
+ *
+ * So this is advice, not a verdict. Absolute values survive being syndicated,
+ * copied into a feed, or read by anything that never saw the page they came
+ * from; relative ones only work while the block sits on its original URL.
+ * Google's own examples are absolute throughout.
+ */
+export function isAbsoluteUrl(v) {
+  if (typeof v !== 'string' || !v) return false;
+  try { return /^https?:$/.test(new URL(v).protocol); } catch { return false; }
+}
+
+/**
+ * ISO 8601, which is what Google documents for every date property.
+ *
+ * `new Date(x)` is far too forgiving to use alone — it accepts "January 5" and
+ * a bare "2024" — so the shape is matched first and the value parsed second.
+ * A date-only value (`2024-01-05`) is legal ISO 8601 and accepted; the offset is
+ * recommended, not required, so its absence is not a finding here.
+ */
+export function isIsoDate(v) {
+  if (typeof v !== 'string') return false;
+  if (!/^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?)?$/.test(v)) return false;
+  return !Number.isNaN(Date.parse(v));
+}
+
+/**
+ * Author problems on one Article-family node.
+ *
+ * `author` is the property Google documents as required for Article, and it must
+ * name a Person or an Organization — `"author": "Jane Doe"` is the common
+ * shorthand and it is not usable, because a bare string cannot carry the @type
+ * that disambiguates a person from a publisher.
+ * https://developers.google.com/search/docs/appearance/structured-data/article
+ */
+export function authorProblems(node) {
+  const a = node.author;
+  if (a === undefined || a === null) return ['no author'];
+  const list = Array.isArray(a) ? a : [a];
+  if (!list.length) return ['author is an empty array'];
+  const out = [];
+  for (const one of list) {
+    if (typeof one === 'string') { out.push(`author is a bare string ("${one.slice(0, 40)}") — needs @type and name`); continue; }
+    if (!one || typeof one !== 'object') { out.push('author is not an object'); continue; }
+    const t = typesOf(one);
+    if (!t.length) out.push('author has no @type (Person or Organization)');
+    else if (!t.some((x) => x === 'Person' || x === 'Organization')) out.push(`author @type is ${t.join('/')} — Google reads Person or Organization`);
+    if (typeof one.name !== 'string' || !one.name.trim()) out.push('author has no name');
+  }
+  return out;
+}
+
+/**
+ * Date problems on one node. Only properties that are present are judged —
+ * whether they must exist is `articleProblems`' question, not this one.
+ */
+export function dateProblems(node) {
+  const out = [];
+  for (const key of ['datePublished', 'dateModified']) {
+    if (node[key] === undefined) continue;
+    if (!isIsoDate(node[key])) out.push(`${key} is not ISO 8601 ("${String(node[key]).slice(0, 40)}")`);
+  }
+  return out;
+}
+
+/**
+ * URL-valued properties that are present but not absolute.
+ *
+ * Only properties whose value is documented as a URL are examined, and only when
+ * the value is a string — `image` and `publisher` are routinely objects
+ * (ImageObject, Organization), which is correct and not a finding.
+ */
+const URL_PROPS = ['url', 'image', 'logo', 'item', 'contentUrl', 'thumbnailUrl', 'sameAs', '@id'];
+export function urlProblems(node) {
+  const out = [];
+  for (const key of URL_PROPS) {
+    const v = node[key];
+    if (v === undefined || v === null) continue;
+    for (const one of Array.isArray(v) ? v : [v]) {
+      if (typeof one !== 'string') continue;      // an ImageObject/Organization — fine
+      if (!isAbsoluteUrl(one)) out.push(`${key} is not an absolute URL ("${one.slice(0, 50)}")`);
+    }
+  }
+  return out;
+}
+
+/**
+ * The properties Google documents for the Article family.
+ *
+ * `author` is required; the rest are recommended and each one visibly changes
+ * the result — no `image` is no thumbnail, no `datePublished` is no date. They
+ * are reported together because the fix is the same edit to the same builder,
+ * and separated in the message so it is clear which half is which.
+ * https://developers.google.com/search/docs/appearance/structured-data/article
+ */
+export function articleProblems(node) {
+  const missing = { required: [], recommended: [] };
+  if (node.author === undefined || node.author === null) missing.required.push('author');
+  if (typeof node.headline !== 'string' || !node.headline.trim()) missing.required.push('headline');
+  for (const key of ['image', 'datePublished']) {
+    if (node[key] === undefined || node[key] === null || node[key] === '') missing.recommended.push(key);
+  }
+  return missing;
+}
+
+/**
+ * BreadcrumbList problems.
+ *
+ * Positions must be integers running 1..n in order. `name` is required on every
+ * item; `item` is required on every element *except the last*, where Google
+ * defaults to the current page URL — flagging the last one is the mistake a
+ * naive implementation of this check makes, and it would fire on Google's own
+ * documented example.
+ * https://developers.google.com/search/docs/appearance/structured-data/breadcrumb
+ */
+export function breadcrumbProblems(node) {
+  const items = node.itemListElement;
+  if (!Array.isArray(items) || !items.length) return ['itemListElement is missing or empty'];
+  const out = [];
+  const positions = [];
+  items.forEach((li, i) => {
+    const last = i === items.length - 1;
+    if (!li || typeof li !== 'object') { out.push(`item ${i + 1} is not an object`); return; }
+    const pos = typeof li.position === 'string' && /^\d+$/.test(li.position) ? Number(li.position) : li.position;
+    if (!Number.isInteger(pos)) out.push(`item ${i + 1} has no integer position`);
+    else positions.push(pos);
+    if (typeof li.name !== 'string' || !li.name.trim()) {
+      // A `item` given as a Thing carries the name instead — legal, so only the
+      // combination of no name AND no named Thing is a problem.
+      const named = li.item && typeof li.item === 'object' && typeof li.item.name === 'string' && li.item.name.trim();
+      if (!named) out.push(`item ${i + 1} has no name`);
+    }
+    if (!last && (li.item === undefined || li.item === null)) out.push(`item ${i + 1} has no item URL (only the last may omit it)`);
+  });
+  const expected = positions.map((_, i) => i + 1).join(',');
+  if (positions.length && positions.join(',') !== expected) out.push(`positions are ${positions.join(',')} — must run 1..${positions.length} in order`);
+  return out;
+}
+
+/**
+ * Structured data that no longer earns anything.
+ *
+ * Three rich results were retired while the markup that requests them stayed
+ * valid, so a site keeps emitting them and keeps believing they do something:
+ *
+ *   - `SearchAction` inside `WebSite` — the sitelinks searchbox, removed from
+ *     results on 21 November 2024. (The rest of `WebSite` is still supported and
+ *     still worth emitting; only the SearchAction is dead.)
+ *   - `HowTo` — desktop How-to results ended 13 September 2023, docs removed the
+ *     next day.
+ *   - `FAQPage` — restricted to authoritative government and health sites in
+ *     September 2023, then retired outright on 7 May 2026.
+ *
+ * Google is explicit that removing them is optional and that leaving them causes
+ * no errors, which is exactly why this reports and never fails: the markup is
+ * not wrong, it is just no longer paid for. Verified against the changelog at
+ * https://developers.google.com/search/updates on 2026-09-02 — all three doc
+ * pages now redirect to their removal entries.
+ */
+export function deprecatedShapes(objects) {
+  const found = [];
+  for (const o of objects) {
+    const t = typesOf(o);
+    if (t.includes('WebSite') && o.potentialAction) {
+      const actions = Array.isArray(o.potentialAction) ? o.potentialAction : [o.potentialAction];
+      if (actions.some((a) => typesOf(a).includes('SearchAction'))) {
+        found.push('WebSite → SearchAction (sitelinks searchbox, retired 2024-11-21)');
+      }
+    }
+    if (t.includes('HowTo')) found.push('HowTo (rich result retired 2023-09-13)');
+    if (t.includes('FAQPage')) found.push('FAQPage (rich result retired 2026-05-07)');
+  }
+  return [...new Set(found)];
+}

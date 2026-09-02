@@ -54,3 +54,28 @@ export function webSiteLd(brand: Brand) {
     ...(brand.tagline ? { description: brand.tagline } : {}),
   };
 }
+
+/**
+ * The breadcrumb trail for a post: Home › Blog › Title.
+ *
+ * This is what puts the site's hierarchy in the search result instead of a bare
+ * URL. Positions run 1..n in order and every item carries a name — Google drops
+ * the whole list rather than guessing when either is wrong, so the shape matters
+ * more than the contents.
+ *
+ * The last item keeps its `item` URL even though Google allows omitting it. An
+ * explicit self URL is the same answer Google would infer, and it survives the
+ * page being syndicated somewhere the "current page" is not this one.
+ */
+export function breadcrumbLd(entry: CollectionEntry<'blog'>, brand: Brand) {
+  const at = (path: string) => new URL(path, brand.siteUrl).toString();
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    itemListElement: [
+      { '@type': 'ListItem', position: 1, name: 'Home', item: at('/') },
+      { '@type': 'ListItem', position: 2, name: 'Blog', item: at('/blog') },
+      { '@type': 'ListItem', position: 3, name: entry.data.title, item: at(`/blog/${entry.id}`) },
+    ],
+  };
+}

@@ -55,6 +55,11 @@ const HOUSE_STYLE = [
   // --- pages that are ours to want -------------------------------------------
   // A stranger's Astro blog is not broken for having no media kit or design
   // page. These are worth suggesting and never worth failing a build over.
+  // Presence of a breadcrumb trail: a flat blog has no hierarchy to describe, so
+  // wanting one is our call. Being MALFORMED is not — `jsonld:breadcrumb-shape`
+  // is deliberately not here, because out-of-order positions are a defect on
+  // anyone's site and Google drops the whole list rather than guessing.
+  'data:jsonld:breadcrumb',
   'content:mediakit',
   'content:designkit',
   // Thresholds we picked. The 🔧 tiers of css:bytes/font:bytes/font:format are
@@ -102,6 +107,13 @@ const ADVISORY = [
   // This is what lets the baseline recommend Cloudflare Web Analytics without
   // failing every site that has not set it up.
   'analytics:provider',
+  // A relative URL in JSON-LD is legal — JSON-LD 1.1 resolves it against the
+  // document base — so this can never be a defect. It reports values that would
+  // stop resolving if the block were syndicated or read off-page.
+  'data:jsonld:urls',
+  // Retired rich results (SearchAction, HowTo, FAQPage). Google states outright
+  // that leaving them causes no errors, so there is no failing branch to promote.
+  'data:jsonld:deprecated',
   // Correct prose can legitimately mix a straight quote (an inch mark, an
   // attribute quoted in a sentence) with a directional one, so this check can
   // fire on a compliant site. It reports where two smart-quote engines would

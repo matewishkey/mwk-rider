@@ -420,6 +420,100 @@ check('  …while WebSite alone → fix', siteOnly?.outcome === 'fix', JSON.stri
 const brokenLd = row(mkBuilt({ 'dist/index.html': '<html><head><script type="application/ld+json">{"@type": "Article",}<\/script></head></html>' }), 'data', 'data/jsonld-parses');
 check('  …and JSON-LD that does not parse is its own finding', brokenLd?.outcome === 'fix', JSON.stringify(brokenLd));
 
+// JSON-LD properties — what is INSIDE the node. `jsonld:shapes` reads the @type
+// and stops, so a BlogPosting with a bare-string author, a relative image and a
+// formatted date passed every structured-data check the tool had. Google reads
+// the type, finds the properties unusable and drops the rich result silently.
+const GOOD_AUTHOR = { '@type': 'Person', name: 'Jane Doe', url: 'https://x.test/jane' };
+const ARTICLE = (over = {}) => ({
+  '@type': 'BlogPosting', headline: 'A post', author: GOOD_AUTHOR,
+  image: 'https://x.test/og.png', datePublished: '2026-01-05T08:00:00+10:00', ...over,
+});
+const CRUMB = (items) => ({ '@type': 'BreadcrumbList', itemListElement: items });
+const GOOD_CRUMB = CRUMB([
+  { '@type': 'ListItem', position: 1, name: 'Home', item: 'https://x.test/' },
+  { '@type': 'ListItem', position: 2, name: 'A post', item: 'https://x.test/a' },
+]);
+const ldPage = (nodes, id) => row(mkBuilt({ 'dist/index.html': PAGE_LD(nodes) }), 'data', id);
+
+const fullLd = ldPage([{ '@type': 'WebSite' }, ARTICLE(), GOOD_CRUMB], 'data/jsonld-article-props');
+check('a complete Article node → article-props pass', fullLd?.outcome === 'pass', JSON.stringify(fullLd));
+const noAuthor = ldPage([{ '@type': 'WebSite' }, ARTICLE({ author: undefined })], 'data/jsonld-article-props');
+check('  …missing author → fix (Google documents it as required)', noAuthor?.outcome === 'fix', JSON.stringify(noAuthor));
+const noImage = ldPage([{ '@type': 'WebSite' }, ARTICLE({ image: undefined })], 'data/jsonld-article-props');
+check('  …missing only a recommended property → suggest, not fix', noImage?.outcome === 'suggest', JSON.stringify(noImage));
+
+// The bare-string author is the single most common way to write this wrong, and
+// it is invisible to any check that only asks whether `author` is present.
+const strAuthor = ldPage([{ '@type': 'WebSite' }, ARTICLE({ author: 'Jane Doe' })], 'data/jsonld-author');
+check('author as a bare string → fix', strAuthor?.outcome === 'fix' && /bare string/.test(strAuthor.message), JSON.stringify(strAuthor));
+const orgAuthor = ldPage([{ '@type': 'WebSite' }, ARTICLE({ author: { '@type': 'Organization', name: 'Acme' } })], 'data/jsonld-author');
+check('  …an Organization author → pass (not every author is a Person)', orgAuthor?.outcome === 'pass', JSON.stringify(orgAuthor));
+const multiAuthor = ldPage([{ '@type': 'WebSite' }, ARTICLE({ author: [GOOD_AUTHOR, { '@type': 'Person', name: 'John' }] })], 'data/jsonld-author');
+check('  …and an array of authors → pass (Google’s own example is an array)', multiAuthor?.outcome === 'pass', JSON.stringify(multiAuthor));
+
+const badDate = ldPage([{ '@type': 'WebSite' }, ARTICLE({ datePublished: '5 January 2026' })], 'data/jsonld-dates');
+check('a formatted date → fix', badDate?.outcome === 'fix', JSON.stringify(badDate));
+const dateOnly = ldPage([{ '@type': 'WebSite' }, ARTICLE({ datePublished: '2026-01-05' })], 'data/jsonld-dates');
+check('  …a date with no time → pass (legal ISO 8601; the offset is recommended, not required)', dateOnly?.outcome === 'pass', JSON.stringify(dateOnly));
+
+// Advisory, never a fix: JSON-LD 1.1 resolves a relative IRI against the
+// document base, so this markup works. An earlier draft called it broken.
+const relUrl = ldPage([{ '@type': 'WebSite' }, ARTICLE({ image: '/og/default.png' })], 'data/jsonld-urls');
+check('a relative image URL → suggest, never a fix (it is legal and it resolves)', relUrl?.outcome === 'suggest', JSON.stringify(relUrl));
+const objImage = ldPage([{ '@type': 'WebSite' }, ARTICLE({ image: { '@type': 'ImageObject', url: 'https://x.test/og.png' } })], 'data/jsonld-urls');
+check('  …an ImageObject rather than a string → pass, not a false positive', objImage?.outcome === 'pass', JSON.stringify(objImage));
+
+// The last breadcrumb may omit `item` — Google's documented example does exactly
+// that, so a naive implementation of this check fires on Google's own markup.
+const docCrumb = CRUMB([
+  { '@type': 'ListItem', position: 1, name: 'Books', item: 'https://x.test/books' },
+  { '@type': 'ListItem', position: 2, name: 'Award Winners' },
+]);
+const okCrumb = ldPage([{ '@type': 'WebSite' }, ARTICLE(), docCrumb], 'data/jsonld-breadcrumb-shape');
+check('the last breadcrumb may omit its item URL → pass', okCrumb?.outcome === 'pass', JSON.stringify(okCrumb));
+const skewed = ldPage([{ '@type': 'WebSite' }, ARTICLE(), CRUMB([
+  { '@type': 'ListItem', position: 2, name: 'Home', item: 'https://x.test/' },
+  { '@type': 'ListItem', position: 1, name: 'A post', item: 'https://x.test/a' },
+])], 'data/jsonld-breadcrumb-shape');
+check('  …out-of-order positions → fix', skewed?.outcome === 'fix' && /positions are/.test(skewed.message), JSON.stringify(skewed));
+const nameless = ldPage([{ '@type': 'WebSite' }, ARTICLE(), CRUMB([
+  { '@type': 'ListItem', position: 1, item: 'https://x.test/' },
+  { '@type': 'ListItem', position: 2, name: 'A post', item: 'https://x.test/a' },
+])], 'data/jsonld-breadcrumb-shape');
+check('  …a nameless item → fix', nameless?.outcome === 'fix', JSON.stringify(nameless));
+const middleNoItem = ldPage([{ '@type': 'WebSite' }, ARTICLE(), CRUMB([
+  { '@type': 'ListItem', position: 1, name: 'Home' },
+  { '@type': 'ListItem', position: 2, name: 'A post', item: 'https://x.test/a' },
+])], 'data/jsonld-breadcrumb-shape');
+check('  …a non-final item with no URL → fix', middleNoItem?.outcome === 'fix', JSON.stringify(middleNoItem));
+
+// Presence is house style, so it has to be driven in BOTH modes: `row` runs
+// --strict, which is exactly the mode that hides a demotion bug.
+const crumblessDir = mkBuilt({ 'dist/index.html': PAGE_LD([{ '@type': 'WebSite' }, ARTICLE()]) });
+const crumbless = runJson(crumblessDir, ['-s', 'data']).json?.results.find(r => r.id === 'data/jsonld-breadcrumb');
+check('an Article page with no BreadcrumbList → suggest by default', crumbless?.outcome === 'suggest', JSON.stringify(crumbless));
+const crumblessStrict = row(crumblessDir, 'data', 'data/jsonld-breadcrumb');
+check('  …and fix under --strict', crumblessStrict?.outcome === 'fix', JSON.stringify(crumblessStrict));
+
+// Retired rich results. All three shapes are still valid markup, so the finding
+// is advisory in both modes — Google states that leaving them causes no errors.
+const searchAction = ldPage([ARTICLE(), {
+  '@type': 'WebSite', potentialAction: { '@type': 'SearchAction', target: 'https://x.test/s?q={q}' },
+}], 'data/jsonld-deprecated');
+check('WebSite → SearchAction → suggest (sitelinks searchbox retired 2024-11-21)',
+  searchAction?.outcome === 'suggest' && /searchbox/.test(searchAction.message), JSON.stringify(searchAction));
+const howto = ldPage([{ '@type': 'WebSite' }, ARTICLE(), { '@type': 'HowTo', name: 'How' }], 'data/jsonld-deprecated');
+check('  …HowTo too', howto?.outcome === 'suggest', JSON.stringify(howto));
+const plainSite = ldPage([{ '@type': 'WebSite' }, ARTICLE()], 'data/jsonld-deprecated');
+check('  …while a WebSite with no SearchAction → pass (only the action is dead, not WebSite)',
+  plainSite?.outcome === 'pass', JSON.stringify(plainSite));
+const deprecatedStrict = row(mkBuilt({ 'dist/index.html': PAGE_LD([ARTICLE(), {
+  '@type': 'WebSite', potentialAction: { '@type': 'SearchAction', target: 'https://x.test/s?q={q}' },
+}]) }), 'data', 'data/jsonld-deprecated');
+check('  …and --strict does not promote it — there is no failing branch to promote',
+  deprecatedStrict?.outcome === 'suggest', JSON.stringify(deprecatedStrict));
+
 // search — optional since 2026-08-03. A site with no search at all used to
 // report "Orama ✅"; then it reported a required finding for every dependency it
 // had chosen not to install. Neither was true.

@@ -96,11 +96,10 @@ export function webSiteLd({ siteUrl, siteName }: WebSiteArgs) {
     '@type': 'WebSite',
     name: siteName,
     url: siteUrl,
-    potentialAction: {
-      '@type': 'SearchAction',
-      target: { '@type': 'EntryPoint', urlTemplate: `${siteUrl}/?q={search_term_string}` },
-      'query-input': 'required name=search_term_string',
-    },
+    // No SearchAction here. It requested the sitelinks searchbox, which Google
+    // removed from results on 2024-11-21 — the markup is still valid and still
+    // ignored, so it was pure weight. The rest of WebSite is unaffected and is
+    // still what carries the site name.
   };
 }
 

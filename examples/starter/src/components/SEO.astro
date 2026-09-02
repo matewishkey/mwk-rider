@@ -8,7 +8,7 @@
  */
 import type { CollectionEntry } from 'astro:content';
 import { config as ogConfig } from '../../scripts/og.config.mjs';
-import { blogPostingLd, webSiteLd } from '../lib/jsonld';
+import { blogPostingLd, breadcrumbLd, webSiteLd } from '../lib/jsonld';
 
 interface Props {
   entry?: CollectionEntry<'blog'>;
@@ -36,7 +36,11 @@ const ogImage = mediaDomain
   ? `https://${mediaDomain}/og/default.png`
   : new URL('/og/default.png', brand.siteUrl).toString();
 
+// A post carries two nodes: what it is, and where it sits. They ship as two
+// blocks rather than one @graph because either is valid and two is simpler to
+// read in view-source, which is where anyone debugging this will be looking.
 const jsonLd = entry ? blogPostingLd(entry, brand, ogImage) : webSiteLd(brand);
+const breadcrumb = entry ? breadcrumbLd(entry, brand) : null;
 ---
 
 <meta charset="utf-8" />
@@ -70,3 +74,4 @@ const jsonLd = entry ? blogPostingLd(entry, brand, ogImage) : webSiteLd(brand);
 {brand.twitterCreator && <meta name="twitter:creator" content={brand.twitterCreator} />}
 
 <script is:inline type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
+{breadcrumb && <script is:inline type="application/ld+json" set:html={JSON.stringify(breadcrumb)} />}

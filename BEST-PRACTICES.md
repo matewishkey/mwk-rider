@@ -789,6 +789,62 @@ by **pattern**, so single-locale and per-locale naming both pass.*
 - **The JSON-LD parses.** A block that isn't valid JSON is discarded whole by
   search engines while looking perfectly fine in the source — worse than emitting
   none. → `data: jsonld:parses`
+- **The Article node carries the properties Google documents.** Reading the
+  `@type` and stopping is where structured-data checking usually ends, and it is
+  not enough: a `BlogPosting` whose `author` is a bare string, whose `image` is
+  relative and whose `datePublished` is `toLocaleDateString()` output declares
+  itself correctly and earns nothing. Google reads the type, finds the properties
+  unusable, and drops the rich result — no error in the page, none in Search
+  Console, none in an audit that only counted types. `author` and `headline` are
+  the required half; `image` and `datePublished` are recommended, and each one
+  visibly changes the result (no image is no thumbnail, no date is no date), so
+  their absence is a suggestion rather than a finding.
+  → `data: jsonld:article-props`
+  **No headline length is asserted.** Google removed the 110-character limit on
+  2023-01-03 and now says only that long titles may be truncated on some devices.
+  A check for a limit that no longer exists would flag compliant pages.
+- **The author is a typed Person or Organization.** `"author": "Jane Doe"` is the
+  most common way to write this wrong and it is invisible to any check that only
+  asks whether the property is present — a bare string cannot carry the `@type`
+  that distinguishes a person from a publisher. An array of authors is correct
+  and passes; Google's own example is one. → `data: jsonld:author`
+- **Dates are ISO 8601.** A formatted date is not a date to a parser. A date with
+  no time (`2026-01-05`) is legal ISO 8601 and passes; the offset is recommended,
+  not required, so its absence is not a finding. → `data: jsonld:dates`
+- **A breadcrumb trail on content pages.** It is what puts the site's hierarchy
+  in the result instead of a bare URL. *Wanting* one is house style — a flat blog
+  has no hierarchy to describe — so presence is demoted by default and required
+  under `--strict`. Being **malformed** is not house style, and is a separate
+  check: positions must run 1..n in order and every item needs a name, because
+  Google drops the whole list rather than guessing when either is wrong. The last
+  item may omit its `item` URL, where Google defaults to the current page — the
+  naive version of this check fires on Google's own documented example.
+  → `data: jsonld:breadcrumb` (house), `data: jsonld:breadcrumb-shape` (universal)
+- **Absolute URLs, as advice only.** A relative URL in JSON-LD is *not* broken,
+  and an earlier draft of this check said it was. JSON-LD 1.1 resolves relative
+  IRIs against the base IRI, which for a block embedded in HTML is the document's
+  own location, so a compliant processor reads `/og/default.png` exactly as
+  intended. Google documents no rule either way — grepping `sd-policies`,
+  `intro-structured-data`, `article` and `breadcrumb` for "absolute" and
+  "relative URL" returns nothing, and what *is* documented is that image URLs
+  must be crawlable, which is a different property. So this is advisory in every
+  mode: absolute values survive syndication, a feed, or any reader that never saw
+  the page; relative ones work only while the block sits on its original URL.
+  → `data: jsonld:urls` (advisory)
+- **No markup for rich results that no longer exist.** Three were retired while
+  the markup requesting them stayed valid, so sites keep emitting them and keep
+  believing they do something: the **sitelinks searchbox** (`WebSite` →
+  `SearchAction`, removed from results 2024-11-21), **HowTo** (desktop results
+  ended 2023-09-13), and **FAQPage** (restricted to authoritative government and
+  health sites in September 2023, retired outright 2026-05-07). All three doc
+  pages now redirect to their removal entries in Google's changelog. Google is
+  explicit that removing them is optional and that leaving them causes no errors,
+  which is exactly why this reports and never fails — the markup is not wrong, it
+  is just no longer paid for. `--strict` does not promote it; there is no failing
+  branch to promote. Only the `SearchAction` is dead, not `WebSite`, which still
+  carries the site name. Our own fixture was emitting one, which is how this
+  check earned its keep on the day it shipped.
+  → `data: jsonld:deprecated` (advisory)
 - **`/llms.txt`, content-driven.** Some `llms*.txt` endpoint is built from
   `getCollection()` (a multi-locale root may be a thin index pointing at
   per-locale variants — pass if *any* endpoint is content-driven). →
@@ -1260,7 +1316,9 @@ the bullet here is only its summary.
 - **No-negotiation fallback probe (live).** A second `Accept: */*` image probe
   would surface a large raw-source fallback directly; today the offline
   `transform:format` check catches the same `format=webp` smell more cheaply.
-- **BreadcrumbList JSON-LD.** The fixture emits it; not asserted by `data`.
+- ~~**BreadcrumbList JSON-LD.**~~ Closed by `data: jsonld:breadcrumb` +
+  `jsonld:breadcrumb-shape` — the practice is § data above. Presence is house
+  style, malformation is universal, and the starter grew a trail to match.
 - ~~**Runtime behaviour needs a headless browser.**~~ Closed by the `browser`
   domain — the practice is § browser above.
 - **Zaraz consent banner actually renders + GA waits for consent.** The
