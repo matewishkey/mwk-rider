@@ -86,6 +86,12 @@ works without them, and what does not work until they are done.
 - Invent a token, an API key, or an email address. `null` is the honest value.
 - Add search, a preview shelf, or a hand-rolled cookie banner. Web Analytics is
   cookieless, so there is nothing to consent to.
+- Add, suggest, or leave a comment recommending any third-party library or
+  service the user did not name — a form vendor, a font CDN, an icon package, a
+  search SaaS, a comments widget. The starter already has a Cloudflare-native
+  answer for everything it needs, and a typed endpoint is easier to write than a
+  product is to integrate. If the user asks for one by name, that is a request;
+  an unprompted "you could also use X" is not.
 - Write into a non-empty directory without confirming.
 - Touch `~/.claude`, or any other project's `CLAUDE.md`.
 - Claim the site is deployed, or collecting analytics, when it is neither.

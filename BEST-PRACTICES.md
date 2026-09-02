@@ -27,11 +27,23 @@ between a new site and a working one:
   the right answer when you need a tag *manager*, and it is a dashboard project
   before it is anything else. Nothing about analytics fails a run in either mode.
 
+**Own it before you buy it (2026-09-02).** The baseline favours Cloudflare's own
+services and the platform's own primitives over a third-party library or SaaS,
+and this tool never *offers* a third party unless the user asks for one by name.
+The starter is the existence proof: the contact form is a typed endpoint on
+Cloudflare Email Service, not a form vendor; fonts self-host through Astro's
+font API, not a font CDN; measurement is Web Analytics, not a tag; social cards
+are drawn at build time, not fetched from a card service. For the small business
+this stack is built for, a typed form is easier to write than a product is to
+buy, integrate and pay for, and it is enough. The checks still *recognise*
+third-party engines and hosts — a validator has to know what a site uses — but
+recognising is not recommending, and the distinction is the whole rule.
+
 **Severities.** 🔧 fix = required, fails the run · 🛑 = needs a human decision ·
 💡 = advisory suggestion, never fails · ⏭ = not testable in this mode.
 
 **Modes.** Every rule in the catalogue also carries `mode`: `offline` (reads
-source and `dist/`) or `url` (needs a served site). **53 of the 134 are `url`** —
+source and `dist/`) or `url` (needs a served site). **53 of the 141 are `url`** —
 the `live`, `lighthouse` and `browser` domains entirely, plus the served-HTML
 twins of offline checks, which is why `meta:og:image` and `og:image` are two rule
 ids for one practice measured in two places. That is deliberate, not
