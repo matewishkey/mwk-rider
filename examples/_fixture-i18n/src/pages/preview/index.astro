@@ -1,0 +1,61 @@
+---
+import PreviewLayout from '../../layouts/PreviewLayout.astro';
+import { Icon } from 'astro-icon/components';
+---
+<PreviewLayout title="Preview shelf">
+  <h1><Icon name="lucide:layout-template" size={28} />Preview shelf</h1>
+  <p>Per contractinternal QA, excluded from sitemap / robots / RSS / search.
+     Multi-locale extension per(OG paths get a locale segment).</p>
+
+  <div class="card-grid">
+    <a class="card" href="/preview/og">
+      <Icon name="lucide:image" size={24} />
+      <strong>OG previews</strong>
+      <span>Every post's OG, default or custom, side by side, by locale</span>
+    </a>
+    <a class="card" href="/preview/posts/_preview-thoughts">
+      <Icon name="lucide:file-text" size={24} />
+      <strong>Post-type previews</strong>
+      <span>Layout regression suite — one example per registered type</span>
+    </a>
+    <a class="card" href="/preview/icons">
+      <Icon name="lucide:palette" size={24} />
+      <strong>Icon gallery</strong>
+      <span>Every icon used in the site at all sizes and color contexts</span>
+    </a>
+  </div>
+
+  <style>
+    h1 {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    h1 [data-icon] { color: #33FF33; }
+    .card-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 16px;
+      margin-top: 24px;
+    }
+    .card {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 20px;
+      border: 1px solid #1f1f1f;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.02);
+      color: #e7e7e7;
+      transition: border-color 150ms ease, background 150ms ease;
+    }
+    .card:hover {
+      border-color: #33FF33;
+      background: rgba(51, 255, 51, 0.04);
+    }
+    .card [data-icon] { color: #33FF33; }
+    .card strong { font-size: 1.05em; }
+    .card span { color: #888; font-size: 0.9em; }
+  </style>
+</PreviewLayout>

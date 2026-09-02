@@ -1,0 +1,72 @@
+---
+import RootLayout from '../layouts/RootLayout.astro';
+
+// Renders the REAL tokens from src/styles/global.css, not a picture of them.
+// Change a value there and this page changes with it — which is the point.
+// A design reference that restates the values by hand drifts the first time
+// someone edits one, and then quietly lies.
+const COLORS = [
+  ['--color-bg', 'page background'],
+  ['--color-surface', 'raised surfaces, cards'],
+  ['--color-ink', 'body text'],
+  ['--color-muted', 'secondary text'],
+  ['--color-accent', 'links, buttons'],
+  ['--color-border', 'hairlines'],
+];
+const TYPE = [
+  ['--text-sm', 'captions, metadata'],
+  ['--text-base', 'body'],
+  ['--text-lg', 'h3'],
+  ['--text-xl', 'h2'],
+  ['--text-2xl', 'h1'],
+];
+const SPACE = ['--space-1', '--space-2', '--space-4', '--space-8', '--space-16'];
+---
+<RootLayout title="Design" description="The colours, type scale, spacing and components this site is built from.">
+  <h1>Design</h1>
+  <p>Every value here is read live from <code>src/styles/global.css</code>. Edit it there and this page follows.</p>
+
+  <h2>Colour</h2>
+  <ul>
+    {COLORS.map(([token, use]) => (
+      <li>
+        <span
+          style={`display:inline-block; width:2rem; height:2rem; vertical-align:middle; border:1px solid var(--color-border); border-radius:var(--radius); background: var(${token})`}
+        ></span>
+        <code>{token}</code> <span class="muted">— {use}</span>
+      </li>
+    ))}
+  </ul>
+
+  <h2>Type scale</h2>
+  <ul>
+    {TYPE.map(([token, use]) => (
+      <li style={`font-size: var(${token})`}>
+        <code>{token}</code> <span class="muted">— {use}</span>
+      </li>
+    ))}
+  </ul>
+
+  <h2>Spacing</h2>
+  <ul>
+    {SPACE.map((token) => (
+      <li>
+        <span style={`display:inline-block; height:1rem; width: var(${token}); background: var(--color-accent)`}></span>
+        <code>{token}</code>
+      </li>
+    ))}
+  </ul>
+
+  <h2>Components</h2>
+  <h3>Card</h3>
+  <div class="card"><p>A card. Surface colour, a hairline border, one radius.</p></div>
+
+  <h3>Button</h3>
+  <p><button class="button" type="button">A button</button> <a class="button" href="/contact">A link that looks like one</a></p>
+
+  <h3>Form controls</h3>
+  <p>
+    <label for="demo">A text input</label>
+    <input id="demo" type="text" value="with a value in it" readonly />
+  </p>
+</RootLayout>

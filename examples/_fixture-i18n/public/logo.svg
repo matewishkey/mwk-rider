@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 80" role="img" aria-label="Fixture logo">
+  <rect width="240" height="80" rx="10" fill="#1f2933"/>
+  <circle cx="44" cy="40" r="20" fill="#5eead4"/>
+  <text x="78" y="48" font-family="system-ui, sans-serif" font-size="22" fill="#f8fafc">fixture</text>
+</svg>

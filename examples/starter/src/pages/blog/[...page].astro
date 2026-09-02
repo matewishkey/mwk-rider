@@ -1,0 +1,33 @@
+---
+import type { GetStaticPaths, Page } from 'astro';
+import RootLayout from '../../layouts/RootLayout.astro';
+import { publishedPosts, tagCounts, type Post } from '../../lib/posts';
+
+export const getStaticPaths = (async ({ paginate }) => {
+  return paginate(await publishedPosts(), { pageSize: 10 });
+}) satisfies GetStaticPaths;
+
+const { page } = Astro.props as { page: Page<Post> };
+const tags = [...(await tagCounts()).entries()].sort((a, b) => a[0].localeCompare(b[0]));
+---
+<RootLayout title="Blog" description="Everything published here, newest first.">
+  <h1>Blog</h1>
+
+  <ul>
+    {page.data.map((post) => (
+      <li>
+        <a href={`/blog/${post.id}`}>{post.data.title}</a>
+        <span class="muted"> — {post.data.date.toISOString().slice(0, 10)}</span>
+        <p>{post.data.excerpt}</p>
+      </li>
+    ))}
+  </ul>
+
+  <nav>
+    {page.url.prev && <a href={page.url.prev}>← Newer</a>}
+    {page.url.next && <a href={page.url.next}>Older →</a>}
+  </nav>
+
+  <h2>Tags</h2>
+  <p>{tags.map(([tag, count]) => <><a href={`/blog/tag/${tag}`}>{tag}</a> <span class="muted">({count})</span>{' '}</>)}</p>
+</RootLayout>

@@ -1,0 +1,51 @@
+# Mate Wish Key Rider (`mwk-rider`) — dev notes for this repo
+
+This repo is **mwk-rider**: a Claude Code plugin whose two mode commands (`/mwk-rider:audit`, `/mwk-rider:create`) check an Astro site against baseline best practices, or start one that already complies — plus `/mwk-rider:bug`, which files a rider bug when a check gets it wrong. It is *not* a framework — it installs nothing into the sites it audits and never touches their `CLAUDE.md`. You run it when you want a compliance check; it prints findings and suggests fixes.
+
+
+## What it is
+
+- **Two modes, one copy of each.** `skills/rider/SKILL.md` is a router *only*: it picks **create** or **audit** and sends the reader to `references/CREATE.md` or `references/AUDIT.md`. The commands in `commands/` inline those same two files with `@${CLAUDE_PLUGIN_ROOT}/…`, so a typed command and an inferred mode run identical instructions and there is no second copy to drift. The router exists for the inferred path alone — never duplicate a mode's steps into it. **`commands/bug.md` is deliberately not part of that arrangement**: it is self-contained, because a reference file exists to be shared with the router and the router routes *modes*. It has one consumer, so it gets one file, not two.
+- **One tool:** `tools/audit.mjs` — the entry. Detects an Astro project, runs the offline domain checks, and (with `--url`) the live ones. `tools/verify-example.mjs` is the harness that builds an example, serves it the way its adapter demands, and points the audit at it — never a static server on a split `dist/`, which serves a directory listing and passes against nothing. Reports `✅ / 🔧 / 🛑 / 💡 / ⏭` and exits non-zero on findings.
+- **Seven offline domains + three `--url` domains**, one module each under `tools/checks/`:
+  - `modules` — baseline stack present + wired (version, integrations, `output: 'static'`, strict TS, an adapter iff a route renders on demand); search is optional, two engines at once is a finding.
+  - `seo` — canonical SEO component (canonical URL, OG meta), no `keywords`, sitemap lastmod, one `<h1>` per content page (skipped levels = advisory).
+  - `images` — content images routed through an image transform + not oversized (`src/assets/` and `dist/`); on built `dist/` HTML, flags Cloudflare transform params (`format=auto` not explicit; explicit `quality=`) + content `<img>` missing `alt` + (advisory) a large image shipping one fixed width with no `srcset` at all, on measured thresholds.
+  - `perf` — `/_astro/*` immutable in `public/_headers`; `<img>` carry width/height (CLS) unless CSS takes them out of flow (`tools/lib/css-flow.mjs`); render-blocking CSS + webfont budgets; heavy third-party embeds behind a facade (`tools/lib/embed-hosts.mjs`) — `loading="lazy"` is not one; a cross-origin image host carrying `preconnect` (with `crossorigin`, or the connection isn't reusable) and a head `preload` matching its `<img>`; every declared font family leading a stack with `styles` set.
+  - `data` — JSON-LD (an Article-family type + WebSite), `/llms.txt` from the content store, RSS, a search-index endpoint iff the site's engine reads one it emits (Pagefind/Algolia/Meilisearch/Typesense build or host their own and skip), Zod-validated content schema. Endpoints match by pattern (single + per-locale).
+  - `analytics` — `provider` reports what delivers analytics (Cloudflare Web Analytics by default — free, cookieless, no banner; Zaraz when you need a tag manager) and is **advisory by construction**: no 🔧/🛑 branch, in either mode. The finding is a hardcoded GA/GTM snippet in `src/`+`dist/`, which fires pre-consent. Both deliveries are edge-injectable, so `--url` is authoritative — see `live.mjs`. Patterns live in `tools/lib/analytics-signals.mjs`.
+  - `content` — the pages a site is repeatedly asked for (media kit, design/styleguide — house style, so `💡` unless `--strict`), plus an advisory lint for straight quotes sharing a line with directional ones (what Sätteri and remark resolve differently).
+  - `live` (only with `--url`) — real headers, served bytes (browser-realistic `Accept`) + transform-param flags, rendered HTML — `tools/checks/live.mjs`.
+  - `lighthouse` (only with `--url`) — measured PSI scores + Core Web Vitals — `tools/checks/lighthouse.mjs`. Needs a free PSI key in `$PAGESPEED_API_KEY`. Skips gracefully without one.
+  - `browser` (only with `--url`) — what only a real browser sees: uncaught JS exceptions, failed sub-requests, measured CLS, images oversized for their rendered box, and `nav:reach` — every route the 1280px nav offers, still reachable at 393px after opening any header menu — `tools/checks/browser.mjs`. Measured at the `--strategy` viewport (mobile by default, matching Lighthouse). Needs `playwright` installed in the audited project; skips without it. **The tool's one exception to "never executes the audited project's code"** — it imports a driver out of the project's `node_modules` when it has none of its own, so the resolution is auditor-tree-first, disclosed in the output (`browser: playwright:source`) and stated in `SECURITY.md` rather than denied (issue #19). Don't add a second exception.
+- **Shared:** `tools/lib/project.mjs` (detect + load), `tools/lib/reporter.mjs` (outcomes + exit code; `💡 suggest` is advisory and never fails the run), `tools/lib/policy.mjs` (universal vs house style), `tools/lib/rules.mjs` (the `--rules` catalogue), `tools/lib/html.mjs` (attrs + the one spec-shaped `srcsetUrls` — never `split(',')`, a Cloudflare transform path is full of commas), `tools/lib/css-flow.mjs` (which elements CSS takes out of flow, so the CLS checks don't fire on absolutely-positioned fill images), `tools/lib/image-size.mjs` (intrinsic dimensions from PNG/JPEG/WebP/AVIF bytes — an unreadable format is a missed finding, never a wrong one, which is why AVIF stopped being acceptable to skip). PSI is the only place the tool talks to an external API, and the only operator secret it reads.
+
+## Working rules
+
+- **Assumes a baseline.** The checks encode the baseline Astro stack (Astro 7+, the integrations, Cloudflare delivery / image transforms, immutable hashed-asset caching). The tool validates compliance against it — it does not set anything up or migrate. The version floor is a deliberate, dated decision — see `BEST-PRACTICES.md` § modules before moving it, and re-verify against npm rather than assuming.
+- **Command-driven, never passive.** No contract `@import`, no auto-loading, nothing written into audited projects. If you find yourself wanting an always-on hook or a contract, stop — that's the thing this repo was deliberately stripped of.
+- **Surface, don't auto-fix.** Findings are suggestions. Only edit a project when the user asks.
+- **Practice ⇒ check (the `BEST-PRACTICES.md` contract).** `BEST-PRACTICES.md` is the *why* behind every check and a living practice↔check registry. Every best practice there has an enforcing check in `tools/checks/*`; a practice with no check is a tracked *gap*, not a practice yet. Adding one = understand the integration (context7) → write the why in `BEST-PRACTICES.md` → bake the check → verify on the fixture (stays `0 🔧`) + a real site → ship. Keep `BEST-PRACTICES.md` § Gaps current.
+- **Verify Astro/Cloudflare specifics via `context7`** before writing about them or generating config/code (hard rule).
+- **Provenance comments name a date, never a host.** Two comments used to name the site
+  that was measured on 2026-08-03 (`tools/checks/live.mjs`, the `/glossary/agent/` case
+  behind issue #11; `tools/test.mjs`, the trimmed PSI fixture). The names are gone — that
+  host was on loan from the show and the credit is the show's. What stays is what makes
+  the comment worth anything: a real site, that date, what it actually answered. Never
+  relabel a captured response with a host that did not serve it; write "a real site"
+  instead, which is true whatever the branding does next.
+- **Two example sites, upgraded together.** `examples/_fixture-i18n/` is the multi-locale exerciser (i18n, search, preview routes); `examples/starter/` is the single-locale reference and what create mode copies. Both must be `0 🔧 / 0 🛑` in default **and** `--strict` — and now also LIVE: CI runs the matrix offline in both modes and then `npm run verify -- --strict` on each, so the `live`/`lighthouse`/`browser` domains are exercised against them too. **Raising the baseline means upgrading both in the same commit** — a floor moved in one makes the other's clean run a lie. Testing/deploy discipline lives in `docs/DEVELOPING.md`.
+- **The starter is the baseline's existence proof, not a second copy of it.** The checks define compliant; `examples/starter/` is a site that is. `references/CREATE.md` describes only the *interaction* and is forbidden from restating the rules — it points at `--rules --json` for what, and `BEST-PRACTICES.md` for why. A third prose copy of the baseline is how all three drift.
+- **Create mode copies, never composes.** It copies `${CLAUDE_PLUGIN_ROOT}/examples/starter` verbatim and edits four files. Writing files from memory is exactly how a scaffold stops matching the reference the audit keeps clean. The starter ships *inside* the plugin, so it is always the version create mode was written against — that used to be a symlink that could go missing.
+
+## Install
+
+It is a plugin, and this repo is its marketplace:
+
+```
+/plugin marketplace add matewishkey/mwk-rider
+/plugin install mwk-rider@mwk-rider
+```
+
+`.claude-plugin/plugin.json` + `.claude-plugin/marketplace.json`; `commands/` and `skills/` are found by convention. **`${CLAUDE_PLUGIN_ROOT}` is expanded in the markdown before the model sees it and is NOT set in the shell** — verified, and the reason a path can look right and still fail at the first Bash call. Working on the plugin means `claude --plugin-dir ~/projects/mwk-rider`; an installed copy is version-pinned in the plugin cache and a `git pull` here does not touch it.
+

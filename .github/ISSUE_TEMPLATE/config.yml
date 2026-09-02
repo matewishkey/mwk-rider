@@ -1,0 +1,13 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Why a check exists at all
+    url: https://github.com/matewishkey/mwk-rider/blob/main/BEST-PRACTICES.md
+    about: The reasoning behind every practice rider enforces, and the gaps it does not.
+  - name: A finding you disagree with
+    url: https://github.com/matewishkey/mwk-rider/blob/main/README.md
+    about: >
+      Checks that encode this project's house style report as 💡 and never fail a run.
+      If it is a 🔧 or 🛑 you think is wrong, that is a bug — file it above.
+  - name: Not a bug in rider?
+    url: https://github.com/anthropics/claude-code/issues
+    about: If Claude Code itself is misbehaving rather than a rider check, it goes here.

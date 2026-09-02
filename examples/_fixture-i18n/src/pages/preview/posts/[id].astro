@@ -1,0 +1,38 @@
+---
+import PreviewLayout from '../../../layouts/PreviewLayout.astro';
+import { getCollection, render } from 'astro:content';
+import type { CollectionEntry } from 'astro:content';
+import { urlSlug } from '../../../lib/slug';
+
+export async function getStaticPaths() {
+  const posts = await getCollection('blog');
+  return posts
+    .filter((p) => p.data.previewOnly)
+    .map((post) => ({
+      params: { id: urlSlug(post.id) },
+      props: { post },
+    }));
+}
+
+interface Props {
+  post: CollectionEntry<'blog'>;
+}
+
+const { post } = Astro.props;
+const { Content } = await render(post);
+---
+<PreviewLayout title={`Preview: ${post.data.title}`}>
+  <article>
+    <header>
+      <p>
+        <strong>previewOnly</strong> ·
+        type: <code>{post.data.type}</code> ·
+        locale: <span class="locale-badge">{post.data.locale}</span> ·
+        tags: {post.data.tags.join(', ')}
+      </p>
+      <h1>{post.data.title}</h1>
+      <p>{post.data.excerpt}</p>
+    </header>
+    <Content />
+  </article>
+</PreviewLayout>

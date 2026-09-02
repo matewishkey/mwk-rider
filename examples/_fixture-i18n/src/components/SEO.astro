@@ -1,0 +1,156 @@
+---
+/**
+ * Multi-locale SEO component for the rider i18n fixture+.
+ *
+ * Extends the mono-locale SEO.astro template with:
+ *   - hreflang alternates (translationKey-driven for posts, getRelativeLocaleUrlList for chrome)
+ *   - og:locale matching the page's current locale
+ *   - JSON-LD with inLanguage
+ *   - x-default hreflang pointing at the default-locale variant
+ *
+ * Fixture mode: mediaDomain is null in og.config.mjs → og:image resolves
+ * to ${siteUrl}/og/<locale>/<id>.png (served from public/og/).
+ */
+import type { CollectionEntry } from 'astro:content';
+import { getCollection } from 'astro:content';
+import { getRelativeLocaleUrlList } from 'astro:i18n';
+import { config as ogConfig } from '../../scripts/og.config.mjs';
+import { blogPostingLd, webSiteLd, breadcrumbLd } from '../lib/jsonld';
+import { urlSlug } from '../lib/slug';
+
+interface Props {
+  entry?: CollectionEntry<'blog'>;
+  title?: string;
+  description?: string;
+  type?: 'article' | 'website';
+}
+
+const { entry, title: titleProp, description: descriptionProp, type: typeProp } = Astro.props;
+
+const isArticle = Boolean(entry);
+const type = typeProp ?? (isArticle ? 'article' : 'website');
+
+const { brand, mediaDomain } = ogConfig;
+const siteUrl = brand.siteUrl ?? 'http://localhost:4321';
+const siteName = brand.siteName ?? '';
+const defaultLocale = brand.i18n?.defaultLocale ?? 'en';
+const locales = brand.i18n?.locales ?? [defaultLocale];
+const localeMap: Record<string, string> = brand.i18n?.localeMap ?? { [defaultLocale]: defaultLocale };
+
+const lang = (Astro.currentLocale as string) ?? entry?.data.locale ?? defaultLocale;
+const bcp47 = localeMap[lang] ?? lang;
+
+const pageUrl = new URL(Astro.url.pathname, siteUrl).toString();
+
+const title = entry
+  ? `${entry.data.title} · ${siteName}`
+  : (titleProp ? `${titleProp} · ${siteName}` : siteName);
+
+const description = entry
+  ? entry.data.excerpt
+  : (descriptionProp ?? brand.tagline ?? `${siteName} — content site`);
+
+// Resolve OG URL — mediaDomain null = fixture mode → relative to siteUrl
+function resolveOg(): string {
+  if (entry?.data.ogImage) return entry.data.ogImage;
+  if (entry) {
+    const slug = urlSlug(entry.id);
+    const localePart = `${lang}/`;
+    return mediaDomain
+      ? `https://${mediaDomain}/og/${localePart}${slug}.png`
+      : new URL(`/og/${localePart}${slug}.png`, siteUrl).toString();
+  }
+  return mediaDomain
+    ? `https://${mediaDomain}/og/default.png`
+    : new URL('/og/default.png', siteUrl).toString();
+}
+const ogImage = resolveOg();
+
+// --- Hreflang alternates----------------------------------
+type Alt = { hreflang: string; href: string };
+let alternates: Alt[] = [];
+
+function postUrlFor(post: CollectionEntry<'blog'>): string {
+  const isDefault = post.data.locale === defaultLocale;
+  const slug = urlSlug(post.id);
+  const path = isDefault ? `/blog/${slug}` : `/${post.data.locale}/blog/${slug}`;
+  return new URL(path, siteUrl).toString();
+}
+
+if (entry?.data.translationKey) {
+  // Post with siblings — list every locale's variant
+  const allPosts = await getCollection('blog');
+  const siblings = allPosts.filter(
+    (p) => p.data.translationKey === entry.data.translationKey
+  );
+  alternates = siblings.map((s) => ({
+    hreflang: localeMap[s.data.locale] ?? s.data.locale,
+    href: postUrlFor(s),
+  }));
+} else if (!entry) {
+  // Chrome / index page — every locale's same path
+  const paths = getRelativeLocaleUrlList(Astro.url.pathname);
+  alternates = paths.map((path, i) => ({
+    hreflang: localeMap[locales[i]] ?? locales[i],
+    href: new URL(path, siteUrl).toString(),
+  }));
+}
+
+const xDefault = alternates.find((a) => a.hreflang.startsWith(defaultLocale))?.href ?? siteUrl;
+
+const jsonLd = entry
+  ? blogPostingLd({ entry, siteUrl, siteName, mediaDomain, brand })
+  : webSiteLd({ siteUrl, siteName });
+const breadcrumbJsonLd = entry ? breadcrumbLd({ entry, siteUrl, brand }) : null;
+---
+
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>{title}</title>
+<meta name="description" content={description} />
+<link rel="canonical" href={pageUrl} />
+<meta http-equiv="content-language" content={bcp47} />
+
+<meta property="og:title" content={entry?.data.title ?? titleProp ?? siteName} />
+<meta property="og:description" content={description} />
+<meta property="og:url" content={pageUrl} />
+<meta property="og:type" content={type} />
+<meta property="og:site_name" content={siteName} />
+<meta property="og:image" content={ogImage} />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta property="og:image:type" content="image/png" />
+<meta property="og:image:alt" content={entry?.data.title ?? siteName} />
+<meta property="og:locale" content={bcp47.replace('-', '_')} />
+
+{entry && (
+  <>
+    <meta property="article:published_time" content={entry.data.date.toISOString()} />
+    {entry.data.dateModified && (
+      <meta property="article:modified_time" content={entry.data.dateModified.toISOString()} />
+    )}
+    {brand.authorName && <meta property="article:author" content={brand.authorName} />}
+    {(entry.data.tags ?? []).map((tag) => (
+      <meta property="article:tag" content={tag} />
+    ))}
+  </>
+)}
+
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content={entry?.data.title ?? titleProp ?? siteName} />
+<meta name="twitter:description" content={description} />
+<meta name="twitter:image" content={ogImage} />
+{brand.twitterSite && <meta name="twitter:site" content={brand.twitterSite} />}
+{brand.twitterCreator && <meta name="twitter:creator" content={brand.twitterCreator} />}
+
+{alternates.map((alt) => (
+  <link rel="alternate" hreflang={alt.hreflang} href={alt.href} />
+))}
+{alternates.length > 0 && (
+  <link rel="alternate" hreflang="x-default" href={xDefault} />
+)}
+
+<script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
+{breadcrumbJsonLd && (
+  <script type="application/ld+json" set:html={JSON.stringify(breadcrumbJsonLd)} />
+)}

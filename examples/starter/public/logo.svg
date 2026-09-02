@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 64" width="240" height="64" role="img" aria-label="Example Site">
+  <rect width="64" height="64" rx="14" fill="#18181b"/>
+  <path d="M18 44V20h12.4a8 8 0 0 1 2.4 15.6L40 44h-6.8l-6.4-8H24v8h-6Zm6-13.2h6a3.2 3.2 0 0 0 0-6.4h-6v6.4Z" fill="#fafafa"/>
+  <text x="80" y="40" font-family="ui-sans-serif, system-ui, sans-serif" font-size="22" font-weight="600" fill="#18181b">Example Site</text>
+</svg>

@@ -1,0 +1,93 @@
+name: Rider got it wrong
+description: A check fired on correct code, missed a real violation, or the tool crashed.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **This page is public.** Please leave out anything you would not want read —
+        file paths with your name in them, your `PAGESPEED_API_KEY`, or your site's
+        content beyond the snippet that reproduces it.
+
+        If you are running rider as a plugin, you do not have to fill this in by hand.
+        Run **`/mwk-rider:bug`** and it will write the report from what actually
+        happened, show it to you, and file it once you say yes.
+
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Which failure is it?
+      description: >
+        The two that matter most: a check that flags a compliant site, and one that
+        misses a real violation. Both destroy trust in every other finding.
+      options:
+        - False positive — it flagged code that is correct
+        - False negative — it stayed quiet on code that is not
+        - Crash, or the wrong exit code
+        - Docs describe behaviour the tool does not have
+        - Something else
+    validations:
+      required: true
+
+  - type: input
+    id: rule
+    attributes:
+      label: Rule id
+      description: The id from the finding line. `--rules --json` lists them all.
+      placeholder: seo/headings-order
+    validations:
+      required: false
+
+  - type: textarea
+    id: output
+    attributes:
+      label: What rider printed
+      description: >
+        The finding line verbatim. Better still, the output of
+        `node tools/audit.mjs -s <domain> --json` for that one domain.
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: code
+    attributes:
+      label: The code it misread
+      description: >
+        The smallest snippet of your `src/` or built `dist/` HTML that reproduces it.
+        For a false positive this is the most useful thing in the report — it is what
+        the regression test gets built from.
+      render: html
+    validations:
+      required: false
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What should it have done instead?
+    validations:
+      required: false
+
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: >
+        The `version` from `.claude-plugin/plugin.json`, and `node --version`. If you
+        are running a working copy rather than the installed plugin, say so and name
+        the commit. Leave blank rather than guessing.
+      placeholder: rider 1.0.0, node v22.x
+    validations:
+      required: false
+
+  - type: dropdown
+    id: again
+    attributes:
+      label: Does it happen every run?
+      options:
+        - Every run
+        - Happened once
+        - Sometimes
+        - Have not tried again
+    validations:
+      required: false

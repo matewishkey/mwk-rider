@@ -1,0 +1,64 @@
+---
+import type { CollectionEntry } from 'astro:content';
+import { ClientRouter } from 'astro:transitions';
+import SEO from '../components/SEO.astro';
+import SiteHeader from '../components/SiteHeader.astro';
+import { config as ogConfig } from '../../scripts/og.config.mjs';
+import '../styles/global.css';
+
+interface Props {
+  entry?: CollectionEntry<'blog'>;
+  title?: string;
+  description?: string;
+}
+
+const { entry, title, description } = Astro.props;
+const { brand } = ogConfig;
+const year = new Date().getFullYear();
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <SEO entry={entry} title={title} description={description} />
+
+    <!-- Cloudflare Web Analytics: free, cookieless, no consent banner needed.
+         Renders only once a token is set — see scripts/og.config.mjs. This tag
+         is how the beacon reaches a Worker-served site; Cloudflare's automatic
+         injection does not rewrite Worker responses.
+
+         No `integrity` hash on purpose: beacon.min.js is a rolling build with no
+         published digest, so pinning one would break the beacon on Cloudflare's
+         next release. This is Cloudflare's own documented snippet, verbatim. -->
+    {brand.cloudflareAnalyticsToken && (
+      <script
+        is:inline
+        type="module"
+        src="https://static.cloudflareinsights.com/beacon.min.js"
+        data-cf-beacon={`{"token": "${brand.cloudflareAnalyticsToken}"}`}
+      />
+    )}
+
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="alternate" type="application/rss+xml" title={`${brand.siteName} — RSS`} href="/rss.xml" />
+    <link rel="alternate" type="text/plain" title="llms.txt" href="/llms.txt" />
+
+    <ClientRouter />
+  </head>
+  <body>
+    <div class="wrap">
+      <SiteHeader />
+      <main>
+        <slot />
+      </main>
+      <footer class="muted">
+        <p>
+          © {year} {brand.siteName} ·
+          <a href="/rss.xml">RSS</a> ·
+          <a href="/llms.txt">llms.txt</a> ·
+          <a href="/media-kit">Media kit</a> ·
+          <a href="/design">Design</a>
+        </p>
+      </footer>
+    </div>
+  </body>
+</html>

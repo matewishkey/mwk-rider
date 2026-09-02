@@ -1,0 +1,31 @@
+---
+import RootLayout from '../layouts/RootLayout.astro';
+---
+<RootLayout title="About" description="What this fixture is and why it exists.">
+  <h1>About</h1>
+  <p>
+    This site is a <strong>multi-locale test fixture</strong> for the rider
+    framework — a working agreement for writing content on Astro 6 + Cloudflare
+    sites. It exists only to prove patterns work end-to-end before they ship
+    to real managed sites like <a href="https://example.com">example.com</a>
+    or <a href="https://example.com">example.com</a>.
+  </p>
+
+  <h2>What's on this site</h2>
+  <ul>
+    <li>Two locales (English + Hungarian) with paired translations and locale-only posts</li>
+    <li>Faceted search powered by Orama, per-locale indexes with Hungarian stemming</li>
+    <li>Full Schema.org SEO surface — BlogPosting, BreadcrumbList, WebSite, hreflang</li>
+    <li>Preview shelf for layout regression + OG template iteration</li>
+    <li>RSS feeds and llms.txt per locale</li>
+    <li>Cohesive icon language via Lucide / astro-icon</li>
+  </ul>
+
+  <h2>What this isn't</h2>
+  <p>
+    It isn't deployed. It isn't a product. It's a <em>fixture</em> — a small,
+    inspectable site that demonstrates the contract's patterns. Click around,
+    open view-source, run the smoke tests in <code>scripts/smoke.mjs</code>,
+    take screenshots via <code>scripts/screenshot.mjs</code>.
+  </p>
+</RootLayout>

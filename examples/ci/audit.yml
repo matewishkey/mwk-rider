@@ -1,0 +1,61 @@
+# Audit an Astro site with rider on every push and pull request.
+#
+# Copy this file into YOUR Astro site's repo at .github/workflows/audit.yml.
+# It needs no secrets to be useful — the offline domains run on source and dist/
+# alone. The PageSpeed step is opt-in and skips itself when the key is absent.
+name: audit
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Least privilege: this workflow only ever reads the checkout.
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install site dependencies
+        run: npm ci
+
+      # Many checks read dist/ — robots.txt, sitemap lastmod, the emitted
+      # JSON-LD, the built feed, image bytes, alt text. Without a build they
+      # skip, and the audit reports far less than it could.
+      - name: Build the site
+        run: npm run build
+
+      - name: Fetch the auditor
+        run: git clone --depth 1 https://github.com/matewishkey/mwk-rider.git "$RUNNER_TEMP/mwk-rider"
+
+      # Universal Astro/SEO/perf practice only. Findings fail the job (exit 1).
+      # Add --strict to also require this project's full opinionated baseline.
+      - name: Audit
+        run: node "$RUNNER_TEMP/mwk-rider/tools/audit.mjs"
+
+      # Optional: measured PageSpeed scores against a deployed URL. Set
+      # PAGESPEED_API_KEY as a repository secret and SITE_URL as a repository
+      # variable to enable. Values are passed through `env:` and never
+      # interpolated into the shell command — inline `${{ }}` in a `run:` is how
+      # workflow injection happens. The guard lives in the script rather than an
+      # `if:` because the `secrets` context isn't available to `if:` conditions,
+      # and PRs from forks don't receive secrets at all.
+      - name: PageSpeed (optional)
+        env:
+          PAGESPEED_API_KEY: ${{ secrets.PAGESPEED_API_KEY }}
+          SITE_URL: ${{ vars.SITE_URL }}
+        run: |
+          if [ -z "$PAGESPEED_API_KEY" ] || [ -z "$SITE_URL" ]; then
+            echo "PAGESPEED_API_KEY or SITE_URL not set — skipping PageSpeed."
+            exit 0
+          fi
+          node "$RUNNER_TEMP/mwk-rider/tools/audit.mjs" -s lighthouse --url "$SITE_URL"

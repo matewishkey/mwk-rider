@@ -1,0 +1,19 @@
+---
+title: A post written in MDX
+date: 2026-09-01
+tags: [meta, mdx]
+excerpt: The one post here written as MDX rather than Markdown, so the integration the baseline requires is proven by a build instead of merely being installed.
+draft: false
+type: thoughts
+locale: en
+---
+
+export const pipeline = 'MDX 8 on the Sätteri pipeline';
+
+`@astrojs/mdx` is a baseline dependency, which means every audited site is told
+to install it. Until this file existed, neither example used it and the content
+loader's glob could not have loaded it — so the requirement was asserted and
+never once exercised.
+
+This paragraph is rendered by {pipeline}, and the expression above is the point:
+if the integration regresses, this page stops building and CI says so.

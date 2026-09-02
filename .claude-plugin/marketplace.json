@@ -1,0 +1,11 @@
+{
+  "name": "mwk-rider",
+  "owner": { "name": "Mate Wish Key", "url": "https://github.com/matewishkey" },
+  "plugins": [
+    {
+      "name": "mwk-rider",
+      "source": "./",
+      "description": "On-demand best-practices auditor for Astro sites, and a compliant site to start from."
+    }
+  ]
+}

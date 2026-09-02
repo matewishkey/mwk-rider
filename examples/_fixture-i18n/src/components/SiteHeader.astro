@@ -1,0 +1,94 @@
+---
+/**
+ * Shared site navigation header.
+ *
+ * Used by both RootLayout (regular pages) and PreviewLayout (thepreview
+ * shelf). Passing `isPreview={true}` adds a visible PREVIEW MODE badge so
+ * operators always know which kind of page they're on, AND can always get
+ * back to the main site — that's the load-bearing fix the preview routes
+ * needed (they had no way home before).
+ *
+ * Single source of truth for the nav across all chrome — change it here,
+ * both layouts pick it up.
+ */
+import { Icon } from 'astro-icon/components';
+import { config as ogConfig } from '../../scripts/og.config.mjs';
+
+interface Props {
+  isPreview?: boolean;
+}
+const { isPreview = false } = Astro.props;
+const { brand } = ogConfig;
+const lang = (Astro.currentLocale as string) ?? 'en';
+const isHu = lang === 'hu';
+const homePath = isHu ? '/hu' : '/';
+const blogPath = isHu ? '/hu/blog' : '/blog';
+const otherLocaleHome = isHu ? '/' : '/hu';
+const otherLocaleLabel = isHu ? 'English' : 'Magyar';
+---
+<header class={`site${isPreview ? ' preview-mode' : ''}`}>
+  <nav>
+    <a href={homePath} class="brand">
+      <Icon name="lucide:terminal" size={18} />
+      <strong>{brand.siteName}</strong>
+    </a>
+    <a href={blogPath}><Icon name="lucide:notebook-text" size={16} />Blog</a>
+    <a href="/preview"><Icon name="lucide:layout-template" size={16} />Preview</a>
+  </nav>
+  <div class="right">
+    {isPreview && (
+      <span class="preview-badge" title="This page is excluded from sitemap, robots, RSS, search index">
+        <Icon name="lucide:eye" size={12} />PREVIEW
+      </span>
+    )}
+    <span class="locale-switch">
+      <a href={otherLocaleHome}>
+        <Icon name="lucide:languages" size={16} />{otherLocaleLabel}
+      </a>
+    </span>
+  </div>
+</header>
+
+<style>
+  header.site {
+    border-bottom: 1px solid #1f1f1f;
+    padding: 16px 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  header.site.preview-mode {
+    border-bottom-color: #FFB000;
+    background: linear-gradient(180deg, rgba(255, 176, 0, 0.05), transparent);
+  }
+  header.site nav { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
+  header.site nav a { display: inline-flex; align-items: center; gap: 6px; color: #e7e7e7; text-decoration: none; }
+  header.site nav a:hover { color: #33FF33; }
+  header.site nav a [data-icon] { color: #888; transition: color 150ms ease; }
+  header.site nav a:hover [data-icon] { color: #33FF33; }
+  header.site nav a.brand [data-icon] { color: #33FF33; }
+  header.site .right {
+    display: inline-flex;
+    align-items: center;
+    gap: 14px;
+  }
+  header.site .preview-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 9px;
+    border-radius: 4px;
+    background: rgba(255, 176, 0, 0.15);
+    color: #FFB000;
+    border: 1px solid rgba(255, 176, 0, 0.5);
+    font-size: 0.72em;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+  }
+  header.site .locale-switch { font-size: 0.9em; color: #888; }
+  header.site .locale-switch a { display: inline-flex; align-items: center; gap: 6px; color: #888; text-decoration: none; }
+  header.site .locale-switch a:hover { color: #33FF33; }
+  header.site .locale-switch a:hover [data-icon] { color: #33FF33; }
+</style>

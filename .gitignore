@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.astro/
+.wrangler/
+.dev.vars
+*.log
+.DS_Store
+.env
+# Claude Code session worktrees — a checkout, never source
+.claude/worktrees/

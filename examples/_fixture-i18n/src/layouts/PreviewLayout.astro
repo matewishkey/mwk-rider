@@ -1,0 +1,95 @@
+---
+//PreviewLayout — shares the site header (so operators can always get
+// back to the main site) but adds noindex + a visible "PREVIEW MODE" badge.
+// Exclusion mechanisms (sitemap filter, robots, RSS, search-index) are
+// handled by their respective config; this layer just sets the page-level
+// noindex meta and provides clear visual + navigational affordances.
+interface Props {
+  title: string;
+}
+const { title } = Astro.props;
+import SiteHeader from '../components/SiteHeader.astro';
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>{title} · rider Preview</title>
+    <style is:global>
+      :root {
+        --bg: #0a0a0a;
+        --fg: #e7e7e7;
+        --muted: #8a8a8a;
+        --accent: #33FF33;
+        --secondary: #FFB000;
+        --border: #1f1f1f;
+      }
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0;
+        padding: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+        line-height: 1.6;
+        font-size: 16px;
+      }
+      a { color: var(--accent); text-decoration: none; }
+      a:hover { text-decoration: underline; }
+      code { background: #1a1a1a; padding: 2px 6px; border-radius: 3px; color: var(--secondary); font-size: 0.92em; }
+      main {
+        max-width: 900px;
+        margin: 0 auto;
+        padding: 32px 24px 80px;
+      }
+      h1 {
+        font-size: 2em;
+        margin-top: 0;
+        padding-bottom: 8px;
+        border-bottom: 1px solid var(--border);
+      }
+      .breadcrumb {
+        color: var(--muted);
+        font-size: 0.9em;
+        margin-bottom: 16px;
+      }
+      .breadcrumb a { color: var(--muted); }
+      .breadcrumb a:hover { color: var(--accent); }
+      .preview-card {
+        padding: 16px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        margin-bottom: 16px;
+      }
+      .og-thumb {
+        max-width: 600px;
+        width: 100%;
+        border: 1px solid var(--border);
+        margin-top: 8px;
+      }
+      .locale-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 1px 7px;
+        background: var(--border);
+        color: var(--muted);
+        font-size: 0.72em;
+        border-radius: 3px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        font-weight: 600;
+      }
+    </style>
+  </head>
+  <body>
+    <SiteHeader isPreview={true} />
+    <main>
+      <p class="breadcrumb"><a href="/preview">← Preview shelf</a></p>
+      <slot />
+    </main>
+  </body>
+</html>

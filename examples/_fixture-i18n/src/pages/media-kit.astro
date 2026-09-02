@@ -1,0 +1,27 @@
+---
+// The one URL to hand anyone who asks for the logo and a description. Checked by
+// content:mediakit — a logo file, paste-ready boilerplate, and a way to reach a
+// human. See BEST-PRACTICES.md § content.
+import RootLayout from '../layouts/RootLayout.astro';
+import { config as ogConfig } from '../../scripts/og.config.mjs';
+
+const { brand } = ogConfig;
+---
+<RootLayout title="Media kit" description="Logo, boilerplate and contact details for press and partners.">
+  <h1>Media kit</h1>
+
+  <h2>Boilerplate</h2>
+  <p>
+    {brand.siteName} is a multi-locale demonstration site maintained by the rider
+    project. It exists to prove that the baseline Astro stack — content collections, a full
+    Schema.org surface, per-locale feeds and a client-side search index — works end to end
+    before any of those patterns reach a site with real readers. Copy this paragraph as-is.
+  </p>
+
+  <h2>Logo</h2>
+  <p><a href="/logo.svg" download>Download the logo (SVG)</a></p>
+  <img src="/logo.svg" alt={`${brand.siteName} logo`} width="240" height="80" />
+
+  <h2>Contact</h2>
+  <p>Press and partnership enquiries: <a href="mailto:press@example.com">press@example.com</a></p>
+</RootLayout>

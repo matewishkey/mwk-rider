@@ -1,0 +1,155 @@
+---
+/**
+ * Canonical pagination nav for paginated blog routes.
+ * Renders prev / page-numbers / next from an Astro Page object.
+ *
+ * Per best practice:
+ *   - rel="prev" / rel="next" hints to search engines (still useful even
+ *     after Google said they "no longer use them" — Bing does, and they
+ *     cost ~12 bytes)
+ *   - current page is rendered as <span>, not a self-link
+ *   - aria-current on the current page item
+ *   - aria-label on the nav for screen readers
+ */
+import type { Page } from 'astro';
+import { Icon } from 'astro-icon/components';
+
+interface Props {
+  page: Page<any>;
+  /** Locale-aware base path, e.g. "/blog" or "/blog/tag/architecture" */
+  basePath?: string;
+}
+
+const { page, basePath } = Astro.props;
+
+// Astro's `page.url.first / .prev / .next / .last` are computed against the
+// route's directory. For nested filter routes (/blog/tag/architecture) we
+// pass basePath to override — Astro's default would treat the route as the
+// "directory" and emit URLs like /blog/tag/architecture/2 correctly anyway,
+// but explicit is safer when we re-render the same component from different
+// route trees.
+function pageHref(p: number): string {
+  if (!basePath) {
+    return p === 1 ? page.url.first ?? '' : `${(page.url.first ?? '').replace(/\/$/, '')}/${p}`;
+  }
+  return p === 1 ? basePath : `${basePath.replace(/\/$/, '')}/${p}`;
+}
+
+const { currentPage, lastPage } = page;
+// Show first, last, current, and a window of 2 around current.
+// Insert ellipses where there's a gap.
+function pageList(): (number | '…')[] {
+  const set = new Set<number>([1, lastPage, currentPage, currentPage - 1, currentPage + 1]);
+  const pages = [...set].filter((n) => n >= 1 && n <= lastPage).sort((a, b) => a - b);
+  const out: (number | '…')[] = [];
+  for (let i = 0; i < pages.length; i++) {
+    out.push(pages[i]);
+    if (pages[i + 1] && pages[i + 1] !== pages[i] + 1) out.push('…');
+  }
+  return out;
+}
+const items = pageList();
+---
+{lastPage > 1 && (
+  <nav class="pagination" aria-label="Pagination">
+    {page.url.prev ? (
+      <a class="step" rel="prev" href={basePath && currentPage === 2 ? basePath : (page.url.prev as string)}>
+        <Icon name="lucide:chevron-left" size={16} /><span>Previous</span>
+      </a>
+    ) : (
+      <span class="step disabled" aria-disabled="true">
+        <Icon name="lucide:chevron-left" size={16} /><span>Previous</span>
+      </span>
+    )}
+
+    <ol class="numbers">
+      {items.map((n) => (
+        n === '…'
+          ? <li class="ellipsis" aria-hidden="true">…</li>
+          : n === currentPage
+            ? <li><span class="page current" aria-current="page">{n}</span></li>
+            : <li><a class="page" href={pageHref(n)}>{n}</a></li>
+      ))}
+    </ol>
+
+    {page.url.next ? (
+      <a class="step" rel="next" href={page.url.next as string}>
+        <span>Next</span><Icon name="lucide:chevron-right" size={16} />
+      </a>
+    ) : (
+      <span class="step disabled" aria-disabled="true">
+        <span>Next</span><Icon name="lucide:chevron-right" size={16} />
+      </span>
+    )}
+  </nav>
+)}
+
+<style>
+  .pagination {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 28px 0 8px;
+    padding-top: 18px;
+    border-top: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+  .pagination .step {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    color: var(--fg);
+    font-size: 0.9em;
+    transition: border-color 150ms ease, background 150ms ease;
+  }
+  .pagination .step:hover {
+    border-color: var(--accent);
+    background: rgba(51, 255, 51, 0.05);
+    text-decoration: none;
+  }
+  .pagination .step.disabled {
+    color: var(--muted);
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  .pagination ol.numbers {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    gap: 4px;
+    align-items: center;
+  }
+  .pagination .page {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 32px;
+    height: 32px;
+    padding: 0 8px;
+    border-radius: 6px;
+    border: 1px solid transparent;
+    color: var(--fg);
+    font-size: 0.9em;
+    font-variant-numeric: tabular-nums;
+  }
+  .pagination .page:hover {
+    border-color: var(--border);
+    background: rgba(255, 255, 255, 0.03);
+    text-decoration: none;
+  }
+  .pagination .page.current {
+    background: var(--accent);
+    color: var(--bg);
+    font-weight: 600;
+    border-color: var(--accent);
+  }
+  .pagination .ellipsis {
+    color: var(--muted);
+    padding: 0 4px;
+  }
+</style>

@@ -1,0 +1,28 @@
+---
+import type { GetStaticPaths } from 'astro';
+import RootLayout from '../../../layouts/RootLayout.astro';
+import { publishedPosts, type Post } from '../../../lib/posts';
+
+export const getStaticPaths = (async () => {
+  const posts = await publishedPosts();
+  const tags = new Set(posts.flatMap((post) => post.data.tags));
+  return [...tags].map((tag) => ({
+    params: { tag },
+    props: { tag, posts: posts.filter((post) => post.data.tags.includes(tag)) },
+  }));
+}) satisfies GetStaticPaths;
+
+const { tag, posts } = Astro.props as { tag: string; posts: Post[] };
+---
+<RootLayout title={`Tagged “${tag}”`} description={`Every post on ${tag} — ${posts.length} in total, newest first.`}>
+  <h1>Tagged “{tag}”</h1>
+  <ul>
+    {posts.map((post) => (
+      <li>
+        <a href={`/blog/${post.id}`}>{post.data.title}</a>
+        <span class="muted"> — {post.data.date.toISOString().slice(0, 10)}</span>
+      </li>
+    ))}
+  </ul>
+  <p><a href="/blog">← All posts</a></p>
+</RootLayout>

@@ -1,0 +1,72 @@
+---
+/**
+ * Everything that goes in <head>, in one place.
+ *
+ * Every page renders this, which is what makes the coverage checks meaningful:
+ * a canonical URL, a description, a social card and structured data on all of
+ * them, not on whichever ones someone remembered.
+ */
+import type { CollectionEntry } from 'astro:content';
+import { config as ogConfig } from '../../scripts/og.config.mjs';
+import { blogPostingLd, webSiteLd } from '../lib/jsonld';
+
+interface Props {
+  entry?: CollectionEntry<'blog'>;
+  title?: string;
+  description?: string;
+}
+
+const { entry, title: titleProp, description: descriptionProp } = Astro.props;
+const { brand, mediaDomain } = ogConfig;
+
+const pageUrl = new URL(Astro.url.pathname, brand.siteUrl).toString();
+
+const title = entry
+  ? `${entry.data.title} · ${brand.siteName}`
+  : titleProp
+    ? `${titleProp} · ${brand.siteName}`
+    : brand.siteName;
+
+const description = entry?.data.excerpt ?? descriptionProp ?? brand.tagline;
+
+// One social card for the whole site. Generating a card per post is a nice
+// upgrade; shipping no card at all means every share previews as bare text, so
+// a single good default beats a plan to do it properly later.
+const ogImage = mediaDomain
+  ? `https://${mediaDomain}/og/default.png`
+  : new URL('/og/default.png', brand.siteUrl).toString();
+
+const jsonLd = entry ? blogPostingLd(entry, brand, ogImage) : webSiteLd(brand);
+---
+
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>{title}</title>
+<meta name="description" content={description} />
+<link rel="canonical" href={pageUrl} />
+
+<meta property="og:title" content={entry?.data.title ?? titleProp ?? brand.siteName} />
+<meta property="og:description" content={description} />
+<meta property="og:url" content={pageUrl} />
+<meta property="og:type" content={entry ? 'article' : 'website'} />
+<meta property="og:site_name" content={brand.siteName} />
+<meta property="og:image" content={ogImage} />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta property="og:image:alt" content={entry?.data.title ?? brand.siteName} />
+
+{entry && (
+  <>
+    <meta property="article:published_time" content={entry.data.date.toISOString()} />
+    {entry.data.dateModified && (
+      <meta property="article:modified_time" content={entry.data.dateModified.toISOString()} />
+    )}
+    {entry.data.tags.map((tag) => <meta property="article:tag" content={tag} />)}
+  </>
+)}
+
+<meta name="twitter:card" content="summary_large_image" />
+{brand.twitterSite && <meta name="twitter:site" content={brand.twitterSite} />}
+{brand.twitterCreator && <meta name="twitter:creator" content={brand.twitterCreator} />}
+
+<script is:inline type="application/ld+json" set:html={JSON.stringify(jsonLd)} />

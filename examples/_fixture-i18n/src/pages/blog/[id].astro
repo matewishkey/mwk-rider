@@ -1,0 +1,81 @@
+---
+import RootLayout from '../../layouts/RootLayout.astro';
+import { Icon } from 'astro-icon/components';
+import { getCollection, render } from 'astro:content';
+import type { CollectionEntry } from 'astro:content';
+import { urlSlug } from '../../lib/slug';
+
+export async function getStaticPaths() {
+  const posts = await getCollection('blog');
+  return posts
+    .filter((p) => !p.data.previewOnly && p.data.locale === 'en')
+    .map((post) => ({
+      params: { id: urlSlug(post.id) },
+      props: { post },
+    }));
+}
+
+interface Props {
+  post: CollectionEntry<'blog'>;
+}
+
+const { post } = Astro.props;
+const { Content } = await render(post);
+
+let huSibling: CollectionEntry<'blog'> | undefined;
+if (post.data.translationKey) {
+  const all = await getCollection('blog');
+  huSibling = all.find(
+    (p) => p.data.translationKey === post.data.translationKey && p.data.locale === 'hu'
+  );
+}
+---
+<RootLayout entry={post}>
+  <article>
+    <h1>{post.data.title}</h1>
+    <p class="post-meta">
+      <span><Icon name="lucide:calendar" size={14} /><time datetime={post.data.date.toISOString()}>{post.data.date.toISOString().slice(0,10)}</time></span>
+      <a href={`/blog/type/${post.data.type}`}><Icon name="lucide:folder" size={14} />{post.data.type}</a>
+      {post.data.tags.map((t) => (
+        <a href={`/blog/tag/${t}`}><Icon name="lucide:tag" size={14} />{t}</a>
+      ))}
+      {huSibling && (
+        <a class="translation-link" href={`/hu/blog/${urlSlug(huSibling.id)}`}><Icon name="lucide:languages" size={14} />Magyar fordítás</a>
+      )}
+    </p>
+    <style>
+      .post-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px;
+        color: var(--muted);
+        font-size: 0.85em;
+        margin-bottom: 24px;
+        padding-bottom: 14px;
+        border-bottom: 1px solid var(--border);
+      }
+      .post-meta span,
+      .post-meta a {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        color: var(--muted);
+      }
+      .post-meta a:not(.translation-link) {
+        padding: 1px 6px;
+        border-radius: 3px;
+        transition: color 150ms ease, background 150ms ease;
+      }
+      .post-meta a:not(.translation-link):hover {
+        color: var(--accent);
+        background: rgba(51, 255, 51, 0.06);
+        text-decoration: none;
+      }
+      .post-meta a.translation-link {
+        color: var(--accent);
+      }
+      .post-meta [data-icon] { opacity: 0.7; }
+    </style>
+    <Content />
+  </article>
+</RootLayout>

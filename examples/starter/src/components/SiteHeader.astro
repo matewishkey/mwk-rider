@@ -1,0 +1,16 @@
+---
+import { config as ogConfig } from '../../scripts/og.config.mjs';
+const { brand } = ogConfig;
+
+// Deliberately not an <h1>. The site name in a header on every page would give
+// each page two top-level headings, and a document outline with two h1s tells a
+// crawler and a screen reader nothing about what the page is.
+---
+<header>
+  <p><strong><a href="/">{brand.siteName}</a></strong></p>
+  <nav>
+    <a href="/blog">Blog</a> ·
+    <a href="/about">About</a> ·
+    <a href="/contact">Contact</a>
+  </nav>
+</header>

@@ -1,0 +1,46 @@
+---
+import RootLayout from '../layouts/RootLayout.astro';
+import SearchBox from '../components/SearchBox.astro';
+import { Icon } from 'astro-icon/components';
+import { Image } from 'astro:assets';
+import hero from '../assets/hero.png';
+import { getCollection } from 'astro:content';
+import { urlSlug } from '../lib/slug';
+
+const posts = (await getCollection('blog'))
+  .filter((p) => !p.data.draft && !p.data.previewOnly && p.data.locale === 'en')
+  .sort((a, b) => b.data.date.getTime() - a.data.date.getTime());
+---
+<RootLayout>
+  <h1>rider · i18n fixture (EN)</h1>
+  <!-- One real content image, so the images domain and perf CLS check have
+       something to judge. <Image> optimizes at build time and bakes in
+       width/height, which is the practice the checks encode. -->
+  <Image src={hero} alt="Fixture hero — a gradient placeholder" width={800} height={500} />
+  <p>Multi-locale (English + Hungarian) test bed for the rider contract.
+    Switch to <a href="/hu">Magyar</a> to see the same site in Hungarian.</p>
+
+  <SearchBox placeholder="Search English posts…" />
+
+  <h2><Icon name="lucide:list" size={22} />Posts</h2>
+  <ul class="post-list">
+    {posts.map((p) => (
+      <li>
+        <div class="title">
+          <a href={`/blog/${urlSlug(p.id)}`}>{p.data.title}</a>
+          {p.data.translationKey && (
+            <span class="locale-badge" title="Has translations">
+              <Icon name="lucide:languages" size={11} />translated
+            </span>
+          )}
+        </div>
+        <div class="excerpt">{p.data.excerpt}</div>
+        <div class="meta">
+          <span><Icon name="lucide:calendar" size={12} />{p.data.date.toISOString().slice(0,10)}</span>
+          <span><Icon name="lucide:folder" size={12} />{p.data.type}</span>
+          <span><Icon name="lucide:tag" size={12} />{p.data.tags.join(', ')}</span>
+        </div>
+      </li>
+    ))}
+  </ul>
+</RootLayout>

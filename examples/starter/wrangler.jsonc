@@ -1,0 +1,40 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+
+  // Rename this. It becomes the Worker's name and its *.workers.dev subdomain.
+  "name": "rider-starter",
+
+  // Set to the day you first deploy. It pins Workers runtime behaviour so a
+  // future platform change cannot alter how your site behaves.
+  "compatibility_date": "2026-08-03",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // The unified entrypoint @astrojs/cloudflare provides. It serves the one
+  // on-demand route and hands everything else to static assets.
+  "main": "@astrojs/cloudflare/entrypoints/server",
+
+  // Not "./dist". Once an adapter is installed the build splits: `dist/client/`
+  // is what a browser gets and `dist/server/` is the bundle that runs. Pointing
+  // this at `./dist` would publish the server bundle as downloadable files.
+  "assets": {
+    "directory": "./dist/client",
+    "binding": "ASSETS"
+  },
+
+  // Cloudflare Email Service — what the contact form sends through.
+  //
+  // `destination_address` pins this binding to ONE recipient. Whatever anybody
+  // posts to /api/contact, it can only ever mail this address, so the endpoint
+  // cannot be turned into an open relay. Sending to a verified destination is
+  // free on any plan and does not count against a quota or a daily limit.
+  //
+  // Two dashboard steps before this works — see CLAUDE.md § Operator steps.
+  // Until they are done, submissions fail closed and redirect back with an
+  // error rather than pretending to have sent.
+  "send_email": [
+    {
+      "name": "EMAIL",
+      "destination_address": "hello@example.com"
+    }
+  ]
+}
