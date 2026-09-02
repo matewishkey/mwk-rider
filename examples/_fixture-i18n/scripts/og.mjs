@@ -13,8 +13,14 @@
  * that route needs a running server, and in `astro dev` it 404s anyway
  * (issue #26). A self-contained render has neither problem and needs no build.
  *
- * Output is committed, like `examples/starter/public/og/default.png` — a fresh
- * clone has to pass a live audit without running a generator first.
+ * Output is committed, so a fresh clone passes a live audit without running a
+ * generator first.
+ *
+ * The starter no longer works this way: it generates its cards with satori +
+ * sharp from `npm run build`, needs no browser, and gitignores the output
+ * because a build always redraws it. Doing the same here means porting the
+ * per-locale paths and the preview shelf, which is its own change — tracked as
+ * an issue rather than smuggled into one.
  *
  *   npm run og          # regenerate every card
  */
@@ -72,8 +78,8 @@ const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt
  *
  * Flat fills on purpose. The first version had a radial gradient and the ten
  * cards came to 1.3 MB — PNG stores a smooth gradient badly, and these are
- * committed. Flat colour plus a rule at the top is the same idea at 20 KB
- * each, which is what `examples/starter/public/og/default.png` already costs.
+ * committed. Flat colour plus a rule at the top is the same idea at ~20 KB
+ * each, which is the order the starter's generated cards land at too.
  */
 const card = (title, sub, tag) => `<!doctype html><meta charset="utf-8">
 <style>

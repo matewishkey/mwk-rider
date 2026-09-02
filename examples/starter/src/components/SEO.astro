@@ -29,12 +29,15 @@ const title = entry
 
 const description = entry?.data.excerpt ?? descriptionProp ?? brand.tagline;
 
-// One social card for the whole site. Generating a card per post is a nice
-// upgrade; shipping no card at all means every share previews as bare text, so
-// a single good default beats a plan to do it properly later.
+// A card per post, generated from the entry by `scripts/og.mjs` on every build
+// (it runs ahead of `astro build`). The path is derived the same way there and
+// here, from the entry id, so the two cannot drift: retitle a post and its card
+// is redrawn, rename it and both sides move together. Pages that are not a post
+// share the site-wide card.
+const ogPath = entry ? `/og/blog/${entry.id}.png` : '/og/default.png';
 const ogImage = mediaDomain
-  ? `https://${mediaDomain}/og/default.png`
-  : new URL('/og/default.png', brand.siteUrl).toString();
+  ? `https://${mediaDomain}${ogPath}`
+  : new URL(ogPath, brand.siteUrl).toString();
 
 // A post carries two nodes: what it is, and where it sits. They ship as two
 // blocks rather than one @graph because either is valid and two is simpler to
