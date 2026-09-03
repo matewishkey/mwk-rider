@@ -1,6 +1,13 @@
 # Minimal wrangler.toml — this fixture is never deployed (local-only).
-# Present so the contract's"wrangler.toml at project root" ⚖ check passes
-# when the migrate command is dogfooded against this fixture.
+#
+# It exists so the fixture has the file a real project root has. It deliberately
+# declares no `assets` directory and no `main`, which is why `modules: 404:served`
+# reports ⏭ against it rather than a finding: there is no static-assets deploy
+# here whose not-found handling could be wrong.
+#
+# (This note used to describe a "contract" ⚖ check and a `migrate` command. Both
+# are gone — the contract is the thing this repo was deliberately stripped of,
+# and there is no migrate mode. See CLAUDE.md § What it is.)
 
 name = "rider-fixture-i18n"
 compatibility_date = "2026-05-27"

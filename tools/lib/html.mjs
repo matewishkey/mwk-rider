@@ -76,6 +76,45 @@ export function headingAudit(levels) {
   return { h1, skip, skipAt };
 }
 
+/**
+ * HTML character references in an attribute value.
+ *
+ * Attribute values are entity-ENCODED in the document and decoded by the parser,
+ * so the raw text between the quotes is not the value. Reading it raw is not a
+ * cosmetic problem for a URL: `&` must be escaped in an attribute, and a correct
+ * serializer writes `?w=1000&#x26;q=80`. Left encoded, the `#` is then read as
+ * the start of a FRAGMENT —
+ *
+ *   new URL("https://img.example/p?ixlib=rb&#x26;w=1000&#x26;q=80").search
+ *     → "?ixlib=rb&"
+ *
+ * — so every parameter after the first `&` is dropped before the request is
+ * even sent. Measured on a real build: an Unsplash URL asking for `w=1000` was
+ * fetched without it, the host returned the full-size original, and the live
+ * byte check reported a budget violation against an image no visitor downloads.
+ * The width the URL declares was invisible to `pinnedWidth` for the same reason.
+ *
+ * Named references are the five XML ones plus the numeric forms; that is
+ * complete for anything that appears in a URL, and a full HTML5 table would be
+ * a dependency for characters no attribute value here carries.
+ */
+const NAMED_ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: '\u00a0' };
+
+export function decodeEntities(value) {
+  return String(value ?? '').replace(/&(#[0-9]+|#[xX][0-9a-fA-F]+|[a-zA-Z]+);/g, (whole, body) => {
+    if (body[0] === '#') {
+      const code = body[1] === 'x' || body[1] === 'X'
+        ? parseInt(body.slice(2), 16)
+        : parseInt(body.slice(1), 10);
+      // A code point outside the range, or a surrogate, is not something to
+      // guess at — keep the source text rather than emit a replacement char.
+      if (!Number.isFinite(code) || code <= 0 || code > 0x10ffff || (code >= 0xd800 && code <= 0xdfff)) return whole;
+      return String.fromCodePoint(code);
+    }
+    return NAMED_ENTITIES[body.toLowerCase()] ?? whole;
+  });
+}
+
 // Attribute helpers. Anchor on an attribute-name boundary (start or whitespace),
 // never \b — \b matches inside `data-src`/`data-width`/`data-alt`, which both
 // invents findings for tags that lack the real attribute and lets a genuine
@@ -87,9 +126,12 @@ export function headingAudit(levels) {
 // dropped the image out of every content-image check that resolves it by src.
 // An apostrophe inside a double-quoted attribute is ordinary HTML.
 export function attrValue(attrs, name) {
-  return attrs.match(new RegExp(`(?:^|\\s)${name}\\s*=\\s*(["'\`])((?:(?!\\1)[\\s\\S])*)\\1`, 'i'))?.[2]
-      ?? attrs.match(new RegExp(`(?:^|\\s)${name}\\s*=\\s*([^\\s>"'\`]+)`, 'i'))?.[1]
-      ?? null;
+  const raw = attrs.match(new RegExp(`(?:^|\\s)${name}\\s*=\\s*(["'\`])((?:(?!\\1)[\\s\\S])*)\\1`, 'i'))?.[2]
+           ?? attrs.match(new RegExp(`(?:^|\\s)${name}\\s*=\\s*([^\\s>"'\`]+)`, 'i'))?.[1]
+           ?? null;
+  // Decoded, because the parser decodes it — see decodeEntities above for the
+  // URL this silently broke.
+  return raw == null ? null : decodeEntities(raw);
 }
 // Present, with or without a value. An attribute written with an empty value is
 // serialised bare: Astro emits `<img alt="" aria-hidden="true">` as `<img alt

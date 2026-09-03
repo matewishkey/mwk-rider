@@ -765,6 +765,24 @@ check('  …while a genuinely missing alt is still caught',
 check('a bare attribute name does not match a longer one',
   hasAttr('widths="1"', 'width') === false);
 
+// Attribute values are entity-ENCODED in the document; the parser decodes them,
+// and so must this. `&` MUST be escaped in an attribute, so a correct serializer
+// writes `?w=1000&#x26;q=80` — and read raw, the `#` starts a FRAGMENT, so every
+// parameter after the first `&` is dropped before the request is sent. Measured
+// on a real build: an Unsplash URL asking for w=1000 was fetched without it, the
+// host returned the full-size original, and the live byte check reported a
+// budget violation against an image no visitor downloads.
+const ENC = 'src="https://img.example/p?ixlib=rb&#x26;w=1000&#x26;q=80"';
+check('a hex-encoded & in a URL is decoded, not left to start a fragment',
+  attrValue(ENC, 'src') === 'https://img.example/p?ixlib=rb&w=1000&q=80');
+check('  …so the query survives into the URL that gets fetched',
+  new URL(attrValue(ENC, 'src')).search === '?ixlib=rb&w=1000&q=80');
+check('  …and &amp; and &#38; decode the same way',
+  attrValue('src="/a?x=1&amp;y=2"', 'src') === '/a?x=1&y=2'
+  && attrValue('src="/a?x=1&#38;y=2"', 'src') === '/a?x=1&y=2');
+check('  …while an unknown reference is left exactly as written',
+  attrValue('alt="100&nonsuch; wide"', 'alt') === '100&nonsuch; wide');
+
 // A quoted value ends at the quote that OPENED it. Excluding every quote from
 // the value class made an attribute carrying the other one match nothing, and a
 // non-match is indistinguishable from an absent attribute — so an <img> whose
