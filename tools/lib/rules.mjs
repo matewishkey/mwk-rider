@@ -90,7 +90,7 @@ const RULES = [
   ['images/assets-size', 'images', 'assets:size', 'A large raster in src/assets/ is repo weight; if it is not imported it also ships as-is.'],
   ['images/dist-size', 'images', 'dist:size', 'An oversized built image is bytes every visitor downloads.'],
   ['images/alt', 'images', 'alt', 'A content image with no alt attribute is a WCAG 1.1.1 failure. alt="" is fine — that means decorative.'],
-  ['images/srcset-missing', 'images', 'srcset:missing', 'A large image shipping one fixed width sends the desktop file to every phone. Advisory: a logo or a diagram is legitimately one size, so the thresholds are measured and it never fails a run.'],
+  ['images/srcset-missing', 'images', 'srcset:missing', 'A large image shipping one fixed width sends the desktop file to every phone. The thresholds are measured, and a logo or a diagram that is legitimately one size is guarded out.'],
   ['images/transform-params', 'images', 'transform:params', 'Reports when there were no transform URLs to inspect.'],
   ['images/transform-format', 'images', 'transform:format', 'format=auto lets Cloudflare negotiate AVIF/webp; an explicit format forfeits that and can fall back to the raw source.'],
   ['images/transform-quality', 'images', 'transform:quality', 'Without an explicit quality= Cloudflare defaults to 85, which is generous for photographs.'],

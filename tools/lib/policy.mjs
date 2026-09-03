@@ -70,6 +70,14 @@ const HOUSE_STYLE = [
   'perf:css:files',
   'perf:font:families',
   'perf:font:faces',
+  // Promoted out of ADVISORY on 2026-09-03 (issue #21). The condition #12 set
+  // was a wider real-site sweep showing it stays quiet on correct code, and it
+  // was met: 10 distinct sites, 66 measurable candidates, 25 findings, 0 wrong
+  // — and 25 wide candidates correctly left alone, with the byte floor firing
+  // on a quote graphic, a logo and a placeholder. House style rather than
+  // universal because it remains a threshold on a judgement call: art direction
+  // can justify one width, so a stranger's site is never failed for it.
+  'images:srcset:missing',
 
   // --- content surface: valuable, but blog/content-site specific ---------------
   'data:llms.txt',
@@ -134,13 +142,6 @@ const ADVISORY = [
   'seo:meta:og:image:height',
   'seo:og:image:width',
   'seo:og:image:height',
-  // A legitimately fixed-width image is common and correct — a logo, an avatar,
-  // a diagram rendered at one size. The check guards against those three ways
-  // (a measured width floor, a byte floor, a name filter), but it is still a
-  // threshold, and art direction can justify a single width. It ships advisory
-  // and only earns a 🔧 if a wider real-site sweep shows it staying quiet on
-  // correct code — the promotion condition issue #12 set.
-  'images:srcset:missing',
   // Diagnosis, not verdict: what the LCP is waiting for, which third parties
   // weigh the most, and how the simulated numbers compare to the observed ones.
   // The scores next to them are the verdict; these are what make one readable.

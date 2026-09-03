@@ -1836,15 +1836,22 @@ const webpFile = (w, h, kb) => {
 };
 const singleRows = (files, html) => runJson(mkBuilt({ 'dist/index.html': html, ...files }), ['-s', 'images', '--strict'])
   .json?.results.filter(r => r.id === 'images/srcset-missing') ?? [];
+// The same build without --strict, to hold the house-style demotion.
+const singleRowsDefault = (files, html) => runJson(mkBuilt({ 'dist/index.html': html, ...files }), ['-s', 'images'])
+  .json?.results.filter(r => r.id === 'images/srcset-missing') ?? [];
 const ONE_IMG = (src) => `<html><body><img src="${src}" alt="a" width="16" height="9"></body></html>`;
 
 const wide = singleRows({ 'dist/hero.webp': webpFile(1600, 900, 120) }, ONE_IMG('/hero.webp'));
-check('a 1600px 120 KB <img> with no srcset → suggest, naming the width',
-  wide[0]?.outcome === 'suggest' && /1600px/.test(wide[0]?.message ?? ''), JSON.stringify(wide[0]));
-check('  …advisory even under --strict — the promotion condition is a wider sweep',
-  wide.every(r => r.outcome !== 'fix' && r.outcome !== 'block'));
+check('a 1600px 120 KB <img> with no srcset → fix under --strict, naming the width',
+  wide[0]?.outcome === 'fix' && /1600px/.test(wide[0]?.message ?? ''), JSON.stringify(wide[0]));
+// Promoted out of advisory on 2026-09-03 (issue #21) on a 10-site sweep. House
+// style, not universal: it remains a threshold on a judgement call, so a
+// stranger's site is never failed for it and default mode still reports 💡.
+const wideDefault = singleRowsDefault({ 'dist/hero.webp': webpFile(1600, 900, 120) }, ONE_IMG('/hero.webp'));
+check('  …and 💡 [baseline] in default mode — a threshold never fails a stranger build',
+  wideDefault[0]?.outcome === 'suggest' && wideDefault[0]?.houseStyle === true, JSON.stringify(wideDefault[0]));
 check('  …and a /cdn-cgi/image/ URL is judged on the width it pins',
-  singleRows({}, ONE_IMG('https://media.x.test/cdn-cgi/image/width=1600,format=auto,quality=80/hero.jpg'))[0]?.outcome === 'suggest');
+  singleRows({}, ONE_IMG('https://media.x.test/cdn-cgi/image/width=1600,format=auto,quality=80/hero.jpg'))[0]?.outcome === 'fix');
 
 // The blind spot this check shipped with (issue #21): a site whose build emits
 // avif reached the same `⏭ nothing to check` as a site with no images at all,
@@ -1857,7 +1864,7 @@ const avifFile = (w, h, kb) => {
 };
 const wideAvif = singleRows({ 'dist/hero.avif': avifFile(1600, 900, 120) }, ONE_IMG('/hero.avif'));
 check('an avif build is judged on its own widths, not skipped as unreadable',
-  wideAvif[0]?.outcome === 'suggest' && /1600px/.test(wideAvif[0]?.message ?? ''), JSON.stringify(wideAvif[0]));
+  wideAvif[0]?.outcome === 'fix' && /1600px/.test(wideAvif[0]?.message ?? ''), JSON.stringify(wideAvif[0]));
 check('  …and its guards work the same — a 640px avif portrait is still no finding',
   singleRows({ 'dist/face.avif': avifFile(640, 640, 120) }, ONE_IMG('/face.avif'))[0]?.outcome === 'pass');
 

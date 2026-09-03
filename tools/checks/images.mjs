@@ -200,9 +200,15 @@ export async function run({ project, reporter }) {
       }
     }
 
-    // The positive assertion: a large image shipping one fixed width. Advisory in
-    // every mode — the threshold is measured (see the constants above) but it is
-    // still a threshold, and art direction can justify a single width.
+    // The positive assertion: a large image shipping one fixed width. Promoted
+    // from advisory to a house-style finding on 2026-09-03, on the sweep issue
+    // #21 asked for: 10 distinct sites (7 of them written by people with no
+    // connection to this project), 66 measurable candidates, 25 findings, 0
+    // wrong. What earned it was not the hit rate but the SILENCE — 25 wide
+    // candidates were correctly left alone, and the byte floor fired on exactly
+    // the shapes it was designed for: a 1200px/27KB quote graphic, a
+    // 1190px/24KB logo, a 1096px/5KB placeholder. It is still a threshold, so
+    // it stays house style: 💡 by default, 🔧 only under --strict.
     const unknown = findings.singleWidthUnknown;
     // Name the blind spot rather than folding it into "nothing to check": an
     // unreadable width is a MISSED finding, not an absent one.
@@ -219,7 +225,7 @@ export async function run({ project, reporter }) {
     } else {
       for (const f of findings.singleWidth) {
         const weight = f.bytes != null ? `, ${humanSize(f.bytes)}` : '';
-        reporter.suggest(
+        reporter.fix(
           SEC,
           'srcset:missing',
           `${f.width}px wide${weight} with no srcset — every phone downloads the ${f.width}px version (${truncate(f.src, 70)})`,

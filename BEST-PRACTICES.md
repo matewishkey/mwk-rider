@@ -514,7 +514,8 @@ thing a version bump leaves behind. Each maps to a documented v7 breaking change
   background that can never have one, an overstated `sizes` measured in a
   browser. None of them says the thing that is arguably worth more: *this image
   is large and ships as a single width, so every phone downloads the desktop
-  file*. That is this check. → 💡 `images: srcset:missing`
+  file*. That is this check. → `images: srcset:missing` (house style: 💡 by
+  default, 🔧 under `--strict`)
 
   A candidate is a built `<img>` with no `srcset` and no `<picture>` ancestor
   (its `<source>` siblings are the ladder) whose delivered width is knowable —
@@ -551,11 +552,37 @@ thing a version bump leaves behind. Each maps to a documented v7 breaking change
   nothing wide was there — which would be a false statement about precisely the
   images the guards exist for.
 
-  **Advisory in every mode**, and that is the shipping condition issue #12 set:
-  it earns a `🔧` only if a wider real-site sweep shows it staying quiet on
-  correct code. The measured sweep so far: silent on tasmanvisa-web (9 candidates,
-  0 findings) and matevisky-web (7, 0); 7 true findings on mergodon-com-web, all
-  blog and hero photographs pinned to a single desktop width.
+  **Promoted out of advisory on 2026-09-03**, on the sweep issue #12 set as the
+  condition and issue #21 tracked: *a wider real-site sweep showing it stays
+  quiet on correct code*. It ships as house style — 💡 by default, 🔧 under
+  `--strict` — rather than universal, because it remains a threshold on a
+  judgement call and a stranger's site should never fail a build over one.
+
+  The sweep, re-run over the population rather than spot-checked:
+
+  | | sites | measurable candidates | findings | wrong |
+  |---|---|---|---|---|
+  | ours (2026-08, #12) | 3 | 23 | 7 | 0 |
+  | public Astro sites (2026-09-03) | 7 | 43 | 18 | 0 |
+
+  The public half is what earned the promotion: seven repos written by people
+  with no connection to this project, cloned and built from source — among them
+  `satnaing/astro-paper` (5k★), `themefisher/bookworm-light-astro` and
+  `davidvkimball/astro-modular`. The findings were 4000 px / 1.9 MB author
+  photographs, 2400–3840 px in-content screenshots, and 1080 px post
+  photographs — all true, none arguable.
+
+  What earned it was the **silence**, not the hit rate. Twenty-five wide
+  candidates were correctly left alone, and the byte floor fired on exactly the
+  shapes it was designed for: a 1200 px / 27 KB quote graphic, a 1190 px / 24 KB
+  logo, a 1096 px / 5 KB placeholder. Those are the "legitimately fixed-width
+  illustration" case the guards exist for, found in the wild rather than
+  constructed. The name filter never had to fire — the byte floor caught every
+  one first, which is worth knowing if either threshold is ever revisited.
+
+  Thirty further candidates were unmeasurable, nearly all remote URLs (Unsplash,
+  Cloudinary, GitHub asset links) on one site. They are counted and named rather
+  than dropped, per #21's second half.
 - **Transforms use `format=auto`, not an explicit format.** `format=auto` lets
   Cloudflare negotiate AVIF/webp per the browser's `Accept`; an explicit
   `format=webp` (the default Astro emits for bare markdown `![]()`) means no AVIF
@@ -1411,10 +1438,11 @@ the bullet here is only its summary.
 - **hreflang alternates on multi-locale pages.** Paired-locale posts should emit
   `rel="alternate" hreflang=…` (+ `x-default`); single-locale posts should omit
   the block entirely. The fixture smoke test checks this; the audit doesn't yet.
-- ~~**Responsive `srcset`/`sizes`.**~~ Closed by `💡 images: srcset:missing` —
-  the practice is § images above. The thresholds that kept it in this list came
-  out of a three-build measurement rather than taste; it ships advisory, and
-  earns a `🔧` only if a wider sweep shows it staying quiet on correct code.
+- ~~**Responsive `srcset`/`sizes`.**~~ Closed by `images: srcset:missing` — the
+  practice is § images above. The thresholds came out of a measurement rather
+  than taste, and the check was promoted out of advisory to house style on
+  2026-09-03 once the wider sweep it was waiting for came in: 10 sites, 66
+  measurable candidates, 25 findings, 0 wrong (issue #21).
 - **Offline heading scan beyond the canonical gate (see also `headings:order`,
   which now names the component rather than the built page).** Today the offline outline
   check only inspects pages with a `<link rel="canonical">`; a page that should
