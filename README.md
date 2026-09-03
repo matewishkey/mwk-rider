@@ -5,13 +5,13 @@
 An on-demand best-practices auditor for **Astro** sites — and a compliant site to start from. A Claude Code plugin — two slash commands (`/mwk-rider:audit`, `/mwk-rider:create`) over one zero-dependency script, ten domains (seven offline + three live), plus `/mwk-rider:bug` for when it gets one wrong. No framework, no contract, nothing installed into the sites it audits — it reports, you decide.
 
 ```
-✅ modules: astro:version — ^7.2.6
-🔧 seo: meta:canonical — no <link rel="canonical"> in the SEO component
-     fix: emit <link rel="canonical" href={canonicalURL}> from src/components/SEO.astro
-💡 seo: headings:order — 1/4 content page(s) skip a heading level
+💡 modules: astro:version — ^6.3.7 (baseline is ^7+) [baseline]
+🔧 perf: font:bytes — 532 KB of webfonts in 2 file(s) — over the 500 KB budget
+🔧 perf: preconnect (index.html) — 15 images load from https://media.example.com with no
+     <link rel="preconnect"> on 6 page(s) — DNS + TLS only start when the parser reaches the first one
 
-38 ✅   1 🔧   0 🛑   1 💡   0 ⏭
-audit complete — 1 finding to address (exit 1).
+58 ✅   4 🔧   0 🛑   18 💡   10 ⏭
+audit complete — 4 findings to address (exit 1).
 ```
 
 ## Quickstart
@@ -27,20 +27,19 @@ node /tmp/mwk-rider/tools/audit.mjs
 That's the whole thing. You get findings like:
 
 ```
-🔧 perf: cls:img-dimensions (src/pages/index.astro:140) — <img src="/shot.png"> lacks width/height → layout shift (CLS)
-     fix: use <Image> from astro:assets (bakes width/height), or add explicit width + height
-🔧 data: jsonld:emitted — no <script type="application/ld+json"> in the SEO component
-     fix: emit JSON-LD structured data from the SEO component
-🔧 data: content:schema — content collection has no Zod schema
-     fix: define a Zod schema in src/content.config.ts
+🔧 modules: mdx:reachable (src/content.config.ts) — @astrojs/mdx is installed and no loader pattern
+     admits .mdx — an .mdx file produces no page and no error
+🔧 perf: font:format (dist/client/fonts/JetBrainsMono-Bold.ttf) — 2 font file(s) served as ttf/otf/eot
+     fix: convert to woff2 — universally supported for years and roughly half the bytes
 
-16 ✅   5 🔧   0 🛑   12 💡   0 ⏭
-12 of the 💡 are [baseline] — this project's house style (Cloudflare delivery, llms.txt, RSS …),
+58 ✅   4 🔧   0 🛑   18 💡   10 ⏭
+14 of the 💡 are [baseline] — this project's house style (Cloudflare delivery, llms.txt, RSS …),
 not universal practice. Re-run with --strict to treat them as required.
-audit complete — 5 findings to address (exit 1).
+audit complete — 4 findings to address (exit 1).
 ```
 
-*(That's a real run against an off-baseline Astro 5 site — not a mock-up.)*
+*(A real run, captured 2026-09-03, against an off-baseline Astro 6 site — not a mock-up.
+The `⏭` are checks that could not run: no `--url`, no PSI key, no playwright.)*
 
 **Want measured PageSpeed scores too?** One free API key ([2 minutes, no billing](https://developers.google.com/speed/docs/insights/v5/get-started)) against a publicly reachable URL:
 
@@ -67,8 +66,8 @@ This tool ships an **opinionated baseline** — Cloudflare delivery, Cloudflare 
 So by default only **universal practice** is required (`🔧`): missing canonical/OG meta, images without dimensions, no structured data, oversized assets, unschema'd content collections, Astro 7 config that will break your build. Everything that's just house style reports as `💡 … [baseline]` and doesn't fail the run.
 
 ```bash
-node audit.mjs             # universal practice only — 5 🔧, 12 💡 on a typical site
-node audit.mjs --strict    # require the full baseline too — 17 🔧
+node audit.mjs             # universal practice only — 4 🔧, 18 💡 on the site above
+node audit.mjs --strict    # require the full baseline too — 18 🔧
 ```
 
 Use `--strict` when you've adopted the baseline deliberately and want it enforced. What counts as which — and why — is one readable table in [`tools/lib/policy.mjs`](tools/lib/policy.mjs); disagree with a call and it's a one-line edit.
@@ -81,9 +80,9 @@ A few checks report a *fact* rather than a verdict and are `[advisory]` in **bot
 
 | Domain | What it looks for |
 |---|---|
-| **modules** | Baseline stack present + wired: Astro 7+, Node ≥ 22.12, the expected integrations, `output: 'static'`, strict TS (≤ 6.x, the `@astrojs/check` peer ceiling), an adapter iff any route renders on demand (`output: 'server'` **or** a single `prerender = false` page) and an explicit `imageService` so the Cloudflare adapter can't opt you into paid image billing; search is optional, but two search engines at once is a finding. Plus Astro 7 migration residue — stabilized `experimental` flags, unified()-only markdown options without `@astrojs/markdown-remark`, `@astrojs/db`, removed `astro:transitions` internals, a `tsconfig` `exclude` that stopped covering `dist`, and `compressHTML` left unset (v7's new `'jsx'` default strips the whitespace between prose and an inline element — it builds clean and ships wrong text). |
+| **modules** | Baseline stack present + wired: Astro 7+, Node ≥ 22.12, the expected integrations, `output: 'static'`, strict TS (≤ 6.x, the `@astrojs/check` peer ceiling), an adapter iff any route renders on demand (`output: 'server'` **or** a single `prerender = false` page) and an explicit `imageService` so the Cloudflare adapter can't opt you into paid image billing; search is optional, but two search engines at once is a finding. Plus Astro 7 migration residue — stabilized `experimental` flags, unified()-only markdown options without `@astrojs/markdown-remark`, `@astrojs/db`, removed `astro:transitions` internals, a `tsconfig` `exclude` that stopped covering `dist`, and `compressHTML` left unset (v7's new `'jsx'` default strips the whitespace between prose and an inline element — it builds clean and ships wrong text). Also: a custom 404 the host will actually serve — on Workers Static Assets an unmatched URL falls to the Worker if there is one and otherwise to a bare platform 404, so a branded 404 can build, ship and never render. |
 | **seo** | A canonical SEO component emitting canonical URL + OG meta; no `keywords` anti-pattern; sitemap lastmod; one `<h1>` per content page (no skipped heading levels — advisory, and it names the component that emitted the heading rather than the built page whenever exactly one source matches). |
-| **images** | Content images routed through an image transform (resized/reformatted, not full-size) and not oversized in `src/assets/` or the built `dist/` — a responsive image is judged as a **ladder** on its smallest rung, the one a phone actually downloads, not on the top rung Astro emits unconditionally. A CSS `background-image` pinned to a fixed width is its own finding, since it can use neither srcset nor lazy loading. On built HTML, flags Cloudflare transform params (`format=auto` instead of an explicit format; explicit `quality=`) and content `<img>` missing `alt`. |
+| **images** | Content images routed through an image transform (resized/reformatted, not full-size) and not oversized in `src/assets/` or the built `dist/` — a responsive image is judged as a **ladder** on its smallest rung, the one a phone actually downloads, not on the top rung Astro emits unconditionally. A CSS `background-image` pinned to a fixed width is its own finding, since it can use neither srcset nor lazy loading. On built HTML, flags Cloudflare transform params (`format=auto` instead of an explicit format; explicit `quality=`) and content `<img>` missing `alt`. Live, it also verifies the transform **actually ran** (Cloudflare Image Transformations are a per-zone toggle — a `/cdn-cgi/image/` URL on a zone where they are off serves the original, or nothing, and looks identical in the HTML) and that every content image resolves at all. |
 | **perf** | `/_astro/*` marked immutable in `public/_headers`; content `<img>` carry width/height (no layout shift); render-blocking CSS on the heaviest page and total webfont weight stay in budget, in woff2. Heavy third-party embeds (Maps, YouTube, Vimeo…) sit behind a facade rather than loading with the page — `loading="lazy"` doesn't count, it won't defer a frame high on the page. Cross-origin image hosts carry a `preconnect` **with `crossorigin`** (without it the connection isn't reusable — it looks fixed and isn't), and a head `preload` matches its `<img>` byte for byte or the image downloads twice. Every declared font family leads a `font-family` stack and sets `styles`, since the API default `['normal','italic']` builds italic faces nothing may render. |
 | **content** | The pages a site is repeatedly asked for: a media kit (logo, paste-ready boilerplate, a contact route) and a design/styleguide page rendering the real tokens. Both house style, so `💡` unless `--strict`. Plus a prose lint for a straight quote sharing a line with a directional one — the input Sätteri and remark resolve differently — advisory in **every** mode, because correct prose can do it too. |
 | **data** | The machine-readable surface other tools consume: JSON-LD (an Article-family type + WebSite), `/llms.txt` built from the content store, RSS, a search-index endpoint when the site's search engine reads one the site emits (Pagefind builds its own from `dist/`, Algolia/Meilisearch/Typesense host it — those skip), a Zod-validated content schema. Endpoints match by pattern, so single- and per-locale naming both pass. |
@@ -91,6 +90,12 @@ A few checks report a *fact* rather than a verdict and are `[advisory]` in **bot
 | **live** | With `--url`: real Cache-Control headers, served image bytes (measured with a browser-realistic `Accept`) + transform-param flags, rendered SEO + JSON-LD, `/llms.txt` — against a running or deployed site. |
 | **browser** | With `--url`: what only a real browser sees — uncaught JS exceptions, requests that failed or 404'd, **measured** CLS, images downloaded far larger than they're displayed, heavy third-party origins, and whether every route the wide nav offers is still reachable at phone width. Needs `playwright` installed **in the site you're auditing**; skips cleanly without it. |
 | **lighthouse** | With `--url`: real **measured** scores via the PageSpeed Insights API — Performance/SEO/Accessibility/Best-Practices + Core Web Vitals (LCP/TBT/CLS) — plus what makes a stuck score readable rather than dismissable as lab noise: the LCP element, the heaviest third-party payloads, and simulated vs *observed* FCP/LCP. Needs a free PSI key (below); skips gracefully without one. |
+
+Before any of those run, the audit says whether `dist/` is older than the source it was
+built from — `project: dist:stale`. It is not an `-s`-selectable domain, it is the gate in
+front of them: every check that reads `dist/` is judging a build, and a build the source
+has moved past is a different site. One audit reported clean on a project whose build was
+outright broken, because it read the `dist/` the last good build left behind.
 
 The static domains answer *"is it wired right?"*; `lighthouse` answers *"what's the real score?"* — complementary layers.
 
@@ -201,7 +206,7 @@ tools/
   checks/{modules,seo,images,perf,data,analytics,content,live,lighthouse,browser}.mjs
   lib/{project,reporter,policy,rules,cf-image,html,css-flow,dist,headers,jsonld,
        image-size,src-scan,untrusted,analytics-signals,search-engines,embed-hosts,
-       fonts-config}.mjs
+       fonts-config,config-string}.mjs
 examples/starter/            the reference site: single-locale, compliant under
                              --strict, and what create mode copies
 examples/_fixture-i18n/      a compliant multi-locale Astro site — the harder
@@ -212,6 +217,7 @@ docs/DEVELOPING.md           testing discipline, design decisions, how a release
 CONTRIBUTING.md              the pre-ship checklist, short form
 SECURITY.md                  what the tool reads, what it never executes, how to report
 .github/ISSUE_TEMPLATE/      bug.yml — the web form, for reporting without the plugin
+                             config.yml — points the rest at the plugin's own /mwk-rider:bug
                              (/mwk-rider:bug posts a free-form issue instead)
 .env.example                 the optional API keys
 .mcp.json                    declares context7 (the doc-lookup rule needs it);

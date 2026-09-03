@@ -29,15 +29,16 @@ node $rider --help
 
 | Domain | Checks |
 |---|---|
-| `modules` | Astro 7+, Node ≥ 22.12, TypeScript ≤ 6.x, baseline integrations, `output: 'static'`, strict TS (and a `tsconfig` `exclude` that still excludes `dist`), `compressHTML`, `<ClientRouter>`, custom 404, self-hosted fonts, at most one search engine, an adapter iff a route renders on demand (plus the Cloudflare-specific `imageService` call), remotePatterns (if og.config declares a media domain), Astro 7 migration residue (`astro7:experimental`, `astro7:markdown`, `astro7:db`, `astro7:transitions`) |
+| `modules` | Astro 7+, Node ≥ 22.12, TypeScript ≤ 6.x, baseline integrations, `output: 'static'`, strict TS (and a `tsconfig` `exclude` that still excludes `dist`), `compressHTML`, `<ClientRouter>`, custom 404, self-hosted fonts, at most one search engine, an adapter iff a route renders on demand (plus the Cloudflare-specific `imageService` call), remotePatterns (if og.config declares a media domain), Astro 7 migration residue (`astro7:experimental`, `astro7:markdown`, `astro7:db`, `astro7:transitions`); a 404 the host is configured to serve (`404:served`) |
 | `seo` | Head meta emitted (asserted against `dist/` when built, source otherwise); no `keywords` anti-pattern; a canonical that is not shared site-wide; `dist/robots.txt` with a `Sitemap:` line; `<lastmod>` in the built sitemap; one `<h1>` per content page (a skipped level is advisory); brand fields (if og.config present) |
-| `images` | `<img>` + CSS `background-image` routed through an image transform, and no background pinned to one width; no oversized raster in `src/assets/`; no oversized built image in `dist/` (a `srcset` judged as a ladder, by its smallest rung); `alt` on every content `<img>`; transform params (`format=auto`, an explicit `quality=`); a large image shipping one fixed width with no `srcset` at all (advisory) |
+| `images` | `<img>` + CSS `background-image` routed through an image transform, and no background pinned to one width; no oversized raster in `src/assets/`; no oversized built image in `dist/` (a `srcset` judged as a ladder, by its smallest rung); `alt` on every content `<img>`; transform params (`format=auto`, an explicit `quality=`); a large image shipping one fixed width with no `srcset` at all; live, that the transform actually ran (`cf-resized`) and that every content image resolves — a per-zone toggle being off looks identical in the HTML |
 | `perf` | `public/_headers` marks `/_astro/*` immutable; content `<img>` carry width/height (CLS) unless CSS takes them out of flow; render-blocking CSS on the heaviest page and total webfont weight stay inside budget; woff2 not ttf/otf; every declared font family leads a stack and sets `styles`; a heavy third-party embed sits behind a facade; a cross-origin image host gets `preconnect` (with `crossorigin`) and a `preload` matching its `<img>` |
 | `content` | A media-kit page (logo, paste-ready boilerplate, a contact route) and a design/styleguide page that renders the real tokens. Both house style — `💡` unless `--strict` |
 | `analytics` | What delivers analytics (Cloudflare Web Analytics by default; Zaraz when you need a tag manager) — advisory, never a finding. Plus a hardcoded GA/GTM snippet in `src/` + `dist/`, which fires before consent |
 | `data` | JSON-LD parsed out of `dist/` (an Article-family type + `WebSite`, and it must be valid JSON); `/llms.txt` from `getCollection()` with a draft/preview filter; the built RSS feed has items; a search-index endpoint when the engine needs one; Zod-validated content schema |
 | `live` | Only with `--url`: real Cache-Control, served image bytes, rendered SEO + JSON-LD, `/llms.txt`. The content page is discovered from the sitemap → homepage links → `/llms.txt`, or forced with `--post` |
 | `lighthouse` | Only with `--url`: measured PageSpeed Insights scores (perf/seo/a11y/best-practices) + Core Web Vitals. Needs a PSI key (see below); skips without one |
+| `project` | Not `-s`-selectable — the gate ahead of every other domain: whether `dist/` is older than the source it was built from (`dist:stale`). Each check below that reads `dist/` is judging a build, and a stale one is a different site |
 | `browser` | Only with `--url`: what a real browser sees — uncaught JS errors, failed/404 sub-requests, measured CLS, images far larger than their rendered box, heavy third-party origins, nav links still reachable at phone width. Needs `playwright` installed; skips cleanly without it |
 
 It **assumes a baseline stack** and validates compliance — it does not set anything up.
@@ -101,6 +102,9 @@ tools/
     headers.mjs          parse public/_headers into rules the cache checks can ask
     jsonld.mjs           parse the JSON-LD a page emits; Article-family types
     fonts-config.mjs     the Astro Fonts API config, as declared families
+    config-string.mjs    one reader for a string value in config TEXT — the quoted-value
+                         regex lived in four places and all four dropped a value carrying
+                         the other quote (`tagline: "Australia's …"` read as absent)
     analytics-signals.mjs  what a beacon/tag-manager/GA snippet looks like
     embed-hosts.mjs      which third-party iframe hosts are heavy enough to need a facade
     search-engines.mjs   search engines as package FAMILIES, and which read a site-emitted index

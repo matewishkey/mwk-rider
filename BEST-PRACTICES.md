@@ -31,8 +31,9 @@ between a new site and a working one:
 services and the platform's own primitives over a third-party library or SaaS,
 and this tool never *offers* a third party unless the user asks for one by name.
 The starter is the existence proof: the contact form is a typed endpoint on
-Cloudflare Email Service, not a form vendor; fonts self-host through Astro's
-font API, not a font CDN; measurement is Web Analytics, not a tag; social cards
+Cloudflare Email Service, not a form vendor; the type is a system stack, so there
+is no font CDN and no webfont payload at all; measurement is Web Analytics, not
+a tag; social cards
 are drawn at build time, not fetched from a card service. For the small business
 this stack is built for, a typed form is easier to write than a product is to
 buy, integrate and pay for, and it is enough. The checks still *recognise*
@@ -1503,7 +1504,8 @@ the bullet here is only its summary.
 - ~~**Responsive `srcset`/`sizes`.**~~ Closed by `images: srcset:missing` — the
   practice is § images above. The thresholds came out of a measurement rather
   than taste, and the check was promoted out of advisory to house style on
-  2026-09-03 once the wider sweep it was waiting for came in: 10 sites, 66
+  2026-09-03 once the wider sweep it was waiting for came in — **cumulative across
+  both rounds**, 3 of ours plus 7 public: 10 sites, 66
   measurable candidates, 25 findings, 0 wrong (issue #21).
 - **Offline heading scan beyond the canonical gate (see also `headings:order`,
   which now names the component rather than the built page).** Today the offline outline

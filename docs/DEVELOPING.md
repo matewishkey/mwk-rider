@@ -125,6 +125,24 @@ the alternative is a starter that quietly stops complying with the tool that shi
   `git archive HEAD tools | tar -x -C <tmp>` gives you the old tool to run beside the new
   one on the same input.
 
+  Round 7 (2026-09-03, promoting `images: srcset:missing`) is the one to copy when the
+  loop over `~/projects` has run out of road. The promotion condition was *a wider sweep
+  showing it stays quiet on correct code*, and issue #21 had recorded it as unmeetable
+  from this box: every Astro site here had already been swept. That was true of **sites we
+  wrote**, and only of those — which is the trap, because our own sites share our habits
+  and therefore cannot contain the shape a false positive needs. **The corpus is not the
+  box.** `gh search repos --sort stars "astro blog theme"`, shallow-clone, `npm install`,
+  `npm run build`, audit. Expect roughly half to fail: 16 **public** repos attempted, 7 built (Starlight
+  plugin monorepos need a workspace build, several installs fail outright), which is still
+  seven sites nobody here wrote for one afternoon. It answered the question the internal
+  loop could not — 43 measurable candidates, 18 findings, **0 wrong** in the public round
+  alone, and 66/25/0 counting the three internal builds from #12's round with it — and, decisively, the
+  byte floor firing on exactly the shapes it was designed against, found in the wild rather
+  than constructed (a 1200 px / 27 KB quote graphic, a 1190 px / 24 KB logo, a 1096 px /
+  5 KB placeholder). Two cautions. Building a stranger's repo runs its postinstall and build
+  scripts, so do it in a scratch dir and never under `~/projects`. And keep the built corpus
+  — the next threshold round wants the same population, and re-cloning is the slow part.
+
   **Most sibling repos have no `dist/` and the dist-reading checks are the interesting
   half**, so a real-site round usually means building them. Check `git check-ignore -q dist`
   first and skip any repo where it is not ignored — building there would drop hundreds of
@@ -258,8 +276,14 @@ throughout. Both examples were green throughout. CI was green on every commit.
 So the pre-ship line *"run it against a real Astro site that isn't the fixture"*
 is not a nicety, it is the only step in the gate that can find this class of bug.
 Audit several, and read the findings rather than the count: the question is not
-"did it pass" but "is every one of these findings true". The five built sites on
-this box plus the deployed test site is the current sweep.
+"did it pass" but "is every one of these findings true".
+
+And *"a real Astro site"* has to mean one **somebody else wrote**. The sites on this
+box were built to this baseline, so they share its habits and cannot contain the shape
+a false positive needs — a sweep over them proves the check agrees with us. Public repos
+are the corpus that can disagree; § Testing round 7 has the method and the attrition
+rate. The current dogfood sweep is the five built sites on this box, the deployed test site, and
+seven public builds kept in scratch.
 
 ### Pre-ship checklist
 

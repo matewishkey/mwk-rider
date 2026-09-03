@@ -50,5 +50,16 @@ It is a plugin, and this repo is its marketplace:
 /plugin install mwk-rider@mwk-rider
 ```
 
+**The plugin/marketplace format is a settled decision (2026-09-03), and it is load-bearing
+rather than packaging taste.** It is the only mechanism that puts the instructions into a
+session inside *someone else's* repo without writing anything into that repo — which is the
+constraint the whole design rests on (see *Command-driven, never passive* above). Drop it
+and you either lose the instructions or reintroduce per-project wiring; and the `«…»`
+untrusted-output boundary in particular is enforced in the tool but *obeyed* only by
+instruction, so a bare CLI hands an agent fenced third-party HTML with nothing telling it
+that is data. The release ceremony is the real cost, and the fix for that is fewer, fuller
+releases — not a different format. The standalone CLI already exists and CI uses it; the
+two are not alternatives.
+
 `.claude-plugin/plugin.json` + `.claude-plugin/marketplace.json`; `commands/` and `skills/` are found by convention. **Dogfood through the marketplace, not `--plugin-dir`** — `--plugin-dir` loads the working tree and so cannot surface an install or packaging bug; push, then `claude plugin marketplace update mwk-rider && claude plugin update mwk-rider@mwk-rider`, then restart (`docs/DEVELOPING.md` § Releasing). `--plugin-dir` is for a fast inner loop only. **`${CLAUDE_PLUGIN_ROOT}` is expanded in the markdown before the model sees it and is NOT set in the shell** — verified, and the reason a path can look right and still fail at the first Bash call. Working on the plugin means `claude --plugin-dir ~/projects/mwk-rider`; an installed copy is version-pinned in the plugin cache and a `git pull` here does not touch it.
 
