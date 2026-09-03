@@ -1,5 +1,6 @@
 /**
- * Per-locale Orama search index per.
+ * Per-locale search index: one document set per language, so a query never
+ * returns results the reader cannot read.
  *
  * One persisted JSON per locale, served at /search-index-<locale>.json.
  * Uses native Orama `save()` (plain JSON object) instead of

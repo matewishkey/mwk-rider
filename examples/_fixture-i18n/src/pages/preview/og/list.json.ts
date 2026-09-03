@@ -1,5 +1,6 @@
 /**
- * Content Layer JSON endpoint feeding scripts/og.mjs (multi-locale per.
+ * The (locale, slug) pairs that get a social card — the preview shelf reads it
+ * to list them. Translations are NOT deduplicated: each locale gets its own card.
  * Returns one entry per (locale, slug) pair — translations are NOT deduplicated.
  */
 import type { APIRoute } from 'astro';

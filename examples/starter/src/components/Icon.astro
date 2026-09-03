@@ -7,8 +7,11 @@ import { ICONS, type IconName } from '../lib/icons';
 
 interface Props { name: IconName; size?: number; class?: string; label?: string }
 const { name, size = 16, class: className, label } = Astro.props;
+// `Object.hasOwn`, not a truthiness test: `ICONS` is a plain object, so
+// `ICONS['constructor']` resolves up the prototype chain to a function, passes a
+// `!body` guard, and gets stringified into the SVG by set:html.
+if (!Object.hasOwn(ICONS, name)) throw new Error(`Icon "${name}" is not in src/lib/icons.ts — copy its body there`);
 const body = ICONS[name];
-if (!body) throw new Error(`Icon "${name}" is not in src/lib/icons.ts — copy its body there`);
 ---
 <svg
   xmlns="http://www.w3.org/2000/svg"

@@ -9,6 +9,12 @@
  * layout does not shift when the image arrives — the thing `perf: cls:*` and
  * the browser domain measure.
  *
+ * Both lanes write `alt` the same way. They did not: the R2 branch used a bare
+ * `coverAlt`, and Astro omits an undefined attribute, so if the schema's
+ * coverAlt requirement were ever relaxed that lane would ship an <img> with no
+ * alt at all — an accessibility failure — while the local lane degraded to the
+ * correct `alt=""`.
+ *
  * It is the first image on the page, so it loads eagerly with high priority:
  * lazy-loading the LCP element is the single most common way to lose the
  * Lighthouse performance score on a content page.
@@ -28,7 +34,7 @@ const { cover, coverAlt } = entry.data;
     sizes={CONTENT_SIZES}
     width={cover.width}
     height={cover.height}
-    alt={coverAlt}
+    alt={coverAlt ?? ''}
     loading="eager"
     fetchpriority="high"
     decoding="async"
@@ -37,7 +43,7 @@ const { cover, coverAlt } = entry.data;
 {cover && !('key' in cover) && (
   <Image
     src={cover}
-    widths={[...LADDER.filter((w) => w <= cover.width)]}
+    widths={LADDER.filter((w) => w <= cover.width).length ? [...LADDER.filter((w) => w <= cover.width)] : [cover.width]}
     sizes={CONTENT_SIZES}
     alt={coverAlt ?? ''}
     loading="eager"

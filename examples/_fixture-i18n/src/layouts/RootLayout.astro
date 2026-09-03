@@ -21,7 +21,7 @@ const lang = (Astro.currentLocale as string) ?? entry?.data.locale ?? 'en';
   <head>
     <SEO entry={entry} title={title} description={description} />
 
-    {/* Cloudflare Web Analytics beacon (per.
+    {/* Cloudflare Web Analytics beacon — free, cookieless, no consent banner.
         Disabled when token is null (fixture / localhost). On managed sites
         the token comes from og.config.mjs → brand.cloudflareAnalyticsToken
         and renders once; no consent banner needed (zero PII, anonymized at

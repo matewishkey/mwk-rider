@@ -8,7 +8,7 @@
  *   - JSON-LD with inLanguage
  *   - x-default hreflang pointing at the default-locale variant
  *
- * Fixture mode: mediaDomain is null in og.config.mjs → og:image resolves
+ * og:image always resolves against the site's own URL: the cards are generated
  * to ${siteUrl}/og/<locale>/<id>.png (served from public/og/).
  */
 import type { CollectionEntry } from 'astro:content';
@@ -30,7 +30,7 @@ const { entry, title: titleProp, description: descriptionProp, type: typeProp } 
 const isArticle = Boolean(entry);
 const type = typeProp ?? (isArticle ? 'article' : 'website');
 
-const { brand, mediaDomain } = ogConfig;
+const { brand } = ogConfig;
 const siteUrl = brand.siteUrl ?? 'http://localhost:4321';
 const siteName = brand.siteName ?? '';
 const defaultLocale = brand.i18n?.defaultLocale ?? 'en';
@@ -94,7 +94,7 @@ if (entry?.data.translationKey) {
 const xDefault = alternates.find((a) => a.hreflang.startsWith(defaultLocale))?.href ?? siteUrl;
 
 const jsonLd = entry
-  ? blogPostingLd({ entry, siteUrl, siteName, mediaDomain, brand })
+  ? blogPostingLd({ entry, siteUrl, siteName, brand })
   : webSiteLd({ siteUrl, siteName });
 const breadcrumbJsonLd = entry ? breadcrumbLd({ entry, siteUrl, brand }) : null;
 ---

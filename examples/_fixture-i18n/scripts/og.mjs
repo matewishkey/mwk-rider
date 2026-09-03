@@ -53,7 +53,12 @@ function frontmatter(file) {
 
 function posts() {
   const out = [];
-  for (const locale of readdirSync(BLOG)) {
+  // Directories only. Assuming every entry under src/data/blog/ was a locale
+  // killed the whole build with ENOTDIR the moment a .DS_Store or a README
+  // landed there — and .DS_Store is gitignored, so nothing stops one existing.
+  for (const dir of readdirSync(BLOG, { withFileTypes: true })) {
+    if (!dir.isDirectory()) continue;
+    const locale = dir.name;
     for (const f of readdirSync(join(BLOG, locale))) {
       if (!['.md', '.mdx'].includes(extname(f))) continue;
       const fm = frontmatter(join(BLOG, locale, f));

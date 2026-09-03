@@ -8,7 +8,11 @@ import { urlSlug } from '../../../lib/slug';
 export async function getStaticPaths() {
   const posts = await getCollection('blog');
   return posts
-    .filter((p) => !p.data.previewOnly && p.data.locale === 'hu')
+    // `!draft && !previewOnly` — the same predicate llms.txt, RSS, the blog
+    // index and the card generator use. Omitting draft here built a page for a
+    // draft, put it in the sitemap, and pointed its og:image at a card the
+    // generator had correctly refused to draw.
+    .filter((p) => !p.data.draft && !p.data.previewOnly && p.data.locale === 'hu')
     .map((post) => ({
       params: { id: urlSlug(post.id) },
       props: { post },

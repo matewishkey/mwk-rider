@@ -1,13 +1,13 @@
 import { defineCollection, z } from 'astro:content';
 import { glob } from 'astro/loaders';
 
-// Per contract+(dateModified optional) +(locale + translationKey).
+// The blog collection, multi-locale.
 //
-// Pattern B layout: src/data/blog/<locale>/<slug>.md
-// entry.id KEEPS the locale prefix (e.g. "en/welcome") so Content Layer
-// IDs stay unique. URL slugs strip the prefix via src/lib/slug.ts.
-// (Contractcurrently prescribes stripping in generateId — that
-// causes silent ID collisions; Phase 2 will fix the contract to match.)
+// Layout is src/data/blog/<locale>/<slug>.md, and entry.id KEEPS the locale
+// prefix (e.g. "en/welcome") so ids stay unique across locales — two
+// translations of one post share a slug and would otherwise collide. URL slugs
+// strip the prefix through src/lib/slug.ts, which is the one place that
+// conversion happens.
 const blog = defineCollection({
   loader: glob({
     // `.md` AND `.mdx`. @astrojs/mdx is a baseline dependency, and a pattern of

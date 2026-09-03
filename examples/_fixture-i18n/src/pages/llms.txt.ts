@@ -1,5 +1,5 @@
 /**
- * Root /llms.txt — index pointing at per-locale variants per.
+ * Root /llms.txt — a thin index pointing at the per-locale variants.
  * Lists the default locale's posts inline (for crawlers that don't follow
  * links), then links to each per-locale variant.
  */

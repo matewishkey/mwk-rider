@@ -1,5 +1,5 @@
 /**
- * Per-locale llms.txt per.
+ * Per-locale llms.txt: one machine-readable index per language.
  * One file per locale, posts grouped by `type:`. Same filter predicate
  * as RSS + search-index (one expression, four discovery surfaces).
  */

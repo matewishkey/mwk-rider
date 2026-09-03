@@ -31,17 +31,34 @@ import { config } from './og.config.mjs';
 const [file, key] = process.argv.slice(2);
 const usage = 'usage: npm run media -- <file> <key>   e.g. npm run media -- photo.jpg blog/<post-id>/cover.jpg';
 if (!file || !key) fail(usage);
-if (!/^[\w./-]+$/.test(key) || key.startsWith('/') || key.includes('..')) fail(`key "${key}" — use letters, digits, ./-_ and no leading slash`);
+if (!/^[\w./-]+$/.test(key) || key.startsWith('/') || key.startsWith('./') || key.includes('..')) fail(`key "${key}" — use letters, digits, ./-_ , no leading slash and no leading ./ (R2 stores the key literally, so "./x.jpg" is an object every URL for it 404s on)`);
 if (!config.mediaBucket || !config.mediaDomain) fail('set mediaBucket and mediaDomain in scripts/og.config.mjs first (CLAUDE.md § Operator steps)');
 
 const MIME = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.avif': 'image/avif', '.gif': 'image/gif' };
 const type = MIME[extname(key).toLowerCase()];
 if (!type) fail(`key "${key}" — extension must be one of ${Object.keys(MIME).join(' ')}`);
+const FORMAT_MIME = { jpeg: 'image/jpeg', jpg: 'image/jpeg', png: 'image/png', webp: 'image/webp', avif: 'image/avif', gif: 'image/gif', heif: 'image/avif' };
 
 let meta;
 try { meta = await sharp(file).metadata(); } catch (e) { fail(`cannot read ${file}: ${e.message}`); }
-const { width, height } = meta;
+// The DISPLAYED size, not the stored one. `metadata()` reports the bytes as
+// written; a photo straight off a phone is stored landscape with an EXIF
+// orientation telling the viewer to turn it. Browsers honour that by default and
+// Cloudflare's transform auto-rotates and strips it, so recording the stored
+// size stamped a 4:3 box on a 3:4 image and caused exactly the layout shift this
+// script exists to prevent. Orientations 5–8 are the transposed ones.
+const swapped = meta.orientation >= 5 && meta.orientation <= 8;
+const width = meta.autoOrient?.width ?? (swapped ? meta.height : meta.width);
+const height = meta.autoOrient?.height ?? (swapped ? meta.width : meta.height);
 if (!width || !height) fail(`${file}: no dimensions readable`);
+if (swapped) console.log(`note: EXIF orientation ${meta.orientation} — stored ${meta.width}×${meta.height}, displayed ${width}×${height}. The displayed size is what goes in the frontmatter.`);
+// The Content-Type comes from the key, which is free text someone typed; the
+// bytes are the truth. Uploading a PNG under a .jpg key stored the wrong header
+// with a year of immutable caching, and re-uploading does not fix it at the edge.
+const actual = FORMAT_MIME[meta.format];
+if (actual && actual !== type) {
+  fail(`${file} is ${meta.format} but the key ends .${extname(key).slice(1)} — the Content-Type comes from the key, and it would be cached wrong for a year. Rename the key to match, or convert the file.`);
+}
 const kb = Math.round(statSync(file).size / 1024);
 // The edge never upscales, so a source narrower than the widest srcset rung
 // caps what any screen can get. Say so; do not block.
@@ -65,7 +82,7 @@ cover:
   key: ${key}
   width: ${width}
   height: ${height}
-coverAlt: <what the photo shows, in one sentence>
+coverAlt:   # ← required: what the photo shows, in one sentence
 `);
 
 function fail(msg) { console.error(msg); process.exit(1); }

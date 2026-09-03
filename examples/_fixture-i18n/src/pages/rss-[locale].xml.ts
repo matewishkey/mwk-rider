@@ -1,5 +1,5 @@
 /**
- * Per-locale RSS feed per.
+ * Per-locale RSS feed: one subscribable feed per language.
  * One feed per locale, filtered by locale. URLs respect prefixDefaultLocale:false.
  */
 import type { APIRoute } from 'astro';

@@ -21,7 +21,6 @@ interface BlogPostingArgs {
   entry: CollectionEntry<'blog'>;
   siteUrl: string;
   siteName: string;
-  mediaDomain: string | null;
   brand: BrandShape;
 }
 
@@ -29,23 +28,22 @@ function urlSlug(id: string): string {
   return id.replace(/^[a-z]{2}\//, '');
 }
 
-function resolveOgUrl(entry: CollectionEntry<'blog'>, siteUrl: string, mediaDomain: string | null, locale?: string): string {
+function resolveOgUrl(entry: CollectionEntry<'blog'>, siteUrl: string, locale?: string): string {
   if (entry.data.ogImage) return entry.data.ogImage;
   const slug = urlSlug(entry.id);
   const localePart = locale ? `${locale}/` : '';
-  // Cards are committed under public/og/ and ship with the site; they are never
-  // in the media bucket, so the media domain plays no part here (starter, 2026-09-02).
-  void mediaDomain;
+  // Cards are generated into public/og/ and ship with the site, so they are
+  // always on the site's own origin. The media bucket is for content photos.
   return new URL(`/og/${localePart}${slug}.png`, siteUrl).toString();
 }
 
-export function blogPostingLd({ entry, siteUrl, siteName, mediaDomain, brand }: BlogPostingArgs) {
+export function blogPostingLd({ entry, siteUrl, siteName, brand }: BlogPostingArgs) {
   const locale = entry.data.locale ?? brand.i18n?.defaultLocale ?? 'en';
   const isDefault = locale === (brand.i18n?.defaultLocale ?? 'en');
   const slug = urlSlug(entry.id);
   const postPath = isDefault ? `/blog/${slug}` : `/${locale}/blog/${slug}`;
   const postUrl = new URL(postPath, siteUrl).toString();
-  const ogImage = resolveOgUrl(entry, siteUrl, mediaDomain, locale);
+  const ogImage = resolveOgUrl(entry, siteUrl, locale);
 
   const author = brand.authorName
     ? {

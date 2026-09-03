@@ -35,7 +35,7 @@
  *   npm run og       # regenerate (npm run build does it for you)
  */
 import { readFileSync, readdirSync, mkdirSync, writeFileSync } from 'node:fs';
-import { join, dirname, extname, basename } from 'node:path';
+import { join, dirname, extname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import satori from 'satori';
 import sharp from 'sharp';
@@ -67,18 +67,42 @@ const fonts = [
  * Enough frontmatter to draw a card: the title and the excerpt.
  *
  * A three-line parser rather than a YAML dependency, because it reads exactly
- * two scalar keys and anything it cannot read it simply skips. If that ever
- * needs to grow a list or a nested value, take the dependency instead of
- * teaching this to guess.
+ * three scalar keys, and it REFUSES anything it cannot read rather than drawing
+ * the raw token. An earlier version stripped one leading and one trailing quote
+ * and drew whatever was left, so `title: 'Don''t ship it'` rendered with the
+ * doubled quote and a folded scalar (`title: >-`) rendered as `>-`. If this ever
+ * needs a list or a nested value, take a YAML dependency rather than teaching it
+ * to guess.
  */
+function scalar(raw) {
+  const v = raw.trim();
+  // Block scalars (`|`, `>`, with any chomping indicator) carry their value on
+  // the following lines, which this does not read. Say so instead of drawing it.
+  if (/^[|>][-+]?\d*$/.test(v)) return { unreadable: 'a block scalar' };
+  if (v.startsWith('"')) {
+    if (!/^"(?:[^"\\]|\\.)*"$/.test(v)) return { unreadable: 'an unterminated double-quoted string' };
+    try { return { value: JSON.parse(v) }; } catch { return { unreadable: 'a double-quoted string this cannot parse' }; }
+  }
+  if (v.startsWith("'")) {
+    if (!/^'(?:[^']|'')*'$/.test(v)) return { unreadable: 'an unterminated single-quoted string' };
+    // YAML escapes a single quote by doubling it.
+    return { value: v.slice(1, -1).replace(/''/g, "'") };
+  }
+  // A plain scalar ends at an unquoted ` #` comment.
+  return { value: v.replace(/\s+#.*$/, '').trim() };
+}
+
 function frontmatter(file) {
   const raw = readFileSync(file, 'utf8');
   const m = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (!m) return null;
   const out = {};
   for (const line of m[1].split(/\r?\n/)) {
-    const kv = line.match(/^(title|excerpt|draft):\s*(.*)$/);
-    if (kv) out[kv[1]] = kv[2].trim().replace(/^["'](.*)["']$/, '$1');
+    const kv = line.match(/^(title|excerpt|draft):(.*)$/);
+    if (!kv) continue;
+    const parsed = scalar(kv[2]);
+    if (parsed.unreadable) { out[kv[1]] = null; out[`${kv[1]}Unreadable`] = parsed.unreadable; continue; }
+    out[kv[1]] = parsed.value;
   }
   return out;
 }
@@ -140,15 +164,44 @@ const defaultBytes = await card(
 );
 console.log(`og: default.png (${(defaultBytes / 1024).toFixed(1)} KB)`);
 
-for (const file of readdirSync(BLOG)) {
-  // `_`-prefixed entries are Astro's own "not a route" convention, and the
-  // collection excludes them — a card for a post that has no page is a card
-  // nothing can reference.
-  if (file.startsWith('_') || !['.md', '.mdx'].includes(extname(file))) continue;
-  const fm = frontmatter(join(BLOG, file));
-  if (!fm?.title) { console.warn(`og: skipped ${file} — no title in frontmatter`); continue; }
-  if (String(fm.draft) === 'true') continue;
-  const id = basename(file, extname(file));
+/**
+ * Every entry the collection loads, with the id the collection gives it.
+ *
+ * This has to match `src/content.config.ts` exactly, because SEO.astro derives
+ * the card's URL from `entry.id`. It previously did not, in two ways, and each
+ * shipped a post whose og:image was a 404:
+ *
+ *   - it skipped `_`-prefixed files on the belief that "the collection excludes
+ *     them". It does not — the underscore convention belongs to src/pages/, not
+ *     to the content layer, and the sibling fixture's own `_preview-*.md` build
+ *     pages that prove it. The starter's `_unfinished.md` is ALSO draft, so the
+ *     two rules coincided and hid it.
+ *   - it read one directory deep while the loader's glob is `**`, so
+ *     `blog/opening-day/index.md` — the layout `npm run media` itself teaches —
+ *     got an id of `opening-day/index` and a card nothing wrote.
+ */
+function entries(dir = BLOG, prefix = '') {
+  const out = [];
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    if (e.isDirectory()) { out.push(...entries(join(dir, e.name), `${prefix}${e.name}/`)); continue; }
+    if (!['.md', '.mdx'].includes(extname(e.name))) continue;
+    out.push({ id: prefix + e.name.replace(/\.mdx?$/, ''), file: join(dir, e.name) });
+  }
+  return out;
+}
+
+for (const { id, file } of entries()) {
+  const fm = frontmatter(file);
+  const where = relative(BLOG, file);
+  if (!fm) { console.warn(`og: skipped ${where} — no frontmatter block`); continue; }
+  for (const key of ['title', 'excerpt', 'draft']) {
+    if (fm[`${key}Unreadable`]) console.warn(`og: ${where} — ${key} is ${fm[`${key}Unreadable`]}, which this cannot read`);
+  }
+  if (!fm.title) { console.warn(`og: skipped ${where} — no readable title`); continue; }
+  // The same predicate as src/lib/posts.ts. Compared case-insensitively because
+  // YAML's boolean is `true` or `True`, and a string compare missed the second
+  // and drew a card for a draft.
+  if (String(fm.draft).toLowerCase() === 'true') continue;
   const bytes = await card({ title: fm.title, kicker: fm.excerpt, siteName: brand.siteName }, join(OUT, 'blog', `${id}.png`));
   console.log(`og: blog/${id}.png (${(bytes / 1024).toFixed(1)} KB)`);
   n += 1;
