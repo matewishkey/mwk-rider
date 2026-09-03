@@ -118,6 +118,32 @@ whole fixture run, so a new check cannot quietly reintroduce a mute pass.
 
 ---
 
+## project — is the audit judging the site you think it is
+
+*Emitted by `tools/audit.mjs` itself, before any domain runs.*
+
+- **`dist/` is newer than the source it was built from.** Every check in `images`,
+  `seo`, `data` and half of `perf` reads the build, so a build the source has
+  moved past is a different site. This exists because the audit once reported
+  `62 ✅ 0 🔧` on a site whose build was **broken**: an over-length `excerpt`
+  failed the content schema, `astro build` died, and the audit happily read the
+  `dist/` the previous good build had left behind. Nothing in the output hinted
+  that the two disagreed.
+
+  **A required finding, deliberately** (owner's call, 2026-09-03). It is tempting
+  to make it a `⏭`, since what it reports is a defect in the audit's *inputs*
+  rather than in the site — but the whole failure it exists for is a run that
+  read as clean, and a skip is quieter than the thing it is warning about.
+
+  Two guards against crying wolf, both learned the same day. It allows a **2s
+  grace window**, because `git clone`, `git checkout` and `git stash pop` stamp
+  source and build at effectively the same instant and a strict comparison then
+  picked a winner from sub-millisecond ordering. And when either walk exceeds its
+  budget it reports that it **could not tell**, rather than guessing — truncation
+  can only ever bias the answer toward "stale". It is also scoped: a `--url`-only
+  run reads no `dist/`, so it says nothing.
+  → `project: dist:stale`
+
 ## modules — the baseline stack is present and wired
 
 *Check file: `tools/checks/modules.mjs`. Source: `package.json`, `astro.config.*`,

@@ -241,6 +241,26 @@ the alternative is a starter that quietly stops complying with the tool that shi
   `⏭ nav:reach not exercised` and names which one is absent. **A skipped gate that reads
   as a pass is the thing this repo exists to prevent, so it never reports one.**
 
+### The examples cannot catch a false positive
+
+Both example sites are compliant by construction, and the gate asserts they stay
+`0 🔧`. That proves a check does not fire on correct code *of the two shapes we
+wrote*. It cannot prove anything about the shapes we did not — and a false
+positive is by definition a check firing on a shape nobody anticipated.
+
+Measured on 2026-09-03: a review of the checks added the day before found **one
+crash and eight false positives**, every one a required finding on correct
+markup — an author written as a node reference into the same `@graph`, a
+`CreativeWork` asked for a headline, a site that canonicalises to `www`, one
+avatar with a two-rung `srcset` counted as three images. The suite was green
+throughout. Both examples were green throughout. CI was green on every commit.
+
+So the pre-ship line *"run it against a real Astro site that isn't the fixture"*
+is not a nicety, it is the only step in the gate that can find this class of bug.
+Audit several, and read the findings rather than the count: the question is not
+"did it pass" but "is every one of these findings true". The five built sites on
+this box plus the deployed test site is the current sweep.
+
 ### Pre-ship checklist
 
 - [ ] If any `tools/**` changed: `node tools/test.mjs` passes.
