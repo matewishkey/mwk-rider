@@ -369,15 +369,24 @@ export async function run({ project, reporter }) {
   // image.remotePatterns includes the media domain (only checkable if og.config declares one)
   const mediaDomain = project.ogConfig?.mediaDomain ?? project.ogConfig?.brand?.mediaDomain;
   if (mediaDomain) {
-    const escaped = mediaDomain.replace(/\./g, '\\.');
+    // EVERY regex metacharacter, not just the dot. `mediaDomain` is scraped out
+    // of the audited project's own scripts/og.config.mjs, so it is attacker- (or
+    // typo-) controlled: `cdn.example[` compiled to an unterminated character
+    // class, threw out of run(), and audit.mjs reported "modules check crashed"
+    // — taking all ~40 module checks with it. Same escape set as policy.mjs.
+    const escaped = mediaDomain.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    // Comments are stripped first: a commented-out remotePatterns block is not
+    // configuration, and reading `cfg` raw let one pass.
+    const code = stripComments(cfg);
     // Either the literal hostname, or a remotePatterns entry that reads it from
-    // the brand config (`hostname: brandConfig.mediaDomain`). The starter does
-    // the latter so the domain has exactly one home; a check that demanded the
-    // literal would force a second copy that create mode then has to keep in
-    // step. The text is not evaluated — the pattern is "a remotePatterns block
-    // whose hostname is some expression ending in .mediaDomain".
-    const derived = /remotePatterns[\s\S]{0,400}?hostname\s*:\s*[\w$.]+\.mediaDomain\b/.test(cfg);
-    if (new RegExp(escaped).test(cfg)) {
+    // the brand config. The starter does the latter so the domain has exactly
+    // one home; a check that demanded the literal would force a second copy that
+    // create mode then has to keep in step. Both accessor forms count —
+    // `hostname: mediaDomain` from a named import is as idiomatic as
+    // `hostname: brandConfig.mediaDomain`, and requiring the dot reported the
+    // bare one as missing while telling you to add what was already there.
+    const derived = /remotePatterns[\s\S]{0,400}?hostname\s*:\s*(?:[\w$.]*\.)?mediaDomain\b/.test(code);
+    if (new RegExp(escaped).test(code)) {
       reporter.pass(SEC, 'remotePatterns', mediaDomain);
     } else if (derived) {
       reporter.pass(SEC, 'remotePatterns', `${mediaDomain} — derived from og.config's mediaDomain in astro.config`);

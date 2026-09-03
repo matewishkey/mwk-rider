@@ -472,28 +472,45 @@ function checkCrossOrigin(project, reporter) {
     const head = html.split(/<\/head>/i)[0] ?? html;
     const links = [...head.matchAll(/<link\b((?:"[^"]*"|'[^']*'|[^>])*)>/gi)].map((m) => m[1]);
 
-    for (const { url, cors } of imageUrls(html)) {
-      let host;
-      try { host = new URL(url, origin); } catch { continue; }
-      if (host.origin === origin) continue;
-      const entry = hosts.get(host.origin) ?? { images: new Set(), cors: false, preconnect: null, page };
-      entry.images.add(host.href);
-      if (cors) entry.cors = true;
-      hosts.set(host.origin, entry);
-    }
-
+    // Which hosts THIS page preconnects to, before its images are judged: the
+    // hint only helps the page that carries it. Aggregating one flag per host
+    // across the whole site meant a homepage-only preconnect satisfied a blog
+    // page loading twenty images from that host — which is the tasmanvisa
+    // scenario this check was built from, silently passing.
+    const preconnected = new Map();
     for (const attrs of links) {
       if (!/(?:^|\s)preconnect(?:\s|$)/i.test(attrValue(attrs, 'rel') ?? '')) continue;
       const href = attrValue(attrs, 'href');
       if (!href) continue;
       let target;
       try { target = new URL(href, origin).origin; } catch { continue; }
-      const entry = hosts.get(target) ?? { images: new Set(), cors: false, preconnect: null, page };
-      // First declaration seen stands; a site that writes it two ways on two
-      // pages has one of them wrong, and the mismatch check below names which.
-      entry.preconnect ??= hasAttr(attrs, 'crossorigin') ? 'crossorigin' : 'bare';
+      if (!preconnected.has(target)) preconnected.set(target, hasAttr(attrs, 'crossorigin') ? 'crossorigin' : 'bare');
+    }
+
+    const onThisPage = new Map();   // origin → { elements:Set, cors:bool, noCors:bool, sample }
+    for (const { url, cors, el } of imageUrls(html)) {
+      let host;
+      try { host = new URL(url, origin); } catch { continue; }
+      if (host.origin === origin) continue;
+      const seen = onThisPage.get(host.origin) ?? { elements: new Set(), cors: false, noCors: false, sample: host.href };
+      seen.elements.add(el);
+      if (cors) seen.cors = true; else seen.noCors = true;
+      onThisPage.set(host.origin, seen);
+    }
+
+    for (const [target, seen] of onThisPage) {
+      const entry = hosts.get(target) ?? { maxImages: 0, cors: false, noCors: false, pages: 0, missingOn: [], declared: new Map(), page };
+      entry.maxImages = Math.max(entry.maxImages, seen.elements.size);
+      entry.cors ||= seen.cors;
+      entry.noCors ||= seen.noCors;
+      entry.pages++;
+      const mode = preconnected.get(target) ?? null;
+      if (mode === null) { entry.missingOn.push(page); if (entry.missingOn.length === 1) entry.page = page; }
+      else if (!entry.declared.has(mode)) entry.declared.set(mode, page);
       hosts.set(target, entry);
     }
+    // A preconnect to a host this page loads no images from is not this check's
+    // business (a font or an API origin), so it is recorded only above.
 
     collectPreloadMismatches(head, html, page, preloadIssues);
   });
@@ -514,26 +531,41 @@ function pageOrigin(html, configSite) {
 
 /**
  * Every image URL a document references — <img src|srcset>, <source srcset>,
- * inline background-image — with whether the element fetches in CORS mode
- * (a `crossorigin` attribute). A CSS background is always no-cors.
+ * inline background-image — carrying the index of the ELEMENT it came from and
+ * whether that element fetches in CORS mode (a `crossorigin` attribute). A CSS
+ * background is always no-cors.
+ *
+ * `el` exists because the caller counts images, and a Set of URLs is not a count
+ * of images: one avatar written with a two-rung srcset produced three entries
+ * and pushed a single incidental image into the required-fix branch — the exact
+ * opposite of the carve-out `reportPreconnect` documents.
+ *
+ * A `<source>` contributes its `srcset` only. That is what discriminates a
+ * `<picture>` source from a `<video>`/`<audio>` one, which carries `src` +
+ * `type` and no srcset — otherwise two media files on a CDN were reported as
+ * "2 images load from …".
  */
 function imageUrls(html) {
   const out = [];
-  for (const m of html.matchAll(/<(?:img|source)\b((?:"[^"]*"|'[^']*'|[^>])*)>/gi)) {
-    const cors = hasAttr(m[1], 'crossorigin');
-    const src = attrValue(m[1], 'src');
-    if (src) out.push({ url: src, cors });
-    const srcset = attrValue(m[1], 'srcset');
-    if (srcset) for (const url of srcsetUrls(srcset)) out.push({ url, cors });
+  let el = 0;
+  for (const m of html.matchAll(/<(img|source)\b((?:"[^"]*"|'[^']*'|[^>])*)>/gi)) {
+    const isImg = m[1].toLowerCase() === 'img';
+    const attrs = m[2];
+    const cors = hasAttr(attrs, 'crossorigin');
+    el++;
+    const src = isImg ? attrValue(attrs, 'src') : null;
+    if (src) out.push({ url: src, cors, el });
+    const srcset = attrValue(attrs, 'srcset');
+    if (srcset) for (const url of srcsetUrls(srcset)) out.push({ url, cors, el });
   }
   for (const m of html.matchAll(/background(?:-image)?\s*:[^;"'}]*?url\(\s*(["'`]?)([^"'`)]+)\1\s*\)/gi)) {
-    out.push({ url: m[2], cors: false });
+    out.push({ url: m[2], cors: false, el: ++el });
   }
   return out.filter(({ url }) => url && !url.startsWith('data:') && !url.startsWith('blob:'));
 }
 
 function reportPreconnect(hosts, pagesJudged, reporter) {
-  const imageHosts = [...hosts.entries()].filter(([, v]) => v.images.size > 0);
+  const imageHosts = [...hosts.entries()].filter(([, v]) => v.maxImages > 0);
   if (pagesJudged === 0) {
     reporter.skip(SEC, 'preconnect', 'no built page declares a canonical URL and astro.config sets no site — cannot tell which hosts are cross-origin');
     return;
@@ -543,22 +575,27 @@ function reportPreconnect(hosts, pagesJudged, reporter) {
     return;
   }
 
-  const missing = imageHosts.filter(([, v]) => v.preconnect === null);
+  // Judged per page, not per site: a host is missing its preconnect if ANY page
+  // that loads images from it does not declare one.
+  const missing = imageHosts.filter(([, v]) => v.missingOn.length > 0);
   // A host serving a single incidental image (one avatar, one badge) is not
   // what cost tasmanvisa 900 ms of LCP; advising it is right, failing a build
-  // over it is not.
-  const heavy = missing.filter(([, v]) => v.images.size >= 2);
-  const incidental = missing.filter(([, v]) => v.images.size === 1);
+  // over it is not. Counted in ELEMENTS — a Set of URLs counted every srcset
+  // rung and turned one avatar into three images.
+  const heavy = missing.filter(([, v]) => v.maxImages >= 2);
+  const incidental = missing.filter(([, v]) => v.maxImages === 1);
 
-  const linkFor = (origin, v) => `<link rel="preconnect" href="${origin}"${v.cors ? ' crossorigin' : ''}>`;
+  // Prescribe the form that matches how the images are actually fetched.
+  const linkFor = (origin, v) => `<link rel="preconnect" href="${origin}"${v.cors && !v.noCors ? ' crossorigin' : ''}>`;
+  const where = (v) => (v.missingOn.length > 1 ? ` on ${v.missingOn.length} page(s), e.g. ${v.missingOn[0]}` : ` on ${v.missingOn[0]}`);
   for (const [origin, v] of heavy) {
-    reporter.fix(SEC, 'preconnect', `${v.images.size} images load from ${origin} with no <link rel="preconnect"> — DNS + TLS only start when the parser reaches the first one`, `add ${linkFor(origin, v)} to <head>`, { file: v.page });
+    reporter.fix(SEC, 'preconnect', `${v.maxImages} images load from ${origin} with no <link rel="preconnect">${where(v)} — DNS + TLS only start when the parser reaches the first one`, `add ${linkFor(origin, v)} to <head>`, { file: v.missingOn[0] });
   }
   for (const [origin, v] of incidental) {
-    reporter.suggest(SEC, 'preconnect', `1 image loads from ${origin} with no <link rel="preconnect">`, `add ${linkFor(origin, v)} to <head> if it is on the critical path`, { file: v.page });
+    reporter.suggest(SEC, 'preconnect', `1 image loads from ${origin} with no <link rel="preconnect">${where(v)}`, `add ${linkFor(origin, v)} to <head> if it is on the critical path`, { file: v.missingOn[0] });
   }
   if (missing.length === 0) {
-    reporter.pass(SEC, 'preconnect', `all ${imageHosts.length} cross-origin image host(s) are preconnected (${imageHosts.map(([o]) => o).join(', ')})`);
+    reporter.pass(SEC, 'preconnect', `all ${imageHosts.length} cross-origin image host(s) are preconnected on every page that uses them (${imageHosts.map(([o]) => o).join(', ')})`);
   }
 
   // The trap is a preconnect whose CORS mode does not MATCH the images'. A
@@ -570,18 +607,33 @@ function reportPreconnect(hosts, pagesJudged, reporter) {
   // image-host preconnect, which is right for fonts and fetch() and wrong for
   // the plain <img> that is nearly every image on a content site; MDN's own
   // preconnect example for a generic origin is bare, and the rule it states is
-  // "match the resource's CORS and credentials mode". It looks fixed and is not,
-  // in either direction, which is why this stays a separate finding.
-  const declared = imageHosts.filter(([, v]) => v.preconnect !== null);
-  const mismatched = declared.filter(([, v]) => (v.preconnect === 'crossorigin') !== v.cors);
-  if (declared.length && mismatched.length === 0) {
+  // "match the resource's CORS and credentials mode".
+  //
+  // A hint is useful if SOMETHING can reuse it, so a mismatch is only reported
+  // when the declared mode matches no image on the host. A single
+  // `<img crossorigin>` among twenty plain ones used to flip one global flag and
+  // make the correct bare preconnect a required finding — advice that would have
+  // broken the other twenty fetches.
+  const declared = imageHosts.filter(([, v]) => v.declared.size > 0);
+  if (declared.length === 0) {
+    reporter.skip(SEC, 'preconnect:crossorigin', `no preconnect declared to a cross-origin image host — nothing to match against`);
+    return;
+  }
+  const mismatched = [];
+  for (const [origin, v] of declared) {
+    for (const [mode, page] of v.declared) {
+      const reusable = mode === 'crossorigin' ? v.cors : v.noCors;
+      if (!reusable) mismatched.push([origin, v, mode, page]);
+    }
+  }
+  if (mismatched.length === 0) {
     reporter.pass(SEC, 'preconnect:crossorigin', `every preconnect to an image host matches its images' CORS mode`);
   }
-  for (const [origin, v] of mismatched) {
-    if (v.cors) {
-      reporter.fix(SEC, 'preconnect:crossorigin', `<link rel="preconnect" href="${origin}"> has no crossorigin, but its images are fetched with crossorigin — the connection it opens is not the one they reuse`, `write it as <link rel="preconnect" href="${origin}" crossorigin>`, { file: v.page });
+  for (const [origin, v, mode, page] of mismatched) {
+    if (mode === 'bare') {
+      reporter.fix(SEC, 'preconnect:crossorigin', `<link rel="preconnect" href="${origin}"> has no crossorigin, but every image it serves is fetched with crossorigin — the connection it opens is not the one they reuse`, `write it as <link rel="preconnect" href="${origin}" crossorigin>`, { file: page });
     } else {
-      reporter.fix(SEC, 'preconnect:crossorigin', `<link rel="preconnect" href="${origin}" crossorigin> opens an anonymous CORS connection, but its images are plain <img> (no-cors, credentialed) and cannot reuse it`, `drop the crossorigin attribute: <link rel="preconnect" href="${origin}"> — add it only if the <img> tags carry crossorigin too`, { file: v.page });
+      reporter.fix(SEC, 'preconnect:crossorigin', `<link rel="preconnect" href="${origin}" crossorigin> opens an anonymous CORS connection, but every image it serves is a plain <img> (no-cors, credentialed) and cannot reuse it`, `drop the crossorigin attribute: <link rel="preconnect" href="${origin}"> — add it only if the <img> tags carry crossorigin too`, { file: page });
     }
   }
 }

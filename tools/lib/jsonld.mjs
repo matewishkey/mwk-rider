@@ -56,6 +56,21 @@ export function ldTypes(objects) {
   return types;
 }
 
+/**
+ * The Article types whose PROPERTIES are worth demanding — everything in
+ * `ARTICLE_TYPES` except the `CreativeWork` superclass.
+ *
+ * `CreativeWork` earns its place in the presence check: a page that declares it
+ * has said something about itself. It does not belong in the property check,
+ * because it is the generic parent of almost every content type — a portfolio
+ * piece, a case study, a photograph, a dataset description. Demanding a
+ * `headline` and an `author` of one is the check assuming a blog post, which is
+ * the same mistake `CONTENT_PAGE_TYPES` exists to stop it making.
+ */
+export const ARTICLE_PROPERTY_TYPES = new Set(
+  [...ARTICLE_TYPES].filter((t) => t !== 'CreativeWork'),
+);
+
 export function hasArticleType(types) {
   for (const t of types) if (ARTICLE_TYPES.has(t)) return true;
   return false;
@@ -152,8 +167,14 @@ export function isAbsoluteUrl(v) {
  */
 export function isIsoDate(v) {
   if (typeof v !== 'string') return false;
-  if (!/^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?)?$/.test(v)) return false;
-  return !Number.isNaN(Date.parse(v));
+  if (!/^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}(:?\d{2})?)?)?$/.test(v)) return false;
+  // An hour-only offset (`+13`) is legal ISO 8601 and `Date.parse` cannot read
+  // it, so the shape is normalised before the value is parsed — without this the
+  // second gate rejected a date the first had just accepted. The time component
+  // has to be part of the match: anchoring on the offset alone rewrote the
+  // date-only `2024-01-05` (whose `-05` looks exactly like one) into nonsense.
+  const parseable = v.replace(/([T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?)([+-]\d{2})$/, '$1$2:00');
+  return !Number.isNaN(Date.parse(parseable));
 }
 
 /**
@@ -165,13 +186,22 @@ export function isIsoDate(v) {
  * that disambiguates a person from a publisher.
  * https://developers.google.com/search/docs/appearance/structured-data/article
  */
-export function authorProblems(node) {
+export function authorProblems(node, graph = []) {
   const a = node.author;
   if (a === undefined || a === null) return ['no author'];
   const list = Array.isArray(a) ? a : [a];
   if (!list.length) return ['author is an empty array'];
   const out = [];
-  for (const one of list) {
+  for (const raw of list) {
+    // A node REFERENCE — `"author": { "@id": "…#/schema/person/1" }` — is valid
+    // JSON-LD and is what most graph emitters produce; the Person itself is a
+    // sibling node in the same @graph. Judging the reference as if it were the
+    // author reported two findings on the single most common shape in the wild,
+    // and the suggested fix would have duplicated a node that already existed.
+    // Resolve it; if the target is not on this page, say nothing rather than
+    // guess — it may legitimately live elsewhere.
+    const one = resolveRef(raw, graph);
+    if (one === null) continue;
     if (typeof one === 'string') { out.push(`author is a bare string ("${one.slice(0, 40)}") — needs @type and name`); continue; }
     if (!one || typeof one !== 'object') { out.push('author is not an object'); continue; }
     const t = typesOf(one);
@@ -180,6 +210,19 @@ export function authorProblems(node) {
     if (typeof one.name !== 'string' || !one.name.trim()) out.push('author has no name');
   }
   return out;
+}
+
+/**
+ * A value that is only an `@id` resolved against the flattened graph.
+ *
+ * Returns the referenced node, the value itself when it is not a reference, or
+ * `null` when it is a reference this page does not contain.
+ */
+function resolveRef(value, graph) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  const keys = Object.keys(value);
+  if (keys.length !== 1 || keys[0] !== '@id') return value;
+  return graph.find((n) => n && n['@id'] === value['@id']) ?? null;
 }
 
 /**
@@ -202,7 +245,11 @@ export function dateProblems(node) {
  * the value is a string — `image` and `publisher` are routinely objects
  * (ImageObject, Organization), which is correct and not a finding.
  */
-const URL_PROPS = ['url', 'image', 'logo', 'item', 'contentUrl', 'thumbnailUrl', 'sameAs', '@id'];
+// `@id` is deliberately absent: it is a node IDENTIFIER, not a URL property.
+// Graph emitters name nodes with fragments (`#organization`) and blank-node ids
+// (`_:b0`), neither of which can ever be an absolute URL, so including it
+// produced one advisory line per node on exactly the sites that mark up best.
+const URL_PROPS = ['url', 'image', 'logo', 'item', 'contentUrl', 'thumbnailUrl', 'sameAs'];
 export function urlProblems(node) {
   const out = [];
   for (const key of URL_PROPS) {
@@ -246,16 +293,19 @@ export function articleProblems(node) {
  * https://developers.google.com/search/docs/appearance/structured-data/breadcrumb
  */
 export function breadcrumbProblems(node) {
-  const items = node.itemListElement;
-  if (!Array.isArray(items) || !items.length) return ['itemListElement is missing or empty'];
+  // A single value is legal JSON-LD for a one-element list; requiring an array
+  // reported a correct one-item trail as empty.
+  const raw = node.itemListElement;
+  const items = raw == null ? [] : (Array.isArray(raw) ? raw : [raw]);
+  if (!items.length) return ['itemListElement is missing or empty'];
   const out = [];
-  const positions = [];
+  const positions = new Array(items.length).fill(null);
   items.forEach((li, i) => {
     const last = i === items.length - 1;
     if (!li || typeof li !== 'object') { out.push(`item ${i + 1} is not an object`); return; }
     const pos = typeof li.position === 'string' && /^\d+$/.test(li.position) ? Number(li.position) : li.position;
     if (!Number.isInteger(pos)) out.push(`item ${i + 1} has no integer position`);
-    else positions.push(pos);
+    else positions[i] = pos;
     if (typeof li.name !== 'string' || !li.name.trim()) {
       // A `item` given as a Thing carries the name instead — legal, so only the
       // combination of no name AND no named Thing is a problem.
@@ -264,8 +314,14 @@ export function breadcrumbProblems(node) {
     }
     if (!last && (li.item === undefined || li.item === null)) out.push(`item ${i + 1} has no item URL (only the last may omit it)`);
   });
-  const expected = positions.map((_, i) => i + 1).join(',');
-  if (positions.length && positions.join(',') !== expected) out.push(`positions are ${positions.join(',')} — must run 1..${positions.length} in order`);
+  // Judge the sequence only when every item declared one. Collecting just the
+  // integers and comparing against 1..count produced a second, factually wrong
+  // message when a MIDDLE item had none ("positions are 1,3 — must run 1..2"),
+  // and passed silently when the LAST one did, which is the case that matters.
+  if (positions.every((p) => p !== null)) {
+    const expected = positions.map((_, i) => i + 1).join(',');
+    if (positions.join(',') !== expected) out.push(`positions are ${positions.join(',')} — must run 1..${items.length} in order`);
+  }
   return out;
 }
 

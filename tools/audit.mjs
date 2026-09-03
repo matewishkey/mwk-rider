@@ -168,13 +168,25 @@ function nearest(input) {
 // Offline domains (skip if cwd isn't an Astro project but a --url run was requested)
 if (project) {
   const ctx = { project, reporter };
-  // Say it before any dist-reading check speaks: a clean report on a stale
-  // build reads exactly like a clean site, and one of those was unbuildable.
-  if (project.distStale) {
-    const ago = Math.round((project.distStale.src - project.distStale.dist) / 60000);
-    reporter.fix('project', 'dist:stale', `dist/ is older than the source — src/, public/, scripts/ or the config changed ${ago < 1 ? 'under a minute' : `${ago} min`} after the last build, so every dist-read check below judges a build that no longer matches`, 'rebuild, then audit');
-  } else if (project.hasDist) {
-    reporter.pass('project', 'dist:stale', 'dist/ is newer than every source file');
+  // Say it before any dist-reading check speaks: a clean report on a stale build
+  // reads exactly like a clean site, and one of those was unbuildable.
+  //
+  // Only when an offline domain is actually going to run. It used to be emitted
+  // outside the section filter, so `-s lighthouse --url …` failed on a stale
+  // dist/ that nothing in that run would have read.
+  const offlineSelected = Object.keys(OFFLINE).some((name) => !wanted || wanted.has(name));
+  if (offlineSelected) {
+    if (project.distStale?.truncated) {
+      reporter.skip('project', 'dist:stale', 'dist/ or the source tree is too large to walk within budget — cannot tell whether the build is current, so the dist-read checks below are judging a build of unknown age');
+    } else if (project.distStale) {
+      const mins = Math.round((project.distStale.src - project.distStale.dist) / 60000);
+      const ago = mins < 1 ? 'seconds' : `${mins} min`;
+      reporter.fix('project', 'dist:stale', `dist/ is older than the source — src/, public/, scripts/ or the config changed ${ago} after the last build, so every dist-read check below judges a build that no longer matches`, 'rebuild, then audit');
+    } else if (project.hasDist) {
+      reporter.pass('project', 'dist:stale', 'dist/ is newer than the source it was built from');
+    } else {
+      reporter.skip('project', 'dist:stale', 'no dist/ — nothing built to compare against the source');
+    }
   }
   for (const [name, loader] of Object.entries(OFFLINE)) {
     if (wanted && !wanted.has(name)) continue;

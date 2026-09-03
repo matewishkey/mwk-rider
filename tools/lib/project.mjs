@@ -40,6 +40,8 @@ export async function detectProject(cwd) {
     // check judges the build, and a build the source has moved past is a
     // different site — the audit said clean on one whose build was BROKEN,
     // because it read the dist/ the last good build left behind (#34).
+    // `{ src, dist }` when stale, `{ truncated: true }` when the walk could not
+    // see enough to be sure, `null` when the build is current.
     distStale: existsSync(join(cwd, 'dist')) ? staleDist(cwd) : null,
     ogConfig: null,
   };
@@ -83,32 +85,59 @@ function readFirstFile(cwd, names) {
 }
 
 /**
- * `{ src, dist }` newest mtimes when source is newer than the build, else null.
+ * Whether `dist/` predates the source it was built from.
  *
  * Source is everything a build reads: src/, public/, scripts/, the config and
- * package.json. Not node_modules and not dist itself. Walks are bounded — a
- * few thousand stats — and never follow symlinks.
+ * package.json. Not node_modules and not dist itself. Walks are bounded and
+ * never follow symlinks.
+ *
+ * Two things this deliberately does NOT do:
+ *
+ *   - **Decide on a millisecond.** `git clone`, `git checkout` and `git stash
+ *     pop` stamp source and build files at effectively the same instant, and a
+ *     strict `>` then picked a winner from sub-millisecond ordering — the "changed
+ *     under a minute after the last build" message was the tell. Anything inside
+ *     GRACE_MS is the same moment.
+ *   - **Guess when it could not look.** If either walk hit its budget the newest
+ *     mtime is a lower bound, and truncation can only ever bias toward "stale",
+ *     so the caller is told it could not be determined instead.
  */
+const GRACE_MS = 2000;
+
 function staleDist(cwd) {
+  const configs = ['astro.config.mjs', 'astro.config.ts', 'astro.config.js',
+    'astro.config.mts', 'astro.config.cjs', 'astro.config.cts', 'package.json'];
+  const srcWalks = ['src', 'public', 'scripts'].map((d) => newestMtime(join(cwd, d)));
   const src = Math.max(
-    ...['src', 'public', 'scripts'].map((d) => newestMtime(join(cwd, d))),
-    ...['astro.config.mjs', 'astro.config.ts', 'astro.config.js', 'astro.config.mts', 'package.json']
-      .map((f) => { try { return statSync(join(cwd, f)).mtimeMs; } catch { return 0; } }),
+    ...srcWalks.map((w) => w.newest),
+    ...configs.map((f) => { try { return statSync(join(cwd, f)).mtimeMs; } catch { return 0; } }),
   );
-  const dist = newestMtime(join(cwd, 'dist'));
-  return src > dist ? { src, dist } : null;
+  // dist/ gets the larger budget: an adapter build emits thousands of chunks
+  // under dist/_worker.js/ before dist/client/ is reached.
+  const distWalk = newestMtime(join(cwd, 'dist'), { n: 40000 });
+  if (distWalk.truncated || srcWalks.some((w) => w.truncated)) return { truncated: true };
+  if (src <= distWalk.newest + GRACE_MS) return null;
+  return { src, dist: distWalk.newest };
 }
 
+/** `{ newest, truncated }` for a bounded, symlink-skipping walk. */
 function newestMtime(dir, budget = { n: 5000 }) {
   let newest = 0;
+  let truncated = false;
   let entries;
-  try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return 0; }
+  try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return { newest: 0, truncated: false }; }
   for (const e of entries) {
-    if (budget.n-- <= 0) break;
+    if (budget.n-- <= 0) { truncated = true; break; }
     const full = join(dir, e.name);
     if (e.isSymbolicLink()) continue;
-    if (e.isDirectory()) { if (e.name !== 'node_modules') newest = Math.max(newest, newestMtime(full, budget)); continue; }
+    if (e.isDirectory()) {
+      if (e.name === 'node_modules') continue;
+      const sub = newestMtime(full, budget);
+      newest = Math.max(newest, sub.newest);
+      truncated ||= sub.truncated;
+      continue;
+    }
     try { newest = Math.max(newest, statSync(full).mtimeMs); } catch { /* raced away */ }
   }
-  return newest;
+  return { newest, truncated };
 }

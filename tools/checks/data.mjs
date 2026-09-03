@@ -12,7 +12,7 @@ import { readSrcFiles, stripComments } from '../lib/src-scan.mjs';
 import { eachDistHtml } from '../lib/html.mjs';
 import { distFiles, readDist, countMatches, sitemapPages, distRelative } from '../lib/dist.mjs';
 import {
-  collectJsonLd, ldTypes, hasArticleType, ARTICLE_TYPES, nodesOfType,
+  collectJsonLd, ldTypes, hasArticleType, ARTICLE_PROPERTY_TYPES, nodesOfType,
   articleProblems, authorProblems, dateProblems, urlProblems, breadcrumbProblems,
   deprecatedShapes,
 } from '../lib/jsonld.mjs';
@@ -248,9 +248,16 @@ function short(rel) { return rel.replace(/^src\/pages\//, ''); }
  * on its face. Presence of a breadcrumb is the one taste call, and it is the one
  * thing here that is house style.
  */
+const BREADCRUMB = new Set(['BreadcrumbList']);
+
 function checkJsonLdProperties(perPage, reporter) {
+  // `ARTICLE_PROPERTY_TYPES`, not `ARTICLE_TYPES`: the presence check counts the
+  // `CreativeWork` superclass as an article, which is right for "has this page
+  // said what it is" and wrong for "does it carry a headline". `objects` is
+  // carried through so the author check can resolve @id references against the
+  // page's own graph, and so the breadcrumb lookup below needs no second scan.
   const articlePages = perPage
-    .map((p) => ({ rel: p.rel, nodes: nodesOfType(p.objects, ARTICLE_TYPES) }))
+    .map((p) => ({ rel: p.rel, objects: p.objects, nodes: nodesOfType(p.objects, ARTICLE_PROPERTY_TYPES) }))
     .filter((p) => p.nodes.length);
 
   if (!articlePages.length) {
@@ -268,7 +275,7 @@ function checkJsonLdProperties(perPage, reporter) {
     }
     if (missingRequired.length) {
       reporter.fix(SEC, 'jsonld:article-props', `${missingRequired.length} Article node(s) missing a required property — ${sample(missingRequired)}`,
-        'add author and headline to the Article builder — Google documents author as required, and a node without a headline has nothing to show',
+        'add author and headline to the Article builder — a node with neither has nothing to attribute and nothing to show',
         { file: missingRequired[0].split(':')[0] });
     } else if (missingRecommended.length) {
       reporter.suggest(SEC, 'jsonld:article-props', `${missingRecommended.length} Article node(s) missing a recommended property — ${sample(missingRecommended)}`,
@@ -279,10 +286,10 @@ function checkJsonLdProperties(perPage, reporter) {
 
     // --- author shape ------------------------------------------------------
     const authorBad = [];
-    for (const { rel, nodes } of articlePages) {
+    for (const { rel, objects, nodes } of articlePages) {
       for (const n of nodes) {
         if (n.author === undefined || n.author === null) continue;  // article-props' finding, not this one
-        for (const p of authorProblems(n)) authorBad.push(`${rel}: ${p}`);
+        for (const p of authorProblems(n, objects)) authorBad.push(`${rel}: ${p}`);
       }
     }
     if (authorBad.length) {
@@ -297,7 +304,7 @@ function checkJsonLdProperties(perPage, reporter) {
     // Presence is house style: a breadcrumb earns a nicer result, and a flat
     // blog is not wrong for having no hierarchy to describe. Being *malformed*
     // is not house style — see below.
-    const noCrumb = articlePages.filter((p) => !nodesOfType(perPage.find((x) => x.rel === p.rel).objects, new Set(['BreadcrumbList'])).length);
+    const noCrumb = articlePages.filter((p) => !nodesOfType(p.objects, BREADCRUMB).length);
     if (noCrumb.length) {
       reporter.fix(SEC, 'jsonld:breadcrumb', `${noCrumb.length}/${articlePages.length} Article page(s) emit no BreadcrumbList — ${sample(noCrumb.map((p) => p.rel))}`,
         'emit a BreadcrumbList alongside the Article shape — it is what puts the trail, rather than the bare URL, in the result');
@@ -309,6 +316,18 @@ function checkJsonLdProperties(perPage, reporter) {
   // --- values that are broken wherever they appear --------------------------
   // Judged over every node on every page, not just Article ones: a relative
   // logo on an Organization is as dead as a relative image on a BlogPosting.
+  //
+  // Nothing to judge is NOT a pass. With no JSON-LD anywhere these three printed
+  // "every URL value in the structured data is absolute" beside jsonld:emitted's
+  // finding that there is none — a pass for work never done, which is the thing
+  // CONTRIBUTING § "never let a check silently not run" forbids.
+  const totalNodes = perPage.reduce((n, p) => n + p.objects.length, 0);
+  if (totalNodes === 0) {
+    const why = 'no JSON-LD on any built page — jsonld:emitted reports that';
+    for (const name of ['jsonld:dates', 'jsonld:urls', 'jsonld:deprecated', 'jsonld:breadcrumb-shape']) reporter.skip(SEC, name, why);
+    return;
+  }
+
   const dateBad = [], urlBad = [], crumbBad = [];
   let crumbs = 0;
   for (const { rel, objects } of perPage) {
@@ -316,7 +335,7 @@ function checkJsonLdProperties(perPage, reporter) {
       for (const p of dateProblems(n)) dateBad.push(`${rel}: ${p}`);
       for (const p of urlProblems(n)) urlBad.push(`${rel}: ${p}`);
     }
-    for (const n of nodesOfType(objects, new Set(['BreadcrumbList']))) {
+    for (const n of nodesOfType(objects, BREADCRUMB)) {
       crumbs++;
       for (const p of breadcrumbProblems(n)) crumbBad.push(`${rel}: ${p}`);
     }

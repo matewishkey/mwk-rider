@@ -220,11 +220,15 @@ async function auditCache(home, head, reporter, project, base) {
  */
 function ignoresHeadersFile(project, base) {
   if (!project) return false;
+  return isLocalOrigin(base) && declaresImmutableAssets(project.root);
+}
+
+/** Is this URL a loopback or private-network address — i.e. a stand-in for the real site? */
+function isLocalOrigin(url) {
   let host;
-  try { host = new URL(base).hostname; } catch { return false; }
-  const local = host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]'
+  try { host = new URL(url).hostname; } catch { return false; }
+  return host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]'
     || /^192\.168\./.test(host) || /^10\./.test(host) || /^172\.(1[6-9]|2\d|3[01])\./.test(host);
-  return local && declaresImmutableAssets(project.root);
 }
 
 // SEO — real HTML on home + a content page -----------------------------------
@@ -250,21 +254,38 @@ const POST_ONLY_CHECKS = [
  * declared URL and the served URL have to be the same string.
  */
 async function checkCanonicalDirect(pages, base, reporter) {
+  // Either attribute order. Requiring `rel` before `href` made a valid
+  // `<link href="…" rel="canonical">` invisible, and the check then reported
+  // "no canonical declared" while seo:canonical passed on the same page — a
+  // false skip, which reads exactly like a clean result.
+  const canonicalHref = (html) =>
+    html.match(/<link\b(?=[^>]*\brel=["']canonical["'])[^>]*\bhref=["']([^"']+)["']/i)?.[1] ?? null;
   const declared = pages
-    .map(({ html, path }) => ({ path, href: html.match(/<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']+)["']/)?.[1] }))
+    .map(({ html, path }) => ({ path, href: canonicalHref(html) }))
     .filter((p) => p.href);
   if (!declared.length) { reporter.skip('seo', 'canonical:direct', 'no canonical declared on the fetched pages — canonical checks above say so'); return; }
+
+  // Re-rooting is only right when the audited origin is standing IN for the
+  // declared one — a local or private-network serve of a site that names its
+  // production URL. Doing it unconditionally reported two correct
+  // configurations as broken: a site auditing on the apex that canonicalises to
+  // www (the redirect is the point), and a syndicated page whose canonical
+  // legitimately names another domain. On a public origin the canonical is
+  // fetched exactly as declared, which is what a crawler does.
+  const rebase = isLocalOrigin(base);
   const bad = [];
   for (const { path, href } of declared) {
-    let url;
-    // Re-root the declared canonical onto the audited base: the site declares
-    // its production origin and we are fetching a local or staging one.
-    try { const u = new URL(href, base); url = base.replace(/\/$/, '') + u.pathname + u.search; } catch { continue; }
+    let url, shown;
+    try {
+      const u = new URL(href, base);
+      shown = rebase ? u.pathname + u.search : u.href;
+      url = rebase ? base.replace(/\/$/, '') + u.pathname + u.search : u.href;
+    } catch { continue; }
     try {
       const res = await fetch(url, { signal: AbortSignal.timeout(NET_TIMEOUT_MS), headers: NAV_HEADERS, redirect: 'manual' });
-      if (res.status >= 300 && res.status < 400) bad.push(`${path} declares ${new URL(href, base).pathname} → ${res.status} to ${res.headers.get('location') ?? '?'}`);
-      else if (res.status !== 200) bad.push(`${path} declares ${new URL(href, base).pathname} → ${res.status}`);
-    } catch (err) { bad.push(`${path} declares ${href} → ${err.message}`); }
+      if (res.status >= 300 && res.status < 400) bad.push(`${path} declares ${shown} → ${res.status} to ${res.headers.get('location') ?? '?'}`);
+      else if (res.status !== 200) bad.push(`${path} declares ${shown} → ${res.status}`);
+    } catch (err) { bad.push(`${path} declares ${shown} → ${err.message}`); }
   }
   if (bad.length) {
     reporter.fix('seo', 'canonical:direct', `the canonical URL redirects or fails — ${bad.join('; ')}`,

@@ -290,6 +290,28 @@ const iconFont = runJson(mkBuilt({ 'dist/index.html': '<p>x</p>', 'dist/_astro/a
 check('an icon font declared in the built CSS → fix under --strict', iconFont?.outcome === 'fix' && /Font Awesome/.test(iconFont.message ?? ''), JSON.stringify(iconFont));
 check('  …ordinary CSS → pass',
   runJson(mkBuilt({ 'dist/index.html': '<p>x</p>', 'dist/_astro/app.css': 'body{font-family:Inter,sans-serif}' }), ['-s', 'modules', '--strict']).json?.results.find(r => r.id === 'modules/icons-font')?.outcome === 'pass');
+// A media domain is scraped out of the audited project's own config, so it is
+// typo- (or attacker-) controlled. `cdn.example[` compiled to an unterminated
+// character class and crashed the whole modules domain.
+const rpMeta = (domain, astroConfig) => {
+  const dir = mkProject({ config: astroConfig });
+  mkdirSync(join(dir, 'scripts'), { recursive: true });
+  writeFileSync(join(dir, 'scripts', 'og.config.mjs'), `export const config = { mediaDomain: '${domain}', brand: { siteName: 'x' } };\n`);
+  return runJson(dir, ['-s', 'modules', '--strict']).json;
+};
+const crashy = rpMeta('cdn.example[', "export default { output: 'static' };\n");
+check('a media domain with a regex metacharacter does not crash the modules domain',
+  (crashy?.errors ?? ['?']).length === 0 && (crashy?.results ?? []).length > 5,
+  JSON.stringify(crashy?.errors));
+// The idiomatic named import. Requiring a dotted accessor reported it missing
+// and told you to add a hostname that was already there.
+const rpBare = rpMeta('media.x.test', "import { mediaDomain } from './scripts/og.config.mjs';\nexport default { output: 'static', image: { remotePatterns: [{ protocol: 'https', hostname: mediaDomain }] } };\n");
+check('  …and a bare `hostname: mediaDomain` counts as declared',
+  rpBare?.results.find(r => r.id === 'modules/remotepatterns')?.outcome === 'pass',
+  JSON.stringify(rpBare?.results.find(r => r.id === 'modules/remotepatterns')));
+const rpCommented = rpMeta('media.x.test', "export default { output: 'static' };\n// image: { remotePatterns: [{ hostname: 'media.x.test' }] }\n");
+check('  …while a commented-out block does not', rpCommented?.results.find(r => r.id === 'modules/remotepatterns')?.outcome === 'fix');
+
 check('  …and with no media domain declared there is nothing to check',
   runJson(mkProject({}), ['-s', 'modules', '--strict']).json?.results.find(r => r.id === 'modules/remotepatterns') == null);
 check('  …and it names the route, not just the output mode',
@@ -466,9 +488,19 @@ utimesSync(join(freshDir, 'src', 'pages', 'index.astro'), later, later);
 const stale = runJson(freshDir, ['-s', 'modules']).json?.results.find(r => r.id === 'project/dist-stale');
 check('  …a source file newer than dist/ → fix, before any dist-read check speaks',
   stale?.outcome === 'fix' && /older than the source/.test(stale.message ?? ''), JSON.stringify(stale));
-check('  …and with no dist/ there is nothing to compare',
-  runJson(mkBuilt({}), ['-s', 'modules']).json?.results.find(r => r.id === 'project/dist-stale') == null
-  || runJson(mkProject({}), ['-s', 'modules']).json?.results.find(r => r.id === 'project/dist-stale') == null);
+check('  …with no dist/ it says so rather than staying silent',
+  runJson(mkProject({}), ['-s', 'modules']).json?.results.find(r => r.id === 'project/dist-stale')?.outcome === 'skip');
+// A grace window, because git clone/checkout/stash-pop stamp source and build in
+// the same instant and a strict `>` then decided it on sub-millisecond ordering.
+const sameInstant = mkBuilt({ 'dist/index.html': PAGE_LD({ '@type': 'WebSite' }) });
+const now = new Date();
+for (const f of ['src/pages/index.astro', 'dist/index.html', 'package.json']) utimesSync(join(sameInstant, f), now, now);
+check('  …source and build stamped in the same instant → pass, not a coin toss',
+  runJson(sameInstant, ['-s', 'modules']).json?.results.find(r => r.id === 'project/dist-stale')?.outcome === 'pass');
+// It rides along with an offline scope, and must NOT fire on a url-only one that
+// reads no dist/ at all.
+check('  …and a url-only scope does not emit it (nothing there reads dist/)',
+  runJson(freshDir, ['-s', 'lighthouse', '--url', 'http://127.0.0.1:9/']).json?.results.find(r => r.id === 'project/dist-stale') == null);
 
 // JSON-LD properties — what is INSIDE the node. `jsonld:shapes` reads the @type
 // and stops, so a BlogPosting with a bare-string author, a relative image and a
@@ -502,6 +534,29 @@ check('  …an Organization author → pass (not every author is a Person)', org
 const multiAuthor = ldPage([{ '@type': 'WebSite' }, ARTICLE({ author: [GOOD_AUTHOR, { '@type': 'Person', name: 'John' }] })], 'data/jsonld-author');
 check('  …and an array of authors → pass (Google’s own example is an array)', multiAuthor?.outcome === 'pass', JSON.stringify(multiAuthor));
 
+// An author given as a node REFERENCE into the same @graph is valid JSON-LD and
+// is what most graph emitters produce. Judging the reference as the author was a
+// required finding on the commonest correct shape in the wild.
+const refAuthor = ldPage([{ '@type': 'WebSite' }, {
+  '@graph': [
+    { '@id': 'https://x.test/#person', '@type': 'Person', name: 'Jane Doe' },
+    ARTICLE({ author: { '@id': 'https://x.test/#person' } }),
+  ],
+}], 'data/jsonld-author');
+check('an @id author reference resolved in the same graph → pass',
+  refAuthor?.outcome === 'pass', JSON.stringify(refAuthor));
+const refElsewhere = ldPage([{ '@type': 'WebSite' }, ARTICLE({ author: { '@id': 'https://elsewhere.test/#p' } })], 'data/jsonld-author');
+check('  …and one this page does not contain is not guessed at',
+  refElsewhere?.outcome === 'pass', JSON.stringify(refElsewhere));
+
+// CreativeWork is the superclass. It belongs in the presence check and not in
+// the property one: a portfolio piece marked CreativeWork is not a blog post.
+const creative = ldPage([{ '@type': 'WebSite' }, { '@type': 'CreativeWork', name: 'A portfolio piece' }], 'data/jsonld-article-props');
+check('a CreativeWork page is not asked for a headline',
+  creative?.outcome === 'skip', JSON.stringify(creative));
+check('  …while it still satisfies the presence check',
+  ldPage([{ '@type': 'WebSite' }, { '@type': 'CreativeWork', name: 'x' }], 'data/jsonld-shapes')?.outcome === 'pass');
+
 const badDate = ldPage([{ '@type': 'WebSite' }, ARTICLE({ datePublished: '5 January 2026' })], 'data/jsonld-dates');
 check('a formatted date → fix', badDate?.outcome === 'fix', JSON.stringify(badDate));
 const dateOnly = ldPage([{ '@type': 'WebSite' }, ARTICLE({ datePublished: '2026-01-05' })], 'data/jsonld-dates');
@@ -527,6 +582,21 @@ const skewed = ldPage([{ '@type': 'WebSite' }, ARTICLE(), CRUMB([
   { '@type': 'ListItem', position: 1, name: 'A post', item: 'https://x.test/a' },
 ])], 'data/jsonld-breadcrumb-shape');
 check('  …out-of-order positions → fix', skewed?.outcome === 'fix' && /positions are/.test(skewed.message), JSON.stringify(skewed));
+// A LAST item with no position used to make the sequence check pass silently,
+// and a MIDDLE one produced a second, factually wrong message.
+const lastNoPos = ldPage([{ '@type': 'WebSite' }, ARTICLE(), CRUMB([
+  { '@type': 'ListItem', position: 1, name: 'Home', item: 'https://x.test/' },
+  { '@type': 'ListItem', name: 'A post' },
+])], 'data/jsonld-breadcrumb-shape');
+check('a last item with no position is still a finding, not a silent pass',
+  lastNoPos?.outcome === 'fix' && /no integer position/.test(lastNoPos.message ?? ''), JSON.stringify(lastNoPos));
+check('  …and it is not also told its positions are out of order',
+  !/positions are/.test(lastNoPos?.message ?? ''), JSON.stringify(lastNoPos));
+// A single value is legal JSON-LD for a one-element list.
+const oneCrumb = ldPage([{ '@type': 'WebSite' }, ARTICLE(), { '@type': 'BreadcrumbList', itemListElement: { '@type': 'ListItem', position: 1, name: 'Home' } }], 'data/jsonld-breadcrumb-shape');
+check('a one-item itemListElement written as a single object → pass',
+  oneCrumb?.outcome === 'pass', JSON.stringify(oneCrumb));
+
 const nameless = ldPage([{ '@type': 'WebSite' }, ARTICLE(), CRUMB([
   { '@type': 'ListItem', position: 1, item: 'https://x.test/' },
   { '@type': 'ListItem', position: 2, name: 'A post', item: 'https://x.test/a' },
@@ -545,6 +615,15 @@ const crumbless = runJson(crumblessDir, ['-s', 'data']).json?.results.find(r => 
 check('an Article page with no BreadcrumbList → suggest by default', crumbless?.outcome === 'suggest', JSON.stringify(crumbless));
 const crumblessStrict = row(crumblessDir, 'data', 'data/jsonld-breadcrumb');
 check('  …and fix under --strict', crumblessStrict?.outcome === 'fix', JSON.stringify(crumblessStrict));
+
+// Nothing to judge is not a pass. With no JSON-LD anywhere these printed
+// "every URL value in the structured data is absolute" beside jsonld:emitted's
+// finding that there is none.
+const noLdAtAll = mkBuilt({ 'dist/index.html': '<html><head><link rel="canonical" href="/"><title>t</title></head><body><h1>t</h1></body></html>' });
+for (const id of ['data/jsonld-dates', 'data/jsonld-urls', 'data/jsonld-deprecated', 'data/jsonld-breadcrumb-shape']) {
+  check(`  ${id} skips on a site with no JSON-LD, rather than passing`,
+    runJson(noLdAtAll, ['-s', 'data', '--strict']).json?.results.find(r => r.id === id)?.outcome === 'skip', id);
+}
 
 // Retired rich results. All three shapes are still valid markup, so the finding
 // is advisory in both modes — Google states that leaving them causes no errors.
@@ -1801,6 +1880,42 @@ check('  …<img crossorigin> + bare preconnect → fix (the other direction is 
   bareOnCors?.outcome === 'fix', JSON.stringify(bareOnCors));
 check('  …and the missing-preconnect suggestion prescribes the matching form, bare for plain <img>',
   !/crossorigin/.test(perfRow('perf/preconnect', TWO_REMOTE)?.fix ?? perfRow('perf/preconnect', TWO_REMOTE)?.suggestion ?? 'crossorigin'));
+
+// Images are counted as ELEMENTS, not URLs. A Set of URLs counted every srcset
+// rung, so one incidental avatar became "3 images" and crossed into the
+// required-fix branch — the exact opposite of the carve-out above.
+const AVATAR_LADDER = '<img src="https://media.x.test/a.webp" srcset="https://media.x.test/a-400.webp 400w, https://media.x.test/a-800.webp 800w" alt="a">';
+const avatarLadder = perfRow('perf/preconnect', AVATAR_LADDER);
+check('one image with a 2-rung srcset → suggest, not fix (it is one image, not three)',
+  avatarLadder?.outcome === 'suggest' && /^1 image loads/.test(avatarLadder.message ?? ''), JSON.stringify(avatarLadder));
+
+// <source> counts only via srcset — that is what tells a <picture> source from a
+// <video> one, which carries src + type. Two media files were reported as images.
+const VIDEO = '<video controls><source src="https://media.x.test/a.mp4" type="video/mp4"><source src="https://media.x.test/a.webm" type="video/webm"></video>';
+check('a <video> with two cross-origin <source> files is not an image host',
+  perfRow('perf/preconnect', VIDEO)?.outcome === 'pass', JSON.stringify(perfRow('perf/preconnect', VIDEO)));
+const PICTURE = '<picture><source srcset="https://media.x.test/a.avif" type="image/avif"><img src="https://media.x.test/a.webp" alt="a"></picture>';
+check('  …while a <picture> source still counts', perfRow('perf/preconnect', PICTURE)?.outcome !== 'pass');
+
+// One crossorigin image among plain ones must not make the correct bare
+// preconnect a finding — the advice would have broken the other twenty fetches.
+const MOSTLY_PLAIN = TWO_REMOTE + '<img crossorigin src="https://media.x.test/canvas.webp" alt="c">';
+check('a lone <img crossorigin> among plain ones → bare preconnect still passes',
+  perfRow('perf/preconnect-crossorigin', MOSTLY_PLAIN, PRE)?.outcome === 'pass',
+  JSON.stringify(perfRow('perf/preconnect-crossorigin', MOSTLY_PLAIN, PRE)));
+check('  …and with no preconnect at all, the rule says so rather than nothing',
+  perfRow('perf/preconnect-crossorigin', TWO_REMOTE)?.outcome === 'skip');
+
+// Preconnect state is per page. Aggregating per host let a homepage-only hint
+// satisfy a blog page loading twenty images from that host — the tasmanvisa
+// scenario the check was built from, passing silently.
+const twoPage = mkBuilt({
+  'dist/index.html': `<html><head>${CANON}${PRE}</head><body><img src="https://media.x.test/hero.webp" alt="h"></body></html>`,
+  'dist/blog/index.html': `<html><head><link rel="canonical" href="https://x.test/blog">${'' /* no preconnect here */}</head><body>${TWO_REMOTE}</body></html>`,
+});
+const perPage = runJson(twoPage, ['-s', 'perf', '--strict']).json?.results.find(r => r.id === 'perf/preconnect');
+check('a preconnect on the homepage does not cover a blog page that lacks one',
+  perPage?.outcome === 'fix' && /blog/.test(perPage.message ?? ''), JSON.stringify(perPage));
 
 // A preload that disagrees with its <img> downloads the image twice.
 const IMG = '<img src="/h.webp" srcset="/h-800.webp 800w, /h-1600.webp 1600w" sizes="(max-width: 700px) 100vw, 700px" alt="h">';
