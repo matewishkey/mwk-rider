@@ -105,8 +105,10 @@ git clone --depth 1 https://github.com/matewishkey/mwk-rider.git /tmp/mwk-rider
 node /tmp/mwk-rider/tools/audit.mjs --strict
 ```
 
-It should stay at `0 🔧 / 0 🛑`. The one standing `💡` is the analytics beacon
-reporting that its token is unset — expected until step 1 above is done.
+It should stay at `0 🔧 / 0 🛑`. Two `💡` are expected and are both true: the
+analytics beacon reporting that its token is unset (until step 1 above is done),
+and the missing Twitter/X handles, which are yours to set or to leave — an
+invented handle credits a stranger's account.
 
 What each rule is and why lives in the tool, not here:
 `node /tmp/mwk-rider/tools/audit.mjs --rules --json`.

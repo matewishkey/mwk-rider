@@ -162,7 +162,7 @@ the alternative is a starter that quietly stops complying with the tool that shi
 - **Runtime smoke (fixture-specific):** `node examples/_fixture-i18n/scripts/smoke.mjs` —
   Playwright against a live dev server (routes, SEO, search, locale boundaries).
   **It is not in the gate, and three things about running it will mislead you:**
-  it needs a dev server on `:4321` and starts none, so a bare run fails all 76 checks;
+  it needs a dev server on `:4321` and starts none, so a bare run fails every check;
   a *stale* dev server left on that port by an earlier session answers with old code, and
   its failures look exactly like real ones (this cost a wrong diagnosis on 2026-09-01 —
   pass an explicit base URL, `npm run smoke -- http://localhost:<port>`, and confirm the

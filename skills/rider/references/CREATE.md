@@ -28,10 +28,11 @@ Everything else has a default. Colours, fonts and layout are *"change them on
 1. **Check the target directory.** If it is not empty, say what is in it and ask
    before writing anything.
 2. **Copy `${CLAUDE_PLUGIN_ROOT}/examples/starter`** into it, **excluding everything the
-   starter's own `.gitignore` lists** — read it rather than trusting this
-   sentence, so the two cannot drift. Today that is `node_modules`, `dist`,
-   `.astro`, `.env`, `.wrangler`, `worker-configuration.d.ts` and `.DS_Store`:
-   build output and local caches, none of which belong in a fresh site.
+   starter's own `.gitignore` lists** — read the file, and do not trust any list
+   written down elsewhere including this one. It is build output, local caches
+   and generated assets, none of which belong in a fresh site. (An enumeration
+   used to sit here and had already gone stale, in the very sentence warning
+   that it would.)
 3. **Edit, don't rewrite:**
    - `scripts/og.config.mjs` — `siteName`, `siteUrl`, `tagline`, `contactEmail`,
      and **`authorName` / `authorUrl`**, which default to `Example` /
