@@ -75,6 +75,7 @@ export async function run({ project, reporter }) {
     singleWidth: [],
     singleWidthTotal: 0,
     singleWidthExempt: 0,
+    singleWidthUnknown: [],
     // Totals, so "nothing was wrong" and "there was nothing to look at" report
     // differently. `✅ routed — all content <img> go through a transform` on a
     // page with no images is a pass for work never done.
@@ -202,13 +203,19 @@ export async function run({ project, reporter }) {
     // The positive assertion: a large image shipping one fixed width. Advisory in
     // every mode — the threshold is measured (see the constants above) but it is
     // still a threshold, and art direction can justify a single width.
+    const unknown = findings.singleWidthUnknown;
+    // Name the blind spot rather than folding it into "nothing to check": an
+    // unreadable width is a MISSED finding, not an absent one.
+    const blind = unknown.length
+      ? ` ${unknown.length} single-width <img> could not be measured offline (a remote URL that is not a transform, or a format this cannot parse): ${unknown.slice(0, 2).map((u) => truncate(u, 60)).join('; ')}${unknown.length > 2 ? ` … +${unknown.length - 2} more` : ''}.`
+      : '';
     if (findings.singleWidthTotal === 0) {
-      reporter.skip(SEC, 'srcset:missing', 'every content <img> in dist/ already carries a srcset (or its width is not knowable offline) — nothing to check');
+      reporter.skip(SEC, 'srcset:missing', `every content <img> in dist/ already carries a srcset, or its width is not knowable offline — nothing to check.${blind}`);
     } else if (findings.singleWidth.length === 0) {
       const exempt = findings.singleWidthExempt
         ? ` (${findings.singleWidthExempt} of them wider than ${SRCSET_MIN_WIDTH}px, but named like a logo/badge or under ${humanSize(SRCSET_MIN_BYTES)} — legitimately one size)`
         : '';
-      reporter.pass(SEC, 'srcset:missing', `none of the ${findings.singleWidthTotal} single-width <img> in dist/ needs a ladder${exempt}`);
+      reporter.pass(SEC, 'srcset:missing', `none of the ${findings.singleWidthTotal} single-width <img> in dist/ needs a ladder${exempt}.${blind}`);
     } else {
       for (const f of findings.singleWidth) {
         const weight = f.bytes != null ? `, ${humanSize(f.bytes)}` : '';
@@ -439,8 +446,15 @@ function collectSingleWidth(html, rel, projectRoot, findings, seen) {
 
     // Two ways to know what width actually ships. A transform URL states it; a
     // local build artifact has it in its own bytes. Anything else — a remote
-    // host, an unparsed format (AVIF) — is unknowable offline, and an unknown
-    // width is never a finding.
+    // host that is not a transform URL, or a format this cannot parse — is
+    // unknowable offline, and an unknown width is never a finding.
+    //
+    // PNG, JPEG, WebP and AVIF all parse (`tools/lib/image-size.mjs`). AVIF was
+    // the blind spot issue #21 was filed about and the `ispe` walker closed it;
+    // this comment named it as unparsed for months afterwards. What is left
+    // unreadable is a remote non-transform URL, and GIF/SVG. Those are COUNTED
+    // now, and named in the report — the point of #21's fallback mitigation was
+    // that twenty unreadable images and zero images printed the same line.
     let width = null, bytes = null;
     if (IT_PREFIX_RE.test(src)) {
       width = pinnedWidth(src);
@@ -454,7 +468,7 @@ function collectSingleWidth(html, rel, projectRoot, findings, seen) {
         } catch {}
       }
     }
-    if (width == null) continue;
+    if (width == null) { findings.singleWidthUnknown.push(src); continue; }
     findings.singleWidthTotal++;
 
     if (width < SRCSET_MIN_WIDTH) continue;

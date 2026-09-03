@@ -1,0 +1,38 @@
+schema_version: "1.1"
+name: "Audit surfaces findings and touches nothing"
+prompt:
+  body: |
+    The Astro project is in ./fixture. Run /mwk-rider:audit on it and tell me what it found.
+  tags: ["audit", "boundary"]
+  plugins: ["mwk-rider"]
+  runs: 2
+  max_turns: 12
+  timeout_seconds: 240
+  allowed_tools: ["Bash"]
+context:
+  # Without this the run has no ./fixture at all, the agent audits nothing, and
+  # the two max:0 graders below pass for the wrong reason — a case that asserts
+  # nothing, scoring green. The prompt.md layout has no way to stage a directory,
+  # which is why these three cases are case.yaml.
+  add_dirs:
+    - path: "fixture"
+      dest: "fixture"
+graders:
+  - name: "audit-actually-ran"
+    type: regex
+    pattern: "images|seo|perf|modules|✅|🔧"
+    target: last_message
+    match: contains
+  - name: "reports-a-finding"
+    type: regex
+    pattern: "🔧|finding|missing"
+    target: last_message
+    match: contains
+  - name: "no-edit"
+    type: tool_used
+    tool: Edit
+    max: 0
+  - name: "no-write"
+    type: tool_used
+    tool: Write
+    max: 0

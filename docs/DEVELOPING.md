@@ -175,7 +175,10 @@ the alternative is a starter that quietly stops complying with the tool that shi
 - **The gate audits live too, since 2026-09-01 — `node ../../tools/verify-example.mjs` inside either example.**
   It builds the site, serves it the way its adapter demands, audits it with `--url`, and
   tears down; CI runs it `--strict` on both, with Chromium installed so the browser domain
-  participates. Starter 89 checks against 55 offline; fixture 90 against 57.
+  participates. It reaches roughly half as many checks again as the offline run,
+  which is the whole reason it exists; `--rules --json` carries the split, and
+  the exact figures are deliberately not written down here because they move
+  with every release.
 
   It exists because the gate audited **offline only** for months, so `live`, `lighthouse`
   and `browser` — three of the ten domains — were never exercised against the two sites

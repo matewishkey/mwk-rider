@@ -43,9 +43,9 @@ recognising is not recommending, and the distinction is the whole rule.
 💡 = advisory suggestion, never fails · ⏭ = not testable in this mode.
 
 **Modes.** Every rule in the catalogue also carries `mode`: `offline` (reads
-source and `dist/`) or `url` (needs a served site). **53 of the 141 are `url`** —
-the `live`, `lighthouse` and `browser` domains entirely, plus the served-HTML
-twins of offline checks, which is why `meta:og:image` and `og:image` are two rule
+source and `dist/`) or `url` (needs a served site). **A large minority are
+`url`** — the `live`, `lighthouse` and `browser` domains entirely, plus the
+served-HTML twins of offline checks, which is why `meta:og:image` and `og:image` are two rule
 ids for one practice measured in two places. That is deliberate, not
 duplication: served HTML is not always the built HTML, and the analytics domain
 depends on the difference. What was *not* deliberate is that until 2026-09-01 the

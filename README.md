@@ -75,7 +75,7 @@ Use `--strict` when you've adopted the baseline deliberately and want it enforce
 
 A few checks report a *fact* rather than a verdict and are `[advisory]` in **both** modes — `--strict` doesn't promote them, because they have no failing branch at all. `analytics: provider` is the one that matters: it tells you what's delivering analytics, including when the answer is nothing, and never fails a run. Whether you measure your traffic is your call.
 
-`node audit.mjs --rules --json` is the authoritative list of every rule and which of the three it is. Prefer it over any summary written down elsewhere, including this one. Each entry also carries `mode` — `offline` or `url` — because 53 of the 134 rules never fire without `--url`, and a catalogue that does not say so answers "what do you check?" with 40% more than the run you are about to do can reach.
+`node audit.mjs --rules --json` is the authoritative list of every rule and which of the three it is. Prefer it over any summary written down elsewhere, including this one. Each entry also carries `mode` — `offline` or `url` — because a large minority of rules never fire without `--url`, and a catalogue that does not say so answers "what do you check?" with substantially more than the run you are about to do can reach. The split is in `--rules --json`; it is not restated here, because a number written down twice drifts.
 
 ## What it checks
 

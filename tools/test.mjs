@@ -288,6 +288,8 @@ check('  …while a site with none → pass',
   runJson(mkLegacyProject({}), ['-s', 'modules', '--strict']).json?.results.find(r => r.id === 'modules/icons')?.outcome === 'pass');
 const iconFont = runJson(mkBuilt({ 'dist/index.html': '<p>x</p>', 'dist/_astro/app.css': '@font-face{font-family:"Font Awesome 6 Free";src:url(fa.woff2)}' }), ['-s', 'modules', '--strict']).json?.results.find(r => r.id === 'modules/icons-font');
 check('an icon font declared in the built CSS → fix under --strict', iconFont?.outcome === 'fix' && /Font Awesome/.test(iconFont.message ?? ''), JSON.stringify(iconFont));
+check('  …an icon package used only at build time is not a finding',
+  runJson(mkLegacyProject({ devDeps: { '@iconify/tools': '^4.0.0' } }), ['-s', 'modules', '--strict']).json?.results.find(r => r.id === 'modules/icons')?.outcome === 'pass');
 check('  …ordinary CSS → pass',
   runJson(mkBuilt({ 'dist/index.html': '<p>x</p>', 'dist/_astro/app.css': 'body{font-family:Inter,sans-serif}' }), ['-s', 'modules', '--strict']).json?.results.find(r => r.id === 'modules/icons-font')?.outcome === 'pass');
 // A media domain is scraped out of the audited project's own config, so it is
@@ -346,11 +348,12 @@ check('  …and it never fires without <Image>',
 console.log('Astro 7 migration checks fire on a v6-shaped project:');
 // The fixture is compliant by construction, so it only proves these checks stay
 // quiet. Build the known-bad counterpart and prove each one actually fires.
-function mkLegacyProject({ deps = {}, config = '', src = '' } = {}) {
+function mkLegacyProject({ deps = {}, devDeps = null, config = '', src = '' } = {}) {
   const dir = tmpProject('rider-v7-');
   writeFileSync(join(dir, 'package.json'), JSON.stringify({
     name: 'fx', type: 'module', engines: { node: '>=22' },
     dependencies: { astro: '^6.4.2', ...deps },
+    ...(devDeps ? { devDependencies: devDeps } : {}),
   }));
   writeFileSync(join(dir, 'astro.config.mjs'), `export default { output: 'static', ${config} };\n`);
   // Satisfy the *universal* checks so what's left is purely house style — that's
@@ -1838,6 +1841,16 @@ check('  …nor a remote image whose width is unknowable offline',
   singleRows({}, ONE_IMG('https://media.x.test/hero.jpg'))[0]?.outcome === 'skip');
 check('  …nor an SVG routed through a transform — it has no ladder to be missing',
   singleRows({}, ONE_IMG('/cdn-cgi/image/width=1600,format=auto/diagram.svg'))[0]?.outcome === 'skip');
+
+// An unreadable width is a MISSED finding, not an absent one, and the two used
+// to print the same line (#21's fallback mitigation).
+const unmeasurable = mkBuilt({
+  'dist/index.html': '<html><head><link rel="canonical" href="https://x.test/"></head><body>'
+    + '<img src="https://media.x.test/photo.jpg" alt="p"><img src="https://media.x.test/two.jpg" alt="t"></body></html>',
+});
+const blind = runJson(unmeasurable, ['-s', 'images', '--strict']).json?.results.find(r => r.id === 'images/srcset-missing');
+check('images whose width cannot be read offline are counted and named, not silently dropped',
+  /2 single-width <img> could not be measured offline/.test(blind?.message ?? '') && /media\.x\.test/.test(blind?.message ?? ''), JSON.stringify(blind));
 
 // Cross-origin images. tasmanvisa-web served every hero and card from
 // media.tasmanvisa.com with no preconnect: blog index LCP 5424 ms, ~3500 ms once

@@ -586,14 +586,19 @@ function checkMdxReachable(project, deps, reporter) {
  * SVGs is never flagged; the font check reads the CSS the build actually shipped.
  */
 const ICON_PACKAGES = [
-  /^astro-icon$/, /^@iconify(-json)?\//, /^@iconify\//, /^react-icons$/, /^lucide(-[\w-]+)?$/,
+  /^astro-icon$/, /^@iconify(-json|-icons)?\//, /^react-icons$/, /^lucide(-[\w-]+)?$/, /^@lucide\//,
   /^@fortawesome\//, /^font-awesome$/, /^@tabler\/icons/, /^@phosphor-icons\//, /^@heroicons\//,
   /^@material-symbols\//, /^material-icons$/, /^bootstrap-icons$/, /^feather-icons$/,
 ];
-const ICON_FONT_RE = /font-family\s*:\s*["']?\s*(Font ?Awesome|Material (Icons|Symbols)|icomoon|Glyphicons|bootstrap-icons|feather|IcoFont|Ionicons|fontello|Font Awesome \d)/i;
+const ICON_FONT_RE = /font-family\s*:\s*["']?\s*(Font ?Awesome|Material (Icons|Symbols)|icomoon|Glyphicons|bootstrap-icons|feather|IcoFont|Ionicons|fontello)/i;
 
 function checkIcons(project, deps, reporter) {
-  const packages = Object.keys(deps).filter((d) => ICON_PACKAGES.some((re) => re.test(d)));
+  // Runtime dependencies only. A site that follows this baseline by inlining SVG
+  // bodies but GENERATES `src/lib/icons.ts` with a tool at build time ships no
+  // icon package at all, and reading devDependencies reported it anyway.
+  void deps;
+  const runtimeDeps = project.packageJson?.dependencies ?? {};
+  const packages = Object.keys(runtimeDeps).filter((d) => ICON_PACKAGES.some((re) => re.test(d)));
   if (packages.length) {
     reporter.fix(SEC, 'icons', `icon package(s) in dependencies: ${packages.join(', ')}`, 'copy the bodies of the glyphs the pages actually use into src/lib/icons.ts and inline them through one component — no package, nothing on the critical path');
   } else {
@@ -604,26 +609,44 @@ function checkIcons(project, deps, reporter) {
   // above, a CDN stylesheet, or a hand-written @font-face.
   const distDir = join(project.root, 'dist');
   if (!existsSync(distDir)) { reporter.skip(SEC, 'icons:font', 'no dist/ — build the site to check the shipped CSS for an icon font'); return; }
-  const hit = findInDist(distDir, /\.css$/, ICON_FONT_RE);
-  if (hit) {
-    reporter.fix(SEC, 'icons:font', `an icon font is declared in ${hit.file} (${hit.match})`, 'replace the font with inline SVG for the glyphs in use — a webfont on the critical path for icons costs a connection, a flash of missing glyphs, and every icon whether used or not');
+  const found = findInDist(distDir, /\.css$/, ICON_FONT_RE);
+  if (found.hit) {
+    reporter.fix(SEC, 'icons:font', `an icon font is declared in ${found.hit.file} (${found.hit.match})`, 'replace the font with inline SVG for the glyphs in use — a webfont on the critical path for icons costs a connection, a flash of missing glyphs, and every icon whether used or not');
+  } else if (found.truncated) {
+    reporter.skip(SEC, 'icons:font', 'too many stylesheets in dist/ to read within budget — this did not look at all of them, so it is not a pass');
   } else {
     reporter.pass(SEC, 'icons:font', 'no icon font in the built CSS');
   }
 }
 
-/** First file under `dir` matching `nameRe` whose text matches `re`, with the match. Bounded walk. */
-function findInDist(dir, nameRe, re, budget = { n: 3000 }) {
+/**
+ * First file under `dir` matching `nameRe` whose text matches `re`.
+ *
+ * `{ hit }` when found, `{ truncated: true }` when the budget ran out before the
+ * walk finished, `{}` when it looked everywhere and found nothing. Those last
+ * two used to be the same `null`, so on a large adapter build — where thousands
+ * of `dist/_worker.js/` entries are visited first — the caller printed "no icon
+ * font in the built CSS" for a walk that had never opened a stylesheet.
+ *
+ * The budget counts files it actually READS, not every directory entry it steps
+ * over, so a big build no longer exhausts it before reaching the CSS.
+ */
+function findInDist(dir, nameRe, re, budget = { n: 400 }) {
   let entries;
-  try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return null; }
+  try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return {}; }
   for (const e of entries) {
-    if (budget.n-- <= 0) return null;
     const full = join(dir, e.name);
-    if (e.isDirectory()) { const r = findInDist(full, nameRe, re, budget); if (r) return r; continue; }
+    if (e.isSymbolicLink()) continue;
+    if (e.isDirectory()) {
+      const r = findInDist(full, nameRe, re, budget);
+      if (r.hit || r.truncated) return r;
+      continue;
+    }
     if (!nameRe.test(e.name)) continue;
+    if (budget.n-- <= 0) return { truncated: true };
     let text; try { text = readFileSync(full, 'utf8'); } catch { continue; }
     const m = text.match(re);
-    if (m) return { file: relative(dir, full), match: m[1] ?? m[0] };
+    if (m) return { hit: { file: relative(dir, full), match: m[1] ?? m[0] } };
   }
-  return null;
+  return {};
 }

@@ -29,7 +29,7 @@ node ${CLAUDE_PLUGIN_ROOT}/tools/audit.mjs --url <the-url>
 
 Useful flags: `-s <domain>` (repeatable) to scope; `--strict` to require the house-style baseline too; `--post <path>` to audit a specific live page instead of a discovered one; `--strategy desktop` to measure Lighthouse *and* the browser domain at desktop width instead of a phone's (both default to `mobile`); `--json` for machine-readable output; `--verbose` to see the `✅` lines (they are hidden whenever nobody is watching a TTY — piped output, `$CI`, or `$CLAUDECODE`, which means always in here). `--url` works from any directory — the offline domains need an Astro project in cwd, a live run only needs the URL.
 
-`--rules --json` lists every rule the tool can emit, with its severity, its `mode` and one line of why. That is the authoritative list; prefer it over any summary written down elsewhere. **`mode` is worth reading before you promise anything:** `offline` runs on source and `dist/`, `url` needs a served site. 53 of the 134 rules are `url` — so an offline run reaches 81 of them, and reporting "everything checks out" after one overstates what was looked at by 40%.
+`--rules --json` lists every rule the tool can emit, with its severity, its `mode` and one line of why. That is the authoritative list; prefer it over any summary written down elsewhere. **`mode` is worth reading before you promise anything:** `offline` runs on source and `dist/`, `url` needs a served site. A large minority are `url`-only, so reporting "everything checks out" after an offline run overstates what was looked at. Count them from `--rules --json` if you need the number; it is deliberately not written down here, because a restated count drifts.
 
 Seven offline domains, plus three that need `--url`:
 
