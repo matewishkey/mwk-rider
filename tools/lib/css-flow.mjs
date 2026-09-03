@@ -24,6 +24,8 @@
 // of flow?" — and errs toward silence. Missing one genuinely shifting image
 // costs a finding; crying wolf 20 times costs the domain its credibility.
 
+import { attrValue } from './html.mjs';
+
 // A rule body, minus nested at-rule wrappers: `@media (x) { .a { … } }` never
 // matches as a whole (its body has braces), so the engine advances and matches
 // the inner `.a { … }` on its own. Flat rules and nested ones both land here.
@@ -67,9 +69,8 @@ export function stylesheetHrefs(html) {
   const out = [];
   for (const m of String(html ?? '').matchAll(/<link\b((?:"[^"]*"|'[^']*'|[^>])*)>/gi)) {
     const attrs = m[1];
-    if (!/(?:^|\s)stylesheet(?:\s|$)/i.test(attrs.match(/(?:^|\s)rel\s*=\s*["']?([^"'>]*)/i)?.[1] ?? '')) continue;
-    const href = attrs.match(/(?:^|\s)href\s*=\s*(["'])([^"']*)\1/i)?.[2]
-              ?? attrs.match(/(?:^|\s)href\s*=\s*([^\s>"']+)/i)?.[1];
+    if (!/(?:^|\s)stylesheet(?:\s|$)/i.test(attrValue(attrs, 'rel') ?? '')) continue;
+    const href = attrValue(attrs, 'href');
     if (href) out.push(href);
   }
   return out;
@@ -83,14 +84,17 @@ export function stylesheetHrefs(html) {
  * and id are matched against what the stylesheets positioned.
  */
 export function isOutOfFlow(attrs, flow) {
-  const style = attrs.match(/(?:^|\s)style\s*=\s*(["'])([^"']*)\1/i)?.[2] ?? '';
+  // Read through attrValue, not four local copies of it: a `style` attribute
+  // routinely carries the other quote (`style="font-family:'Inter';
+  // position:absolute"`), and the class that excluded both used to read that as
+  // no style at all — losing the out-of-flow carve-out on exactly the images it
+  // exists for.
+  const style = attrValue(attrs, 'style') ?? '';
   if (OUT_OF_FLOW_RE.test(`;${style};`)) return true;
   if (!flow) return false;
   if (flow.tags?.has('img')) return true;
-  const classAttr = attrs.match(/(?:^|\s)class\s*=\s*(["'])([^"']*)\1/i)?.[2]
-                 ?? attrs.match(/(?:^|\s)class\s*=\s*([^\s>"']+)/i)?.[1] ?? '';
+  const classAttr = attrValue(attrs, 'class') ?? '';
   if (classAttr.split(/\s+/).some((c) => c && flow.classes.has(c))) return true;
-  const id = attrs.match(/(?:^|\s)id\s*=\s*(["'])([^"']*)\1/i)?.[2]
-          ?? attrs.match(/(?:^|\s)id\s*=\s*([^\s>"']+)/i)?.[1] ?? '';
+  const id = attrValue(attrs, 'id') ?? '';
   return Boolean(id && flow.ids.has(id));
 }

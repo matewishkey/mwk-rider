@@ -70,7 +70,7 @@ function checkCls(project, reporter) {
     let text;
     try { text = readFileSync(join(project.root, relPath), 'utf8'); }
     catch { return; }   // unreadable file — skip it, never lose the domain
-    const re = /<img\b([^>]*)>/gi;
+    const re = /<img\b((?:"[^"]*"|'[^']*'|[^>])*)>/gi;
     let m;
     while ((m = re.exec(text)) !== null) {
       const attrs = m[1];
@@ -462,6 +462,10 @@ function checkCrossOrigin(project, reporter) {
   // attribute — the fetch mode the preconnect has to match (see reportPreconnect).
   const hosts = new Map();
   const preloadIssues = [];
+  // How many `preload as=image` links were seen at all — the difference between
+  // "every preload matches its <img>" and "there were no preloads", which this
+  // check used to report identically by saying nothing in both cases.
+  const preloads = { count: 0 };
   let pagesJudged = 0;
 
   eachDistHtml(project.root, (rel, html) => {
@@ -512,11 +516,11 @@ function checkCrossOrigin(project, reporter) {
     // A preconnect to a host this page loads no images from is not this check's
     // business (a font or an API origin), so it is recorded only above.
 
-    collectPreloadMismatches(head, html, page, preloadIssues);
+    collectPreloadMismatches(head, html, page, preloadIssues, preloads);
   });
 
   reportPreconnect(hosts, pagesJudged, reporter);
-  reportPreloadPairs(preloadIssues, reporter);
+  reportPreloadPairs(preloadIssues, preloads.count, reporter);
 }
 
 function pageOrigin(html, configSite) {
@@ -644,11 +648,12 @@ function reportPreconnect(hosts, pagesJudged, reporter) {
  * `srcset`/`sizes`, the browser resolves two different candidates and downloads
  * the image twice — the preload makes the page slower than none at all.
  */
-function collectPreloadMismatches(head, html, page, out) {
+function collectPreloadMismatches(head, html, page, out, seen) {
   for (const m of head.matchAll(/<link\b((?:"[^"]*"|'[^']*'|[^>])*)>/gi)) {
     const attrs = m[1];
     if (!/(?:^|\s)preload(?:\s|$)/i.test(attrValue(attrs, 'rel') ?? '')) continue;
     if ((attrValue(attrs, 'as') ?? '').toLowerCase() !== 'image') continue;
+    seen.count++;
     const imagesrcset = attrValue(attrs, 'imagesrcset');
     const href = attrValue(attrs, 'href');
     const imagesizes = attrValue(attrs, 'imagesizes');
@@ -677,8 +682,18 @@ function collectPreloadMismatches(head, html, page, out) {
 
 const norm = (s) => s.replace(/\s+/g, ' ').trim();
 
-function reportPreloadPairs(issues, reporter) {
-  if (issues.length === 0) return;   // nothing to say when no preload as=image exists
+function reportPreloadPairs(issues, preloads, reporter) {
+  // Silence used to cover both outcomes: a build with no image preloads and a
+  // build whose preloads all match printed nothing, so the rule was absent from
+  // the report either way and a reader could not tell it had run.
+  if (preloads === 0) {
+    reporter.skip(SEC, 'preload:pair', 'no <link rel="preload" as="image"> in any built page — nothing to pair against an <img>');
+    return;
+  }
+  if (issues.length === 0) {
+    reporter.pass(SEC, 'preload:pair', `${preloads} image preload(s), each matching the <img> it preloads`);
+    return;
+  }
   for (const i of issues) {
     reporter.fix(SEC, 'preload:pair', `preload as="image" does not match the <img> it preloads (${i.which}) — the browser resolves two candidates and downloads the image twice`, 'make the preload\'s imagesrcset/imagesizes byte-identical to the tag\'s srcset/sizes', { file: i.page });
   }

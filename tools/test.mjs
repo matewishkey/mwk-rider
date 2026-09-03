@@ -467,6 +467,30 @@ check('sitemap with no <lastmod> → suggest, even with @astrojs/sitemap install
 const withLastmod = row(mkBuilt({ 'dist/sitemap-0.xml': SITEMAP(true) }), 'seo', 'seo/sitemap-lastmod');
 check('  …and one that carries it → pass', withLastmod?.outcome === 'pass', JSON.stringify(withLastmod));
 
+// canonical:unique compares the canonical URLs a build declares. With none to
+// compare it printed "✅ 0 distinct canonical URL(s)" directly underneath
+// meta:canonical's finding that there are none — a green tick for a comparison
+// that never happened, which is the pass-for-work-never-done CONTRIBUTING
+// forbids and the reason every other empty-set branch in the tool skips.
+const PLAIN = '<html><head><title>t</title></head><body><h1>t</h1></body></html>';
+const noCanon = row(mkBuilt({
+  'dist/index.html': PLAIN, 'dist/a/index.html': PLAIN, 'dist/b/index.html': PLAIN,
+}), 'seo', 'seo/canonical-unique');
+check('no page declares a canonical → ⏭, never a pass for a comparison never made',
+  noCanon?.outcome === 'skip', JSON.stringify(noCanon));
+const CANON_AT = (u) => `<html><head><link rel="canonical" href="${u}"><title>t</title></head><body><h1>t</h1></body></html>`;
+const sameCanon = row(mkBuilt({
+  'dist/index.html': CANON_AT('https://x.test/'), 'dist/a/index.html': CANON_AT('https://x.test/'),
+  'dist/b/index.html': CANON_AT('https://x.test/'),
+}), 'seo', 'seo/canonical-unique');
+check('  …while a site-wide constant canonical is still reported',
+  sameCanon?.outcome === 'suggest', JSON.stringify(sameCanon));
+const distinctCanon = row(mkBuilt({
+  'dist/index.html': CANON_AT('https://x.test/'), 'dist/a/index.html': CANON_AT('https://x.test/a'),
+  'dist/b/index.html': CANON_AT('https://x.test/b'),
+}), 'seo', 'seo/canonical-unique');
+check('  …and per-page canonicals pass', distinctCanon?.outcome === 'pass', JSON.stringify(distinctCanon));
+
 // JSON-LD — parse the page. Requiring the literal "BlogPosting" in a file named
 // src/lib/jsonld.ts told all five sites they had none.
 const article = row(mkBuilt({ 'dist/index.html': PAGE_LD([{ '@type': 'WebSite' }, { '@type': 'Article' }]) }), 'data', 'data/jsonld-shapes');
@@ -723,7 +747,7 @@ check('> inside an attribute value does not hide alt',
 check('srcset-only image with no alt is still caught',
   imgsMissingAlt('<img srcset="/a.png 1x, /b.png 2x">').length === 1);
 
-const { attrValue, hasAttr, srcsetUrls } = await import('./lib/html.mjs');
+const { attrValue, hasAttr, srcsetUrls, contentImgs } = await import('./lib/html.mjs');
 check('data-src does not satisfy src', attrValue('data-src="/a.png"', 'src') === null);
 check('data-width does not satisfy width', hasAttr('data-width="8"', 'width') === false);
 check('unquoted attribute values are read', attrValue('src=/a.png', 'src') === '/a.png');
@@ -740,6 +764,31 @@ check('  …while a genuinely missing alt is still caught',
   imgsMissingAlt('<img src="/a.webp" width="16" height="9">').length === 1);
 check('a bare attribute name does not match a longer one',
   hasAttr('widths="1"', 'width') === false);
+
+// A quoted value ends at the quote that OPENED it. Excluding every quote from
+// the value class made an attribute carrying the other one match nothing, and a
+// non-match is indistinguishable from an absent attribute — so an <img> whose
+// src held an apostrophe fell out of every check that resolves an image by src.
+check("an apostrophe inside a double-quoted value is read, not truncated",
+  attrValue('alt="it\'s here" src="/a.webp"', 'alt') === "it's here");
+check('  …and a double quote inside a single-quoted value',
+  attrValue("src='mate\"s.webp'", 'src') === 'mate"s.webp');
+check('  …so the image is still seen by the content-image scan',
+  contentImgs("<img src='mate\"s.webp' alt='x'>").length === 1);
+
+// The same regex, twice, in the two config readers. `tagline: "Australia's visa
+// specialists"` read as MISSING, which seo: brand.tagline then reported as
+// `missing (used by SEO meta)` — a required finding under --strict against a
+// config that is completely correct.
+const { configString } = await import('./lib/config-string.mjs');
+check('a config value containing an apostrophe is read, not reported absent',
+  configString(`{ siteName: "Australia's Visa Specialists" }`, 'siteName') === "Australia's Visa Specialists");
+check('  …and an escaped quote inside its own quote type',
+  configString("{ tagline: 'It\\'s us' }", 'tagline') === "It's us");
+check('  …while a genuinely absent key is still null',
+  configString(`{ siteName: "x" }`, 'tagline') === null);
+check('  …and a value does not run past its line into the next key',
+  configString(`{ a: "unterminated\n  siteUrl: 'https://x.test' }`, 'siteUrl') === 'https://x.test');
 
 // A site using BaseHead.astro rather than SEO.astro is not wrong. This used to
 // emit required findings AND silently skip every meta:* check.
@@ -1936,9 +1985,13 @@ const mismatched = perfRow('perf/preload-pair', IMG,
   '<link rel="preload" as="image" imagesrcset="/h-800.webp 800w, /h-1600.webp 1600w" imagesizes="100vw">');
 check('a preload as="image" whose imagesizes differ from the tag → fix',
   mismatched?.outcome === 'fix' && /imagesizes/.test(mismatched.message ?? ''), JSON.stringify(mismatched));
-check('  …while a byte-identical pair reports nothing',
+// Silence used to cover both "they all match" and "there were none", so the
+// rule was absent from the report either way and nothing said it had run.
+check('  …while a byte-identical pair reports a pass, not silence',
   perfRow('perf/preload-pair', IMG,
-    '<link rel="preload" as="image" imagesrcset="/h-800.webp 800w, /h-1600.webp 1600w" imagesizes="(max-width: 700px) 100vw, 700px">') === null);
+    '<link rel="preload" as="image" imagesrcset="/h-800.webp 800w, /h-1600.webp 1600w" imagesizes="(max-width: 700px) 100vw, 700px">')?.outcome === 'pass');
+check('  …and a build with no image preload at all reports ⏭, not the same silence',
+  perfRow('perf/preload-pair', IMG)?.outcome === 'skip');
 
 // A Cloudflare transform path carries commas, so splitting a srcset on `,` made
 // every transformed image on the page share the fragment `format=auto`. The
@@ -1955,7 +2008,7 @@ check('  …while no-space commas are one URL, exactly as a browser reads them',
 check('a preload for an image with no <img> on the page pairs with nothing',
   perfRow('perf/preload-pair',
     `<img src="${CF(400, 'sydney.jpg')}" srcset="${CF(400, 'sydney.jpg')} 400w, ${CF(800, 'sydney.jpg')} 800w" sizes="50vw" alt="s">`,
-    `<link rel="preload" as="image" imagesrcset="${CF(800, 'hero.webp')} 1x" imagesizes="100vw">`) === null);
+    `<link rel="preload" as="image" imagesrcset="${CF(800, 'hero.webp')} 1x" imagesizes="100vw">`)?.outcome === 'pass');
 
 // A pass with no message is indistinguishable from a check that never ran —
 // the failure mode this tool cares most about. Asserted as an invariant rather

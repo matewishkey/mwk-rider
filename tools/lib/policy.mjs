@@ -97,7 +97,6 @@ const HOUSE_STYLE = [
   'data:llms.txt:served',
   'data:llms.txt:structure',
   'images:delivery',            // /cdn-cgi/image delivery shape
-  'images:transform:*',
 ];
 
 // Advisory by construction — the check has no 🔧/🛑 branch at all, in either

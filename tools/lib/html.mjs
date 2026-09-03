@@ -80,8 +80,14 @@ export function headingAudit(levels) {
 // never \b — \b matches inside `data-src`/`data-width`/`data-alt`, which both
 // invents findings for tags that lack the real attribute and lets a genuine
 // offender pass because its `data-` twin satisfied the test.
+// A quoted value ends at the quote that OPENED it, not at any quote. Excluding
+// all three from the value class — which is what this did — meant an attribute
+// carrying the other quote matched nothing, and a non-match is indistinguishable
+// from an absent attribute: `alt="it's"` read as no alt, `src="mate's dog.webp"`
+// dropped the image out of every content-image check that resolves it by src.
+// An apostrophe inside a double-quoted attribute is ordinary HTML.
 export function attrValue(attrs, name) {
-  return attrs.match(new RegExp(`(?:^|\\s)${name}\\s*=\\s*(["'\`])([^"'\`]*)\\1`, 'i'))?.[2]
+  return attrs.match(new RegExp(`(?:^|\\s)${name}\\s*=\\s*(["'\`])((?:(?!\\1)[\\s\\S])*)\\1`, 'i'))?.[2]
       ?? attrs.match(new RegExp(`(?:^|\\s)${name}\\s*=\\s*([^\\s>"'\`]+)`, 'i'))?.[1]
       ?? null;
 }

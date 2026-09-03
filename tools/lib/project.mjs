@@ -10,6 +10,7 @@
 
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { configString } from './config-string.mjs';
 
 export async function detectProject(cwd) {
   const packageJsonRaw = readFileIfExists(join(cwd, 'package.json'));
@@ -58,8 +59,8 @@ export async function detectProject(cwd) {
 function parseOgConfig(src) {
   const out = {};
   for (const key of ['mediaDomain', 'siteName', 'siteUrl', 'tagline', 'authorName', 'authorUrl', 'twitterSite', 'twitterCreator']) {
-    const m = src.match(new RegExp(`\\b${key}\\s*:\\s*(['"\`])([^'"\`]*)\\1`));
-    if (m && m[2].trim()) out[key] = m[2];
+    const value = configString(src, key);
+    if (value && value.trim()) out[key] = value;
   }
   return Object.keys(out).length ? out : null;
 }

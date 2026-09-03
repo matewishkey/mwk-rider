@@ -7,6 +7,8 @@
 //                fallbacks: ['sans-serif'], optimizedFallbacks: true, formats: ['woff2'] }
 // The one that costs bytes silently is `styles`: a family declared without it
 // gets italic faces built and shipped whether or not anything renders italic.
+import { configString } from './config-string.mjs';
+
 export const FONT_DEFAULT_STYLES = ['normal', 'italic'];
 
 /**
@@ -26,8 +28,8 @@ export function fontFamilies(configText) {
 
   const out = [];
   for (const entry of objectsIn(block)) {
-    const name = str(entry, 'name');
-    const cssVariable = str(entry, 'cssVariable');
+    const name = configString(entry, 'name');
+    const cssVariable = configString(entry, 'cssVariable');
     if (!name && !cssVariable) continue;
     out.push({
       name,
@@ -38,10 +40,6 @@ export function fontFamilies(configText) {
     });
   }
   return out;
-}
-
-function str(text, key) {
-  return text.match(new RegExp(`\\b${key}\\s*:\\s*(['"\`])([^'"\`]*)\\1`))?.[2] ?? null;
 }
 
 /** The substring from `open` to its matching close, exclusive of both. */

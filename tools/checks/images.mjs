@@ -249,7 +249,10 @@ function scanImgTags(text, relPath, findings) {
   // Match the tag, then read `src` off its attributes with the shared helper —
   // an inline `\bsrc=` pattern also matches `data-src=`, inventing a finding for
   // a lazy-loaded image and quoting a src attribute the tag never had.
-  const re = /<img\b([^>]*)>/g;
+  // Quote-aware, like every other tag scanner here: `[^>]*` stops at a `>`
+  // inside an attribute value, which truncates the attribute string and can
+  // drop the `src` this reads off it.
+  const re = /<img\b((?:"[^"]*"|'[^']*'|[^>])*)>/g;
   let m;
   while ((m = re.exec(text)) !== null) {
     const src = attrValue(m[1], 'src');

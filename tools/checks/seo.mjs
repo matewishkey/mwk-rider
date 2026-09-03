@@ -159,8 +159,16 @@ function checkCanonicalValues(reporter, pages, denominator) {
     byValue.get(href).push(p.rel);
   }
   if (byValue.size < 2 && pages.length < 2) return;   // nothing to compare
+  // No page carries a canonical at all. `meta:canonical` reports that; what this
+  // must not do is print "✅ 0 distinct canonical URL(s)" underneath it, which is
+  // a green tick for a comparison that had nothing to compare — the pass-for-work-
+  // never-done that CONTRIBUTING § "never let a check silently not run" forbids.
+  if (byValue.size === 0) {
+    reporter.skip(SEC, 'canonical:unique', `none of the ${pages.length} ${denominator} declares a canonical URL — nothing to compare (see seo: meta:canonical)`);
+    return;
+  }
   const worst = [...byValue.entries()].sort((a, b) => b[1].length - a[1].length)[0];
-  if (!worst || worst[1].length * 2 <= pages.length) {
+  if (worst[1].length * 2 <= pages.length) {
     reporter.pass(SEC, 'canonical:unique', `${byValue.size} distinct canonical URL(s) across ${pages.length} ${denominator}`);
     return;
   }

@@ -453,7 +453,7 @@ async function auditImages(home, postPath, base, get, head, reporter) {
 
   const imgs = [];
   for (const page of pages) {
-    const re = /<img\b([^>]*)>/gi;
+    const re = /<img\b((?:"[^"]*"|'[^']*'|[^>])*)>/gi;
     let m;
     while ((m = re.exec(page.text)) !== null) {
       const attrs = m[1];
