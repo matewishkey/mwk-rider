@@ -790,6 +790,39 @@ check('  …while a genuinely absent key is still null',
 check('  …and a value does not run past its line into the next key',
   configString(`{ a: "unterminated\n  siteUrl: 'https://x.test' }`, 'siteUrl') === 'https://x.test');
 
+// A branded 404 that Cloudflare never serves. `404:custom` only asks whether
+// src/pages/404.astro exists; on Workers Static Assets an unmatched URL is
+// answered by the Worker if there is one and otherwise by a bare platform 404,
+// so the baseline's own default shape (static, no adapter, no `main`) builds a
+// 404 page that ships and never renders.
+const wrangler = (body) => {
+  const d = tmpProject('rider-404-');
+  writeFileSync(join(d, 'package.json'), JSON.stringify({ name: 'fx', type: 'module', dependencies: { astro: '^7.1.6' } }));
+  writeFileSync(join(d, 'astro.config.mjs'), "export default { output: 'static' };\n");
+  writeFileSync(join(d, 'wrangler.jsonc'), body);
+  return runJson(d, ['-s', 'modules', '--strict']).json?.results.find(r => r.id === 'modules/404-served') ?? null;
+};
+const noHandling = wrangler('{ "name": "s", "assets": { "directory": "./dist" } }');
+check('static assets with no `main` and no not_found_handling → fix',
+  noHandling?.outcome === 'fix', JSON.stringify(noHandling));
+check('  …satisfied by not_found_handling: "404-page"',
+  wrangler('{ "name": "s", "assets": { "directory": "./dist", "not_found_handling": "404-page" } }')?.outcome === 'pass');
+check('  …and by a Worker `main`, which answers unmatched URLs itself',
+  wrangler('{ "name": "s", "main": "./src/index.ts", "assets": { "directory": "./dist" } }')?.outcome === 'pass');
+// The comment trap. wrangler.jsonc carries comments by design — the starter's is
+// full of them — and a commented-out setting satisfying a check is the failure
+// this repo has already fixed three times elsewhere.
+const commentedWrangler = wrangler('{\n // "not_found_handling": "404-page"\n "name": "s",\n "assets": { "directory": "./dist" }\n}');
+check('  …but NOT by a commented-out one',
+  commentedWrangler?.outcome === 'fix', JSON.stringify(commentedWrangler));
+check('  …and a project with no wrangler config skips rather than failing',
+  (() => {
+    const d = tmpProject('rider-404n-');
+    writeFileSync(join(d, 'package.json'), JSON.stringify({ name: 'fx', type: 'module', dependencies: { astro: '^7.1.6' } }));
+    writeFileSync(join(d, 'astro.config.mjs'), "export default { output: 'static' };\n");
+    return runJson(d, ['-s', 'modules', '--strict']).json?.results.find(r => r.id === 'modules/404-served')?.outcome === 'skip';
+  })());
+
 // A site using BaseHead.astro rather than SEO.astro is not wrong. This used to
 // emit required findings AND silently skip every meta:* check.
 const headDir = tmpProject('rider-head-');
@@ -946,6 +979,14 @@ const cover = '<!doctype html><html><head>' + head('/cover', '{"@type":"TechArti
   + '</body></html>';
 const coverCss = '.frame { position: relative; aspect-ratio: 16/9; }\\n'
   + '@media (min-width: 40em) { .cover-image { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; } }\\n';
+// Cloudflare Image Transformations are a PER-ZONE toggle, and whether they are
+// on is invisible in the HTML — the same markup serves optimized bytes, the raw
+// original, or a 404 depending on a dashboard switch. Three pages, one per
+// outcome. The cf-resized header shape is verbatim from a real transformed
+// response measured 2026-09-03.
+const TX = (p) => '/cdn-cgi/image/width=800,format=auto,quality=80' + p;
+const txPage = (slug, src) => '<!doctype html><html><head>' + head('/' + slug, '{"@type":"TechArticle"}')
+  + '</head><body><h1>Tx</h1><img src="' + src + '" width="800" height="450" alt="a photo"></body></html>';
 const sitemapIndex = '<?xml version="1.0"?><sitemapindex><sitemap><loc>http://HOST/sitemap-0.xml</loc></sitemap></sitemapindex>';
 const sitemap = '<?xml version="1.0"?><urlset><url><loc>http://HOST/</loc></url>'
   + '<url><loc>http://HOST/wiki</loc></url><url><loc>http://HOST/wiki/kettle-clock</loc></url></urlset>';
@@ -965,6 +1006,17 @@ const srv = createServer((req, res) => {
     res.writeHead(200, { 'content-type': 'text/javascript', 'content-length': String(buf.length), 'cache-control': 'no-cache' });
     return res.end(req.method === 'HEAD' ? undefined : buf);
   }
+  // Transformed: 200 + cf-resized, the shape Cloudflare really returns.
+  if (url === '/txok') return send(txPage('txok', TX('/photo.png')), 'text/html');
+  if (url === TX('/photo.png')) {
+    res.writeHead(200, { 'content-type': 'image/webp', 'content-length': String(png.length), 'cf-resized': 'internal=ok/m q=0 n=372+145 c=22+37 v=2026.9.0 l=' + png.length + ' f=false' });
+    return res.end(req.method === 'HEAD' ? undefined : png);
+  }
+  // Transformations OFF for the zone: the reserved path is not handled and 404s.
+  if (url === '/txoff') return send(txPage('txoff', TX('/missing.png')), 'text/html');
+  // Answered, but never transformed — no cf-resized, so these are the raw bytes.
+  if (url === '/txraw') return send(txPage('txraw', TX('/raw.png')), 'text/html');
+  if (url === TX('/raw.png')) return send(png, 'image/png');
   if (url === '/og/card.avif') return send(avifCard, 'image/avif');
   if (url === '/og/big.png') return send(bigPng, 'image/png');
   if (url.startsWith('/og/')) return send(png, 'image/png');
@@ -1067,6 +1119,37 @@ check('  …and TechArticle satisfies the Article-family shape',
 // the page worse — so reporting one as a *missing* Article is the check assuming
 // every content page wants to be a blog post. Reported by matewishkey-web, whose
 // /glossary/* pages were flagged while their /projects/* carried BlogPosting.
+// Whether Cloudflare is ACTUALLY transforming. `routed` reports the URL shape,
+// and a shape is not a delivery: with the zone toggle off every /cdn-cgi/image/
+// URL 404s, and the live loop used to read a content-length of 0 off it and say
+// nothing at all — ✅ routed, no findings, a wholly broken image lane.
+const txRows = (post) => runJson(tmpdir(), ['-s', 'live', '--url', `http://127.0.0.1:${port}`, '--post', post]).json?.results ?? [];
+const txOk = txRows('/txok');
+check('a transform URL answering with cf-resized → transform:applied passes',
+  txOk.find(r => r.id === 'images/transform-applied')?.outcome === 'pass',
+  JSON.stringify(txOk.find(r => r.id === 'images/transform-applied')));
+check('  …and images:resolves passes with it',
+  txOk.find(r => r.id === 'images/resolves')?.outcome === 'pass');
+
+const txOff = txRows('/txoff');
+const offResolve = txOff.find(r => r.id === 'images/resolves');
+check('a transform URL that 404s → images:resolves fires, naming the zone toggle',
+  offResolve?.outcome === 'fix' && /Image Transformations not enabled/.test(offResolve.message ?? ''),
+  JSON.stringify(offResolve));
+
+const txRaw = txRows('/txraw');
+const rawRow = txRaw.find(r => r.id === 'images/transform-applied');
+check('a transform URL served WITHOUT cf-resized → not transformed, however healthy the 200 looks',
+  rawRow?.outcome === 'fix' && /no cf-resized/.test(rawRow.message ?? ''), JSON.stringify(rawRow));
+// Universal, not house style, and the distinction is load-bearing: this check
+// never asks a site to adopt Cloudflare transforms — it fires only once the
+// site has chosen them and they are not running. Demoted to 💡 it would report
+// a dead image lane as an optional suggestion.
+check('  …and it is a required finding by default, not [baseline] advice',
+  rawRow?.houseStyle !== true, JSON.stringify(rawRow?.houseStyle));
+check('  …while a page with no transform URLs skips rather than passes',
+  txRows('/cover').find(r => r.id === 'images/transform-applied')?.outcome === 'skip');
+
 const glossary = runJson(tmpdir(), ['-s', 'live', '--url', `http://127.0.0.1:${port}`, '--post', '/glossary/agent'])
   .json?.results.find(r => r.id === 'data/post-jsonld');
 check('a DefinedTerm page → pass, naming it as the page\'s own type',

@@ -40,6 +40,7 @@ const RULES = [
   ['modules/compresshtml', 'modules', 'compressHTML', 'Astro 7 changed the default to "jsx", which strips the whitespace between prose and an inline element. Builds clean, ships wrong text.'],
   ['modules/clientrouter', 'modules', 'ClientRouter', 'View transitions / SPA-style navigation come from <ClientRouter /> in the root layout.'],
   ['modules/fonts', 'modules', 'fonts', "A font CDN costs a DNS+TLS round-trip on the critical path, ships no fallback metrics, and leaks every visitor's IP."],
+  ['modules/404-served', 'modules', '404:served', "Workers Static Assets answers an unmatched URL with a bare platform 404 unless a Worker handles it or assets.not_found_handling is set — so a branded 404 can build, ship and never render."],
   ['modules/404-custom', 'modules', '404:custom', 'A branded 404 rather than the host default.'],
   ['modules/remotepatterns', 'modules', 'remotePatterns', 'A media domain not in image.remotePatterns makes transforms on it fail.'],
   ['modules/icons', 'modules', 'icons', 'An icon package is a dependency for a dozen paths and invites importing a whole set; inline the glyphs in use.'],
@@ -93,6 +94,8 @@ const RULES = [
   ['images/srcset-missing', 'images', 'srcset:missing', 'A large image shipping one fixed width sends the desktop file to every phone. The thresholds are measured, and a logo or a diagram that is legitimately one size is guarded out.'],
   ['images/transform-params', 'images', 'transform:params', 'Reports when there were no transform URLs to inspect.'],
   ['images/transform-format', 'images', 'transform:format', 'format=auto lets Cloudflare negotiate AVIF/webp; an explicit format forfeits that and can fall back to the raw source.'],
+  ['images/resolves', 'images', 'resolves', 'Live only: a content image the page requests but the server does not serve is broken for every visitor, and a 404 has no content-length to trip a byte budget.'],
+  ['images/transform-applied', 'images', 'transform:applied', 'Live only: Image Transformations are a per-zone toggle. A /cdn-cgi/image/ URL on a zone where they are off serves the untransformed original, or nothing — and looks identical in the HTML.'],
   ['images/transform-quality', 'images', 'transform:quality', 'Without an explicit quality= Cloudflare defaults to 85, which is generous for photographs.'],
   // 'images/optimized' lived here until 2026-09-01. The check was renamed to
   // `images: routed` in ba29c9d and the catalogue entry was never removed, so

@@ -36,6 +36,10 @@ export async function detectProject(cwd) {
     tsconfigMalformed: tsconfigRaw != null && parseJson(tsconfigRaw) == null,
     contentConfig: readFileIfExists(join(cwd, 'src', 'content.config.ts'))
                 ?? readFileIfExists(join(cwd, 'src', 'content', 'config.ts')),
+    // The Workers deploy config, as TEXT. `.jsonc` is the documented default and
+    // it carries comments, so no caller may JSON.parse this — strip comments
+    // first (lib/src-scan.mjs), or a commented-out setting reads as a live one.
+    wranglerConfig: readFirstFile(cwd, ['wrangler.jsonc', 'wrangler.json', 'wrangler.toml']),
     hasDist: existsSync(join(cwd, 'dist')),
     // Is dist/ older than the source it was built from? Every dist-reading
     // check judges the build, and a build the source has moved past is a

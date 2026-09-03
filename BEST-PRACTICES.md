@@ -284,6 +284,31 @@ whole fixture run, so a new check cannot quietly reintroduce a mute pass.
   how, is a defensible choice. → `modules: fonts`
 - **Custom `src/pages/404.astro`.** A branded 404, not the host default. →
   `modules: 404:custom`
+- **…and the host is actually configured to serve it.** Having the page is not
+  the same as shipping it. Cloudflare now documents Workers Static Assets as the
+  way to deploy a static site — *"replacing Pages for new projects"* — and there,
+  an unmatched URL is answered by the Worker if there is one and otherwise by a
+  bare platform 404. The site's own `404.html` is not consulted unless
+  `assets.not_found_handling` says so (verified via context7, 2026-09-03):
+
+  > If no matching asset is found and a Worker script is present, the request
+  > will be processed by the Worker. If no Worker script is present, a 404 Not
+  > Found response is returned.
+
+  > Setting `assets.not_found_handling` to `404-page` overrides the default
+  > asset-serving behavior [and] Workers automatically serves the contents of the
+  > nearest `404.html` file with a 404 Not Found HTTP status.
+
+  The trap is that this baseline's *own default shape* is the affected one: an
+  adapter is required only when a route renders on demand, so a plain content
+  site has no adapter, no `main`, and therefore no Worker to fall through to. The
+  404 page builds, lands in `dist/`, passes `404:custom` — and never renders for
+  a visitor. The starter escapes it only because it has one on-demand route and
+  so carries a `main`.
+
+  Read comment-blanked, because `wrangler.jsonc` carries comments by design and a
+  commented-out setting satisfying a check is a failure this repo has already
+  fixed three times. → `modules: 404:served`
 - **Icons are inline SVG — no package, no font.** The glyphs a site uses are
   bodies copied once into `src/lib/icons.ts` from any permissive set (Lucide,
   Tabler, Phosphor are all MIT/ISC and attribution-free), and one component
@@ -583,6 +608,43 @@ thing a version bump leaves behind. Each maps to a documented v7 breaking change
   Thirty further candidates were unmeasurable, nearly all remote URLs (Unsplash,
   Cloudinary, GitHub asset links) on one site. They are counted and named rather
   than dropped, per #21's second half.
+- **The transform actually runs — Image Transformations is a per-zone toggle.**
+  Everything else here judges the *shape* of a `/cdn-cgi/image/` URL: the params
+  it carries, the width it pins, the bytes it returns. None of it asks the only
+  question that matters first — did Cloudflare transform anything? Transformations
+  have to be switched on per zone (dashboard → Images → Transformations → select
+  the zone), so a site can emit textbook transform URLs on every image and serve
+  none of them. Measured 2026-09-03 against a real site:
+
+  ```
+  /cdn-cgi/image/width=800,format=auto,quality=80/…/hero-coastal.webp
+    200  image/webp  71,366 bytes
+    cf-resized: internal=ok/m q=0 n=372+145 c=22+37 v=2026.9.0 l=71366 …
+  …/hero-coastal.webp            (the same file, prefix removed)
+    200  image/webp  258,874 bytes   ← no cf-resized header
+  ```
+
+  `cf-resized` is the signal, and its absence on a 200 means the original bytes
+  were served — 3.6× the payload, indistinguishable in the HTML. On failure the
+  header carries `err=<code>` instead, and the codes are documented and
+  actionable: `9422` is the 5,000-transformation free-tier limit, `9412` an
+  origin serving an HTML error page, `9524` a Worker intercepting the image *or a
+  `pages.dev` URL* (custom domain required). The map is in
+  `tools/lib/cf-image.mjs`, with the docs link.
+  → `images: transform:applied` (live)
+
+  **Universal, not house style**, and the distinction is the point: this never
+  asks a site to adopt Cloudflare transforms — it fires only once the site has
+  chosen them and they are demonstrably not running. Same coherence shape as
+  `data: search:index`, which fires only when a search library is installed.
+- **A content image the page requests actually resolves.** With the zone toggle
+  off, every transform URL 404s — and the live loop read a `content-length` of 0
+  off it, compared 0 against the 300 KB budget, and reported nothing. `routed`
+  passed too, because the URL *shape* was right. A wholly dead image lane audited
+  as `✅ routed, 0 findings`. Status is checked before anything is measured now,
+  and when every dead image is a `/cdn-cgi/image/` URL the finding names the
+  toggle rather than listing N broken files: that is one switch, not N bugs.
+  → `images: resolves` (live)
 - **Transforms use `format=auto`, not an explicit format.** `format=auto` lets
   Cloudflare negotiate AVIF/webp per the browser's `Accept`; an explicit
   `format=webp` (the default Astro emits for bare markdown `![]()`) means no AVIF

@@ -340,6 +340,8 @@ export async function run({ project, reporter }) {
     else reporter.fix(SEC, 'ClientRouter', `not in ${rootLayout}`, 'insert <ClientRouter /> into the layout <head>');
   }
 
+  check404Served(project, reporter);
+
   // Custom 404
   if (existsSync(join(project.root, 'src/pages/404.astro'))) {
     reporter.pass(SEC, '404:custom', 'src/pages/404.astro');
@@ -649,4 +651,57 @@ function findInDist(dir, nameRe, re, budget = { n: 400 }) {
     if (m) return { hit: { file: relative(dir, full), match: m[1] ?? m[0] } };
   }
   return {};
+}
+
+/**
+ * A branded 404 that Cloudflare will never serve.
+ *
+ * `404:custom` asks whether `src/pages/404.astro` exists. On Workers Static
+ * Assets — which Cloudflare now documents as the recommended way to deploy a
+ * static site, replacing Pages for new projects — that is not the question. An
+ * unmatched request is answered by the Worker if there is one, and otherwise by
+ * a bare platform 404: the site's own `404.html` is not consulted unless
+ * `assets.not_found_handling` says so. Verified via context7 on 2026-09-03:
+ *
+ *   "If no matching asset is found and a Worker script is present, the request
+ *    will be processed by the Worker. If no Worker script is present, a 404 Not
+ *    Found response is returned."
+ *   "Setting assets.not_found_handling to 404-page overrides the default
+ *    asset-serving behavior [and] Workers automatically serves the contents of
+ *    the nearest 404.html file with a 404 Not Found HTTP status."
+ *
+ * So the baseline's own default shape — `output: 'static'`, no on-demand route,
+ * therefore no adapter and no `main` — is exactly the shape where the 404 page
+ * builds, ships in dist/, passes `404:custom`, and never renders for a visitor.
+ *
+ * Read comment-blanked: the starter's own wrangler.jsonc is heavily commented,
+ * and a commented-out setting satisfying a check is a failure this repo has
+ * fixed three times already.
+ */
+function check404Served(project, reporter) {
+  if (!project.wranglerConfig) {
+    reporter.skip(SEC, '404:served', 'no wrangler.jsonc/json/toml — nothing here says how a host answers an unmatched URL');
+    return;
+  }
+  const cfg = stripComments(project.wranglerConfig);
+  // A [assets] table in TOML or an "assets" key in JSONC; either way, static
+  // assets are being served by the platform rather than by a Worker route.
+  if (!/(^|\s|\[)"?assets"?\s*[:=\]]/m.test(cfg)) {
+    reporter.skip(SEC, '404:served', 'the wrangler config declares no static-assets directory — not a Workers Static Assets deploy');
+    return;
+  }
+  if (/(?:^|[\s,{])"?main"?\s*[:=]/m.test(cfg)) {
+    reporter.pass(SEC, '404:served', 'a Worker entrypoint (`main`) answers unmatched URLs, so the 404 route renders through it');
+    return;
+  }
+  // The key is quoted in JSONC (`"not_found_handling": …`) and bare in TOML, so
+  // the closing quote has to be optional — without it this matched neither.
+  if (/"?not_found_handling"?\s*[:=]\s*["']404-page["']/.test(cfg)) {
+    reporter.pass(SEC, '404:served', 'assets.not_found_handling = "404-page" — an unmatched URL serves the built 404 page');
+    return;
+  }
+  reporter.fix(SEC, '404:served',
+    'static assets with no Worker `main` and no assets.not_found_handling — an unmatched URL gets a bare platform 404, never the site\'s own 404 page (which still builds, ships and passes 404:custom)',
+    'set "not_found_handling": "404-page" under "assets" in the wrangler config',
+    { file: 'wrangler.jsonc' });
 }

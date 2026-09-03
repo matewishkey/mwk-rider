@@ -42,6 +42,8 @@ const HOUSE_STYLE = [
   'modules:icons',              // an icon package is a choice, not a defect
   'modules:icons:font',         // ditto — worse, but still a choice
   'modules:ClientRouter',       // view transitions are a preference
+  'modules:404:served',         // a wrangler-config shape — assumes Cloudflare Workers,
+                                // the same way perf:_headers does
   'modules:engines.node',       // declaring an engines floor is good hygiene, not a defect
   'modules:astro:version',      // being a major behind is worth knowing, not a failure
   'modules:fonts',              // a font CDN is a real cost, but a defensible choice
@@ -49,7 +51,17 @@ const HOUSE_STYLE = [
   // --- delivery shape: assumes Cloudflare Pages/Workers ------------------------
   'perf:_headers',              // the `_headers` file is a CF/Netlify convention
   'perf:_headers:/_astro/*',
-  'images:transform:*',         // /cdn-cgi/image transform params
+  // The transform PARAMS — which options a /cdn-cgi/image/ URL should carry.
+  // Named one by one rather than as `images:transform:*`, because
+  // `transform:applied` must NOT be caught by it: that one does not ask a site
+  // to use Cloudflare transforms, it fires only once the site has already
+  // chosen them and they are demonstrably not running. Given that choice, a
+  // transform URL serving the untransformed original is a defect on anyone's
+  // site — the same coherence shape as `data:search:index`, which fires only
+  // when a search library is actually installed.
+  'images:transform:format',
+  'images:transform:quality',
+  'images:transform:params',
   'analytics:no-hardcoded-ga',  // the finding is real (a snippet firing before
                                 // consent), but "which delivery replaces it" is
                                 // still our call, so it stays advisory by default

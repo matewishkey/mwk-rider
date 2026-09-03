@@ -6,7 +6,7 @@
 // Only runs when --url is passed. Point it at a dev preview, a `wrangler dev` of
 // dist/, or production.
 
-import { transformSmells } from '../lib/cf-image.mjs';
+import { transformSmells, transformApplied } from '../lib/cf-image.mjs';
 import { headingLevels, headingAudit, attrValue, hasAttr } from '../lib/html.mjs';
 import { imageSize } from '../lib/image-size.mjs';
 import { collectJsonLd, ldTypes, hasArticleType, classifyPage } from '../lib/jsonld.mjs';
@@ -474,10 +474,15 @@ async function auditImages(home, postPath, base, get, head, reporter) {
     return;
   }
 
-  let routedOk = 0, sizedOk = 0, outOfFlow = 0;
+  let routedOk = 0, sizedOk = 0, outOfFlow = 0, transformProbed = 0;
   const noQuality = [];
   const noAlt = [];
   const noSize = [];
+  // A content image that does not answer 200, and a transform URL that answered
+  // but was never transformed. Neither was visible before: the only thing read
+  // off the response was content-length, and a 404 has none to exceed a budget.
+  const dead = [];
+  const notTransformed = [];
   const { shown: inspected, dropped } = capped(imgs, MAX_IMAGE_FINDINGS);
   if (dropped) {
     reporter.skip('images', 'delivery', `${imgs.length} content images found; inspecting the first ${MAX_IMAGE_FINDINGS}. ${dropped} not measured`);
@@ -520,6 +525,26 @@ async function auditImages(home, postPath, base, get, head, reporter) {
     // Measure with a browser-realistic Accept so a format=auto transform
     // negotiates AVIF/webp — the bytes a real visitor downloads, not the raw source.
     const r = await head(img.src, { headers: { Accept: BROWSER_ACCEPT, 'Sec-Fetch-Dest': 'image', 'Sec-Fetch-Mode': 'no-cors' } });
+    const isTransform = /\/cdn-cgi\/image\//.test(img.src);
+    if (isTransform) transformProbed++;
+
+    // Status, before anything is measured. `routed` reports the URL SHAPE, and a
+    // shape is not a delivery: with Image Transformations switched off for the
+    // zone every /cdn-cgi/image/ URL 404s, and this loop read a content-length
+    // of 0 off it, compared 0 against the budget, and said nothing. A wholly
+    // broken image lane reported ✅ routed and no findings.
+    if (!r.ok || r.status !== 200) {
+      dead.push({ src: img.src, why: r.ok ? `HTTP ${r.status}` : r.error, isTransform });
+      continue;
+    }
+
+    // Answered 200 — but did Cloudflare actually transform it? Only the response
+    // knows; see lib/cf-image.mjs for the measurement behind this.
+    if (isTransform) {
+      const verdict = transformApplied(r.headers, r.headers?.get?.('content-type') ?? '');
+      if (!verdict.transformed) notTransformed.push({ src: img.src, why: verdict.why });
+    }
+
     const len = Number(r.headers?.get?.('content-length') ?? 0);
     if (len > 300 * 1024) {
       reporter.fix('images', 'bytes', `${(len / 1024).toFixed(0)} KB served — over 300 KB budget`, 'lower the transform width=/use format=auto + quality=80; a hero should be 50–250 KB', { url: img.src });
@@ -533,6 +558,37 @@ async function auditImages(home, postPath, base, get, head, reporter) {
   if (noAlt.length === 0) reporter.pass('images', 'alt', `${inspected.length}/${inspected.length} carry an alt attribute, ${sampled}`);
   else reporter.fix('images', 'alt', `${noAlt.length} content <img> have no alt attribute`, 'add alt text (alt="" only if decorative)', { url: noAlt[0] });
   if (noQuality.length) reporter.suggest('images', 'transform:quality', `${noQuality.length} transform URL(s) set no quality= (Cloudflare defaults to 85)`, 'add an explicit quality (e.g. quality=80) to cap output size on photographic content', { url: noQuality[0] });
+
+  // Does the image the page asks for actually exist? Universal — a content image
+  // that 404s is broken on anyone's site, whatever delivers it.
+  if (dead.length === 0) {
+    reporter.pass('images', 'resolves', `all ${inspected.length} content image(s) answer 200, ${sampled}`);
+  } else {
+    const tx = dead.filter((d) => d.isTransform).length;
+    // Naming the pattern is the whole value: N dead transform URLs is not N
+    // broken images, it is one switch in a dashboard.
+    const hint = tx === dead.length
+      ? ' — and every one is a /cdn-cgi/image/ URL, which is what a zone with Image Transformations not enabled looks like'
+      : '';
+    reporter.fix('images', 'resolves', `${dead.length}/${inspected.length} content image(s) do not answer 200 (${dead[0].why})${hint}`,
+      tx === dead.length
+        ? 'enable Image Transformations for this zone (Cloudflare dashboard → Images → Transformations → select the zone), or stop emitting /cdn-cgi/image/ URLs'
+        : 'the page requests an image the server does not serve — fix the URL or ship the file',
+      { url: dead[0].src });
+  }
+
+  // And if it exists, was it transformed? A transform URL that serves the
+  // original is the expensive silent case: it looks optimized in the HTML, in
+  // dist/, and to every offline check here.
+  if (transformProbed === 0) {
+    reporter.skip('images', 'transform:applied', 'no /cdn-cgi/image/ URLs among the images audited — nothing whose transform could be verified');
+  } else if (notTransformed.length === 0) {
+    reporter.pass('images', 'transform:applied', `all ${transformProbed} transform URL(s) came back with a cf-resized header — Cloudflare is really transforming them`);
+  } else {
+    reporter.fix('images', 'transform:applied', `${notTransformed.length}/${transformProbed} /cdn-cgi/image/ URL(s) answered 200 but were NOT transformed — ${notTransformed[0].why}`,
+      'enable Image Transformations for this zone (Cloudflare dashboard → Images → Transformations), and check the source origin is on the allowed list; until then these URLs serve the untransformed original',
+      { url: notTransformed[0].src });
+  }
 }
 
 // Data — machine-readable endpoints ------------------------------------------
