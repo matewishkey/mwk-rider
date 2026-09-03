@@ -180,6 +180,26 @@ the alternative is a starter that quietly stops complying with the tool that shi
   the exact figures are deliberately not written down here because they move
   with every release.
 
+- **The `lighthouse` domain needs a PUBLIC url, and we keep one.** PageSpeed
+  Insights fetches the URL from Google's side, so it can never reach the
+  `127.0.0.1` the gate serves on — a local run answers `400` and the whole domain
+  returns after one skip. CI has no `PAGESPEED_API_KEY` either, so there it takes
+  the no-key branch. Between them, nine payload-parsing rules had never run
+  outside one manual check (#30).
+
+  `node scripts/test-site.mjs deploy` publishes `examples/starter` to
+  **https://mwk-rider-test1.matewishkey.com/** — copied verbatim and edited the
+  four files create mode edits, so the thing measured IS the reference. Then
+  `node scripts/test-site.mjs audit --strict` audits it with every domain live.
+  Cloudflare free tier; ours for testing, and nothing in the plugin asks a user
+  to set one up. **Redeploy after any change to the starter**, or you are
+  measuring the previous one.
+
+  It earned its keep on the first run: the starter's homepage hero was the LCP
+  element and was lazy-loaded with no `fetchpriority`, which nothing offline can
+  see. Measured 2026-09-03, after the fix: **109 ✅ / 0 🔧 / 0 🛑**, all ten
+  domains, four Lighthouse categories at 100.
+
   It exists because the gate audited **offline only** for months, so `live`, `lighthouse`
   and `browser` — three of the ten domains — were never exercised against the two sites
   that are supposed to be the baseline's existence proof. The fixture was `0 🔧` offline

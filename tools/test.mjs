@@ -2097,6 +2097,34 @@ check('--rules --json lists rules with id, severity and a reason',
 const rulesRun = spawnSync('node', [AUDIT, '--rules', '--json'], { cwd: tmpdir(), encoding: 'utf8' });
 check('  …and it runs outside an Astro project', rulesRun.status === 0, `exit ${rulesRun.status}`);
 const known = knownRuleIds();
+
+// …and the third direction: EXERCISED. A rule with an emitter that no test drives
+// passes this suite exactly as happily as one that works, which is the failure
+// mode CONTRIBUTING § "both halves of a test" exists to prevent (#30). It was 24
+// when that issue was filed.
+//
+// The allow-list is the `lighthouse` domain and nothing else. Those rules parse a
+// PageSpeed Insights payload, and PSI fetches the audited URL from Google's side
+// — it can never reach the 127.0.0.1 this suite serves on, so a local run answers
+// 400 and the domain returns after one skip. They are exercised instead against a
+// real deployment: `node scripts/test-site.mjs deploy` then `… audit --strict`,
+// which is in docs/DEVELOPING.md and which found a real LCP defect the first time
+// it ran. Anything else appearing here is a rule nobody is testing — add the test,
+// do not add it to this list.
+const UNDRIVEN_OK = new Set([
+  'lighthouse/a11y-audit', 'lighthouse/accessibility', 'lighthouse/best-practices',
+  'lighthouse/cls', 'lighthouse/crux-field-data', 'lighthouse/lcp', 'lighthouse/lcp-element',
+  'lighthouse/metrics-observed', 'lighthouse/performance', 'lighthouse/seo', 'lighthouse/tbt',
+  'lighthouse/third-party-payload',
+]);
+const undriven = [...known].filter(id => !seenRuleIds.has(id)).sort();
+const unexpected = undriven.filter(id => !UNDRIVEN_OK.has(id));
+const goneQuiet = [...UNDRIVEN_OK].filter(id => !undriven.includes(id)).sort();
+check(`every rule is driven by a test, or allow-listed as live-only (${undriven.length} allow-listed)`,
+  unexpected.length === 0, `no test drives: ${unexpected.join(', ')}`);
+check('  …and the allow-list has no stale entries',
+  goneQuiet.length === 0, `now driven, drop from UNDRIVEN_OK: ${goneQuiet.join(', ')}`);
+
 const uncatalogued = [...seenRuleIds].filter(id => !known.has(id)).sort();
 check(`every rule id emitted by this suite is catalogued (${seenRuleIds.size} seen)`,
   uncatalogued.length === 0, uncatalogued.join(', '));

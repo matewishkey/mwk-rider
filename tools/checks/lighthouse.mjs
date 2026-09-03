@@ -287,7 +287,10 @@ async function fetchPSI(url, strategy, key, reporter) {
       try { return await res.json(); }
       catch { reporter.skip(SEC, 'psi', 'PSI returned invalid JSON'); return null; }
     }
-    if (res.status === 500 && attempt < 3) { await sleep(5000); continue; } // transient lighthouseError
+    // 500/502/503/504 are all transient on Google's side — a live run against a
+    // healthy site answered 502 on the first call and 200 on the next. Retrying
+    // only 500 turned that into a permanent skip for the whole domain.
+    if ([500, 502, 503, 504].includes(res.status) && attempt < 3) { await sleep(5000); continue; }
     if (res.status === 429) { reporter.skip(SEC, 'psi', 'PSI quota exceeded (429) — retry later or check the key quota'); return null; }
     if (res.status === 403) { reporter.skip(SEC, 'psi', 'PSI rejected the key (403) — verify the key + that the PageSpeed Insights API is enabled'); return null; }
     if (res.status === 400) { reporter.skip(SEC, 'psi', 'PSI rejected the request (400) — usually an invalid $PAGESPEED_API_KEY, or a URL it cannot reach'); return null; }

@@ -14,8 +14,18 @@ const posts = (await publishedPosts()).slice(0, 3);
 
   {/* <Image> from astro:assets bakes width and height into the tag, so the
       browser reserves the space before the bytes arrive and the page does not
-      jump. It also emits a resized, modern-format derivative at build time. */}
-  <Image src={hero} alt="A pale gradient, standing in for whatever your site is about." widths={[480, 800]} sizes="(max-width: 800px) 100vw, 800px" />
+      jump. It also emits a resized, modern-format derivative at build time.
+
+      `loading="eager"` + `fetchpriority="high"` because this is the homepage's
+      LCP element. Astro's default is lazy, and lazy-loading the LCP element
+      delays the metric by a whole discovery round trip — Lighthouse reported
+      exactly that against the deployed test site on 2026-09-03:
+      `LCP element: img hero…webp, loading="lazy", no fetchpriority`. Nothing
+      offline can see this; it took a real PageSpeed run to find.
+
+      `sizes` matches the column the image renders in, the same value the cover
+      uses — see CONTENT_SIZES in src/lib/media.ts. */}
+  <Image src={hero} alt="A pale gradient, standing in for whatever your site is about." widths={[480, 800]} sizes="(max-width: 570px) calc(100vw - 2rem), 540px" loading="eager" fetchpriority="high" />
 
   <h2>Latest posts</h2>
   <ul>
