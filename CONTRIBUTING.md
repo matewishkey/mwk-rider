@@ -55,7 +55,7 @@ The full five-step process for adding a practice, and the reasoning behind each 
 Please don't add these — they've been considered and rejected:
 
 - **Execute the audited project's source.** Config is read as text and parsed, never `import()`ed. Auditing a repo must never be equivalent to running it. See the safety note at the top of `tools/lib/project.mjs`. The one exception is deliberate, bounded and disclosed in the output: the optional `browser` domain imports `playwright` from the project's `node_modules` when the auditor has no copy of its own — see the header of `tools/checks/browser.mjs` and [`SECURITY.md`](SECURITY.md). Adding a *second* exception needs the same treatment, and a very good reason.
-- **Write to the audited project.** It reports; the user decides. No auto-fixing.
+- **Write to the audited project *unasked*.** A plain run reports and the user decides. `--fix` (1.13.0) is the user deciding, and it is narrow on purpose: it applies only findings whose fix the check already measured, then re-runs the audit and reverts the lot if anything regressed. What stays rejected is auto-fixing — nothing writes without the flag.
 - **Take a runtime dependency.** Node built-ins only. This is why it can be run with a single `git clone` and no install step.
 - **Fire automatically.** No hooks, no always-on contract. You run it when you want an answer.
 

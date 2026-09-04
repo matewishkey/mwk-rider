@@ -21,6 +21,8 @@ node $rider --strict    # require the house-style baseline too
 node $rider --json     # machine-readable
 node $rider --quiet    # hide ✅ lines; findings, 💡 and ⏭ still print
 node $rider --verbose  # show ✅ even when piped or under $CI
+node $rider --dry-run  # the exact changes --fix would make; writes nothing
+node $rider --fix      # apply them, then re-audit to prove each one worked
 node $rider --rules --json  # every rule id, severity, mode and why; runs nothing
 node $rider --help
 ```
@@ -98,6 +100,8 @@ tools/
     cf-image.mjs         Cloudflare transform-URL param parsing (shared offline + live)
     html.mjs             dist/served HTML scanning — headings, alt text, srcset, content-page gate
     css-flow.mjs         which elements CSS takes out of flow (so CLS checks don't false-fire)
+    remedy.mjs           the machine-applicable half of a finding (copy/json/edit) + apply
+    fixer.mjs            --fix: apply, re-audit, revert the set if anything regressed
     dist.mjs             read the build output (find + read files under dist/)
     headers.mjs          parse public/_headers into rules the cache checks can ask
     jsonld.mjs           parse the JSON-LD a page emits; Article-family types

@@ -1690,6 +1690,24 @@ the bullet here is only its summary.
   style, malformation is universal, and the starter grew a trail to match.
 - ~~**Runtime behaviour needs a headless browser.**~~ Closed by the `browser`
   domain — the practice is § browser above.
+- **An impact ladder in the report — decided, not built (2026-09-04).** A first audit
+  hands back a flat list, so "where do I start" is left to the reader. The order that
+  matters is: can Google *reach* it (robots, sitemap, canonical, noindex) → can it
+  *understand* it (title, description, one `<h1>`, `lang`, JSON-LD) → is it *good to land
+  on* (CWV, images, fonts) → does it *survive being shared* (a real OG card). Nothing on a
+  higher rung matters while a lower one has a finding. **The shape is settled: a summary
+  block above the counts naming the highest rung that has a finding**, with the findings
+  themselves still printed in domain order — regrouping the whole report would move every
+  line and break anything parsing it. Presentation only, no new checks. Not built.
+- **A `serp` domain was considered and declined (2026-09-04).** Keyword research decides
+  *which pages should exist*, which is upstream of a validator — see the top of this file
+  and `CLAUDE.md`. What would fit, if it is ever wanted, is the *outcome* half rather than
+  the input half: modelled on `lighthouse` (`--url` only, API-key gated, skipping cleanly
+  without one) and **advisory by construction**, since rankings move for reasons that are
+  not the code. It would verify what the offline checks can only assert — whether the page
+  is indexed at all, whether the rich result our JSON-LD claims eligibility for actually
+  renders, how the title truncates in a real SERP. Recorded so it is not re-proposed as
+  keyword research.
 - **Zaraz consent banner actually renders + GA waits for consent.** The
   `analytics` live check confirms the Zaraz loader is present, but the consent
   modal and whether tags hold until consent are decided by client JS at runtime

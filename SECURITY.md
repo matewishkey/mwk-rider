@@ -20,7 +20,7 @@ This tool is designed to be pointed at **projects you may not control** — that
 
 If you are auditing a repository you genuinely do not trust, run it without `--url` (or with `-s live -s lighthouse`, which skips the browser domain), and the "no project code executes" property holds completely. Reports of any *other* execution path are in scope as above.
 
-**It never writes to the audited project.** The tool only reads. It creates no files, modifies nothing, and installs nothing.
+**A plain run never writes to the audited project.** Every check only reads. Writing happens on one path and only when you ask for it: `--fix` applies the remedies a run produced, and `--dry-run` shows exactly what those are without touching anything. A remedy is data the check itself computed — one of three shapes (copy a file from the bundled starter, set one key in a JSON file, replace an exact string that occurs exactly once), never a generated edit. A `copy` refuses to overwrite an existing file, an `edit` refuses when the text it was written against is ambiguous, and the audit is re-run afterwards: if a required finding appears that was not there before, every file touched is reverted byte for byte. Nothing is installed, and nothing is written into a project that did not pass `--fix`.
 
 **It makes no network requests unless you pass `--url`.** The seven offline domains are entirely local. With `--url`, it fetches the URL you give it (and assets that page references) with a browser-like `Accept` header, and every request has a timeout.
 

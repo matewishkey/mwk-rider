@@ -231,12 +231,15 @@ tools/
   checks/{modules,seo,images,perf,data,analytics,content,live,lighthouse,browser}.mjs
   lib/{project,reporter,policy,rules,cf-image,html,css-flow,dist,headers,jsonld,
        image-size,src-scan,untrusted,analytics-signals,search-engines,embed-hosts,
-       fonts-config,config-string}.mjs
+       fonts-config,config-string,remedy,fixer}.mjs
 examples/starter/            the reference site: single-locale, compliant under
                              --strict, and what create mode copies
 examples/_fixture-i18n/      a compliant multi-locale Astro site — the harder
                              test target (i18n, search, preview routes)
 examples/ci/audit.yml        copy-paste GitHub Actions job for your own site
+evals/                       plugin-eval cases for the instructions, not the tool
+scripts/test-site.mjs        deploys the starter to the live test site (lighthouse
+                             needs a public URL — see docs/DEVELOPING.md)
 BEST-PRACTICES.md            the why behind every check + the practice/check registry
 docs/DEVELOPING.md           testing discipline, design decisions, how a release ships
 CONTRIBUTING.md              the pre-ship checklist, short form
@@ -258,7 +261,7 @@ Security issues: please use [private reporting](SECURITY.md), not a public issue
 
 ## Safety
 
-The tool is meant to be pointed at projects you don't control, so it **never executes the audited project's source** — config is read as text and parsed, never `import()`ed. It never writes to the project, and makes no network requests unless you pass `--url`.
+The tool is meant to be pointed at projects you don't control, so it **never executes the audited project's source** — config is read as text and parsed, never `import()`ed. A plain run writes nothing to the project; `--fix` is the one path that does, and only for findings whose fix the check itself computed (see § *Fixing, without hand-writing the fix*). No network requests unless you pass `--url`.
 
 One documented exception: with `--url`, the optional `browser` domain imports `playwright`, and the copy it finds is usually the audited project's — so a hostile repo can reach the auditor process that way. Leave `--url` off (or use `-s live -s lighthouse`) when auditing something you actively distrust. Details in [`SECURITY.md`](SECURITY.md).
 

@@ -7,7 +7,8 @@ live in `CLAUDE.md`; the *why* behind each individual check lives in
 ## Key decisions
 
 - **Verify, never provision — and never execute the project's source.** The tool
-  reports; it never writes to an audited project. Config is read as text and parsed,
+  reports; a plain run never writes to an audited project, and only `--fix` ever does.
+  Config is read as text and parsed,
   never `import()`ed: auditing a repo must never be equivalent to running it. The single
   exception is the optional `browser` domain, which imports `playwright` from the
   project's `node_modules` when the auditor has no copy of its own — `--url` only,
@@ -31,10 +32,12 @@ live in `CLAUDE.md`; the *why* behind each individual check lives in
 
 ## Out of scope
 
-- Setting up or migrating audited sites — the tool checks, it doesn't fix. Findings are
-  suggestions.
+- Setting up or migrating audited sites. The tool checks; `--fix` (1.13.0) applies only the
+  findings whose fix a check already measured, and everything else stays a suggestion.
+  Scaffolding and migration are still out.
 - Auto-firing hooks or an always-on contract.
-- Per-site config inside audited projects — the tool reads what's there; it writes nothing.
+- Per-site config inside audited projects — the tool reads what's there and adds no config
+  of its own.
 
 ## Testing
 
@@ -142,6 +145,25 @@ the alternative is a starter that quietly stops complying with the tool that shi
   5 KB placeholder). Two cautions. Building a stranger's repo runs its postinstall and build
   scripts, so do it in a scratch dir and never under `~/projects`. And keep the built corpus
   — the next threshold round wants the same population, and re-cloning is the slow part.
+
+  Round 8 (2026-09-04, the sitemap checks and the seven competitor blind spots) added a
+  **cheaper corpus and the one rule that governs it.** Cloning and building a stranger's
+  repo is slow and runs their postinstall; for any check that reads `dist/` HTML you can
+  instead *mirror* a live site — fetch its `robots.txt` and sitemap, fetch the pages, write
+  them into a throwaway `dist/` with a stub `package.json` and `astro.config.mjs`, and point
+  the audit at that. Six real sites in minutes, no build, no code executed.
+
+  **The rule: a sampled mirror is only valid for per-page checks.** Anything whose subject
+  is the *link graph* or *cross-page uniqueness* — `links:internal`, `links:orphan`,
+  `sitemap:coverage`, `meta:unique:*` — needs a **complete** corpus, because every page you
+  did not fetch looks like a broken link or a missing sitemap entry. An 8-page sample of a
+  57-page site reported 115 false broken links; the complete mirror of the same site
+  reported zero. Mirror the whole sitemap when it is small enough (≤ ~60 pages) and confine
+  the sampled mirrors to the per-page checks. That round also cost two bugs of our own,
+  both invisible to the bundled examples because both examples link with absolute paths and
+  neither embeds an SVG: a relative href must resolve against the page's **URL**, not its
+  file path, and `existsSync` answers *true for a directory*. Neither could have been found
+  on a corpus we wrote — which is the same lesson as round 7, arriving by a different road.
 
   **Most sibling repos have no `dist/` and the dist-reading checks are the interesting
   half**, so a real-site round usually means building them. Check `git check-ignore -q dist`
@@ -282,7 +304,8 @@ And *"a real Astro site"* has to mean one **somebody else wrote**. The sites on 
 box were built to this baseline, so they share its habits and cannot contain the shape
 a false positive needs — a sweep over them proves the check agrees with us. Public repos
 are the corpus that can disagree; § Testing round 7 has the method and the attrition
-rate. The current dogfood sweep is the five built sites on this box, the deployed test site, and
+rate. The current dogfood sweep is the five built sites on this box, the deployed test site, the
+six mirrored live sites from round 8, and
 seven public builds kept in scratch.
 
 ### Pre-ship checklist

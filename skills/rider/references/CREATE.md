@@ -61,10 +61,16 @@ Everything else has a default. Colours, fonts and layout are *"change them on
    ```bash
    node ${CLAUDE_PLUGIN_ROOT}/tools/audit.mjs --strict
    ```
-   Expect `0 🔧 / 0 🛑` and two `💡`: the analytics beacon reporting its token is
-   unset, and the missing Twitter handles. Both are true and both are the
-   owner's to resolve. Anything else means you broke something — fix it before
-   handing over.
+   **`0 🔧 / 0 🛑` is the acceptance test.** Anything required means you broke
+   something — fix it before handing over.
+
+   The `💡` are a different matter: read them, do not count them. They are the
+   starter's own standing advisories — an analytics beacon whose token is unset,
+   unset Twitter handles, a thank-you page reached by redirect and so linked from
+   nowhere — all true, all the owner's to resolve, and their number moves whenever
+   a house-style check is added. A count written down here was wrong within a day
+   of the check that changed it, and it told create mode to go and "fix" a
+   compliant starter. Judge the 🔧/🛑 line, never the 💡 tally.
 6. **Print the three operator TODOs** (below) and nothing more.
 
 ## The three operator TODOs
