@@ -105,10 +105,17 @@ git clone --depth 1 https://github.com/matewishkey/mwk-rider.git /tmp/mwk-rider
 node /tmp/mwk-rider/tools/audit.mjs --strict
 ```
 
-It should stay at `0 🔧 / 0 🛑`. Two `💡` are expected and are both true: the
-analytics beacon reporting that its token is unset (until step 1 above is done),
-and the missing Twitter/X handles, which are yours to set or to leave — an
-invented handle credits a stranger's account.
+**`0 🔧 / 0 🛑` is the acceptance test.** The `💡` are to be read, not counted —
+they are advisory, they never fail a run, and their number moves whenever a
+house-style check lands, so a number written here would be wrong within the
+week. On a freshly scaffolded site they should all be things you have not done
+yet rather than things that are wrong:
 
-What each rule is and why lives in the tool, not here:
+- the analytics beacon reporting its token is unset (until step 1 above);
+- the missing Twitter/X handles, yours to set or to leave — an invented handle
+  credits a stranger's account;
+- `/contact/thanks/` linked from nowhere, which is true and correct: it is
+  reached by the form's redirect, not by a link.
+
+Read any others on their merits. What each rule is and why lives in the tool:
 `node /tmp/mwk-rider/tools/audit.mjs --rules --json`.

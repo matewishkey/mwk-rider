@@ -2776,6 +2776,23 @@ check('  …and the catalogue reports both modes',
   new Set(catalogue.map(r => r.mode)).size === 2 &&
   catalogue.every(r => ['offline', 'url'].includes(r.mode)));
 
+// Twice in two days a doc told a reader how many 💡 a clean run prints, and both
+// times a new house-style check made it a lie: CREATE.md said "two 💡, anything
+// else means you broke something", so every create run would have concluded it
+// broke the compliant starter (fixed 07dcd53), and the starter's own CLAUDE.md
+// said the same — a file create mode copies verbatim, so the wrong sentence
+// shipped into every scaffolded site. 💡 is advisory and its count moves
+// whenever a house-style check lands; only the 🔧/🛑 line is an acceptance test.
+// Scoped to the two files that INSTRUCT about a current run — README's dated
+// captured output is provenance and stays legal.
+console.log('no instruction file states a 💡 count — it moves whenever a house-style check lands:');
+const COUNT_BEFORE_SUGGEST = /\b(one|two|three|four|five|six|seven|eight|nine|ten|\d+)\s+`?💡/i;
+for (const rel of ['examples/starter/CLAUDE.md', 'skills/rider/references/CREATE.md']) {
+  const text = readFileSync(join(here, '..', rel), 'utf8');
+  const hit = text.split('\n').find((l) => COUNT_BEFORE_SUGGEST.test(l));
+  check(`  ${rel} does not tell the reader how many 💡 to expect`, !hit, hit);
+}
+
 console.log('the plugin wiring resolves — a broken path here is a dead command:');
 // The commands and the skill router reach their instructions by PATH, and a
 // path is only checked when someone runs the command. Nothing else in this file
