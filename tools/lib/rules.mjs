@@ -52,6 +52,9 @@ const RULES = [
 
   // --- seo -------------------------------------------------------------------
   ['seo/seo-component', 'seo', 'SEO component', 'Some component must render the document head meta; which file it lives in is up to the site.'],
+  ['seo/meta-title', 'seo', 'meta:title', 'The <title> is the search result and the browser tab; an empty one leaves the engine to invent a name for the page.'],
+  ['seo/meta-description', 'seo', 'meta:description', 'The meta description is the snippet under the result — without one the engine excerpts whatever it likes.'],
+  ['seo/meta-og-title', 'seo', 'meta:og:title', 'og:title is the headline of every share of the page; it falls back to <title> only if a platform chooses to.'],
   ['seo/meta-og-image', 'seo', 'meta:og:image', 'No og:image means no social card — the link previews as bare text.'],
   ['seo/meta-og-image-width', 'seo', 'meta:og:image:width', 'Declared dimensions let a platform lay the card out before fetching it.'],
   ['seo/meta-og-image-height', 'seo', 'meta:og:image:height', 'Declared dimensions let a platform lay the card out before fetching it.'],
@@ -66,6 +69,12 @@ const RULES = [
   ['seo/brand-optional', 'seo', 'brand:optional', 'Author and Twitter handles make richer cards; optional.'],
   ['seo/robots', 'seo', 'robots', 'A robots.txt with a Sitemap: line is how a crawler starting at the root finds the full URL list.'],
   ['seo/sitemap-lastmod', 'seo', 'sitemap:lastmod', "Without <lastmod> a crawler can't tell what changed. @astrojs/sitemap emits none unless serialize() supplies it."],
+  ['seo/sitemap-urls', 'seo', 'sitemap:urls', "Sitemap URLs must be absolute, and Google rejects a file whole above 50,000 URLs or 50 MB — so growing past a cap loses the sitemap, not the overflow."],
+  ['seo/sitemap-hints', 'seo', 'sitemap:hints', "<changefreq> and <priority> are ignored by Google — the only hint it reads is <lastmod>."],
+  ['seo/sitemap-noindex', 'seo', 'sitemap:noindex', "A submitted URL that carries noindex asks to be indexed and dropped at once — Search Console's \"Submitted URL marked 'noindex'\"."],
+  ['seo/sitemap-blocked', 'seo', 'sitemap:blocked', 'A sitemap URL that robots.txt disallows tells a crawler to fetch what it has just been forbidden to fetch.'],
+  ['seo/sitemap-canonical', 'seo', 'sitemap:canonical', 'A sitemap should list canonical URLs only; a page declaring a different canonical disclaims the URL that was submitted for it.'],
+  ['seo/hreflang', 'seo', 'hreflang', 'On a multi-locale site with no hreflang alternates, each translation competes with the others as a duplicate.'],
   ['seo/headings', 'seo', 'headings', 'Reports when there were no built content pages to read an outline from.'],
   ['seo/headings-h1', 'seo', 'headings:h1', 'Zero <h1> means no main heading; more than one dilutes the outline for crawlers and screen readers.'],
   ['seo/headings-order', 'seo', 'headings:order', 'A skipped level (h2→h4) breaks the document outline. Advisory — usually a shared header/footer.'],

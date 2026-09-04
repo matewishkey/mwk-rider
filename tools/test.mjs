@@ -467,6 +467,147 @@ check('sitemap with no <lastmod> → suggest, even with @astrojs/sitemap install
 const withLastmod = row(mkBuilt({ 'dist/sitemap-0.xml': SITEMAP(true) }), 'seo', 'seo/sitemap-lastmod');
 check('  …and one that carries it → pass', withLastmod?.outcome === 'pass', JSON.stringify(withLastmod));
 
+// A malformed <lastmod> is counted as the absence it is. `March 3, 2026` is not
+// a date to a parser — Google documents W3C datetime — so an element full of
+// them tells a crawler exactly as much as no element at all, and reporting it
+// as its own required finding while a MISSING lastmod stays advisory would say
+// the site is better off deleting it than fixing it.
+const badLastmod = row(mkBuilt({
+  'dist/sitemap-0.xml': '<?xml version="1.0"?><urlset><url><loc>https://x.test/a</loc><lastmod>March 3, 2026</lastmod></url></urlset>',
+}), 'seo', 'seo/sitemap-lastmod');
+check('  …and a non-W3C <lastmod> counts as absent, naming the format',
+  badLastmod?.outcome === 'suggest' && /W3C datetime/.test(badLastmod?.message ?? ''), JSON.stringify(badLastmod));
+
+// <changefreq>/<priority>: in the spec, documented by Google as ignored. The
+// check reports the fact and never fails — it is in policy.mjs's ADVISORY list,
+// so --strict does not promote it either.
+const hints = row(mkBuilt({
+  'dist/sitemap-0.xml': '<?xml version="1.0"?><urlset><url><loc>https://x.test/a</loc><changefreq>daily</changefreq><priority>1.0</priority></url></urlset>',
+}), 'seo', 'seo/sitemap-hints');
+check('changefreq/priority in a sitemap → 💡 even under --strict (Google ignores both)',
+  hints?.outcome === 'suggest', JSON.stringify(hints));
+const noHints = row(mkBuilt({ 'dist/sitemap-0.xml': SITEMAP(true) }), 'seo', 'seo/sitemap-hints');
+check('  …and a sitemap without them → pass', noHints?.outcome === 'pass', JSON.stringify(noHints));
+
+// Absolute URLs are a spec requirement, and the mistake looks correct: every
+// other line a site writes about itself is a path.
+const relLoc = row(mkBuilt({
+  'dist/sitemap-0.xml': '<?xml version="1.0"?><urlset><url><loc>/a</loc></url></urlset>',
+}), 'seo', 'seo/sitemap-urls');
+check('a relative <loc> → fix', relLoc?.outcome === 'fix', JSON.stringify(relLoc));
+
+// --- the sitemap against the pages it declares -------------------------------
+// Three contradictions, none visible from either half on its own.
+const SM = (...locs) => `<?xml version="1.0"?><urlset>${locs.join('')}</urlset>`;
+const LOC = (u, extra = '') => `<url><loc>${u}</loc>${extra}</url>`;
+const AT = (canonical, extra = '') => `<html><head><link rel="canonical" href="${canonical}">${extra}`
+  + '<title>t</title><meta name="description" content="d"><meta property="og:title" content="t"></head><body><h1>t</h1></body></html>';
+
+const noindexed = row(mkBuilt({
+  'dist/sitemap-0.xml': SM(LOC('https://x.test/')),
+  'dist/index.html': AT('https://x.test/', '<meta name="robots" content="noindex, nofollow">'),
+}), 'seo', 'seo/sitemap-noindex');
+check('a sitemap page carrying noindex → fix (submitted and withheld at once)',
+  noindexed?.outcome === 'fix', JSON.stringify(noindexed));
+
+const blockedPage = row(mkBuilt({
+  'dist/robots.txt': 'User-agent: *\nDisallow: /private\nSitemap: https://x.test/sitemap-0.xml\n',
+  'dist/sitemap-0.xml': SM(LOC('https://x.test/private/')),
+  'dist/private/index.html': AT('https://x.test/private/'),
+}), 'seo', 'seo/sitemap-blocked');
+check('a sitemap URL that robots.txt disallows → fix', blockedPage?.outcome === 'fix', JSON.stringify(blockedPage));
+
+// The false-positive guard, and the reason robotsRules() collects Allow at all:
+// the standard resolves a path by the LONGEST matching rule, so `Disallow: /blog`
+// + `Allow: /blog/public/` does not block /blog/public/. Reading Disallow alone
+// would report a finding against a correct file.
+const allowWins = row(mkBuilt({
+  'dist/robots.txt': 'User-agent: *\nDisallow: /blog\nAllow: /blog/public/\nSitemap: https://x.test/sitemap-0.xml\n',
+  'dist/sitemap-0.xml': SM(LOC('https://x.test/blog/public/')),
+  'dist/blog/public/index.html': AT('https://x.test/blog/public/'),
+}), 'seo', 'seo/sitemap-blocked');
+check('  …but a longer Allow beats a shorter Disallow → pass, not a false finding',
+  allowWins?.outcome === 'pass', JSON.stringify(allowWins));
+
+const disclaimed = row(mkBuilt({
+  'dist/sitemap-0.xml': SM(LOC('https://x.test/a/')),
+  'dist/a/index.html': AT('https://x.test/b/'),
+  'dist/b/index.html': AT('https://x.test/b/'),
+}), 'seo', 'seo/sitemap-canonical');
+check('a sitemap URL whose page canonicalises elsewhere → fix',
+  disclaimed?.outcome === 'fix', JSON.stringify(disclaimed));
+
+// …unless the sitemap itself declared the consolidation. A locale fallback
+// rewrite serves the default locale's page and correctly canonicalises to it,
+// and the entry's own <xhtml:link> alternates say so. Without this branch the
+// bundled i18n fixture — which is correct — collected two required findings.
+const localeFallback = row(mkBuilt({
+  'dist/sitemap-0.xml': SM(LOC('https://x.test/hu/a/', '<xhtml:link rel="alternate" hreflang="en" href="https://x.test/a/"/>')),
+  'dist/hu/a/index.html': AT('https://x.test/a/'),
+}), 'seo', 'seo/sitemap-canonical');
+check('  …but not when the entry lists that canonical as its own alternate',
+  localeFallback?.outcome === 'pass', JSON.stringify(localeFallback));
+
+const slashDrift = row(mkBuilt({
+  'dist/sitemap-0.xml': SM(LOC('https://x.test/a')),
+  'dist/a/index.html': AT('https://x.test/a/'),
+}), 'seo', 'seo/sitemap-canonical');
+check('  …and a trailing-slash-only difference → 💡, not a required finding',
+  slashDrift?.outcome === 'suggest', JSON.stringify(slashDrift));
+
+// --- the three tags a search result is made of -------------------------------
+// Live-only until 2026-09-04: the default offline audit never read them, so a
+// site could ship an empty <title> on every page and pass `seo` clean.
+const emptyHead = mkBuilt({
+  'dist/sitemap-0.xml': SM(LOC('https://x.test/')),
+  'dist/index.html': '<html><head><link rel="canonical" href="https://x.test/"><title></title>'
+    + '<meta name="description" content=""></head><body><h1>t</h1></body></html>',
+}, { src: { 'src/components/SEO.astro': '<title>{t}</title><meta name="description" content={d}><link rel="canonical" href={c}>\n' } });
+const emptyTitle = row(emptyHead, 'seo', 'seo/meta-title');
+check('an empty <title> on the built page → fix, not a pass for the tag being present',
+  emptyTitle?.outcome === 'fix', JSON.stringify(emptyTitle));
+const emptyDesc = row(emptyHead, 'seo', 'seo/meta-description');
+check('  …and a meta description with empty content → fix',
+  emptyDesc?.outcome === 'fix', JSON.stringify(emptyDesc));
+
+// --- hreflang ----------------------------------------------------------------
+const I18N_CONFIG = "export default { output: 'static', i18n: { defaultLocale: 'en', locales: ['en', 'hu'] } };\n";
+const noAlternates = row(mkBuilt({
+  'astro.config.mjs': I18N_CONFIG,
+  'dist/sitemap-0.xml': SM(LOC('https://x.test/'), LOC('https://x.test/hu/')),
+  'dist/index.html': AT('https://x.test/'),
+  'dist/hu/index.html': AT('https://x.test/hu/'),
+}), 'seo', 'seo/hreflang');
+check('two locales and no hreflang anywhere → fix', noAlternates?.outcome === 'fix', JSON.stringify(noAlternates));
+const viaSitemap = row(mkBuilt({
+  'astro.config.mjs': I18N_CONFIG,
+  'dist/sitemap-0.xml': SM(LOC('https://x.test/', '<xhtml:link rel="alternate" hreflang="hu" href="https://x.test/hu/"/>')),
+  'dist/index.html': AT('https://x.test/'),
+}), 'seo', 'seo/hreflang');
+check('  …satisfied by @astrojs/sitemap i18n alternates', viaSitemap?.outcome === 'pass', JSON.stringify(viaSitemap));
+const viaHead = row(mkBuilt({
+  'astro.config.mjs': I18N_CONFIG,
+  'dist/sitemap-0.xml': SM(LOC('https://x.test/')),
+  'dist/index.html': AT('https://x.test/', '<link rel="alternate" hreflang="hu" href="https://x.test/hu/">'),
+}), 'seo', 'seo/hreflang');
+check('  …or by a per-page <link rel="alternate" hreflang>', viaHead?.outcome === 'pass', JSON.stringify(viaHead));
+const oneLocale = row(mkBuilt({ 'dist/sitemap-0.xml': SITEMAP(true) }), 'seo', 'seo/hreflang');
+check('  …and skipped entirely on a single-language site', oneLocale?.outcome === 'skip', JSON.stringify(oneLocale));
+
+// robots.txt: the Sitemap: value read as a URL, not as a non-empty string.
+const relSitemap = row(mkBuilt({
+  'dist/index.html': '<p>x</p>', 'dist/robots.txt': 'User-agent: *\nAllow: /\nSitemap: /sitemap-index.xml\n',
+}), 'seo', 'seo/robots');
+check('  …and a relative Sitemap: URL → fix (the spec requires an absolute one)',
+  relSitemap?.outcome === 'fix', JSON.stringify(relSitemap));
+const wrongSitemap = row(mkBuilt({
+  'dist/index.html': '<p>x</p>',
+  'dist/robots.txt': 'User-agent: *\nAllow: /\nSitemap: https://x.test/sitemap.xml\n',
+  'dist/sitemap-0.xml': SITEMAP(true),
+}), 'seo', 'seo/robots');
+check('  …and one pointing at a file this build never wrote → 💡 naming what it did',
+  wrongSitemap?.outcome === 'suggest' && /sitemap-0\.xml/.test(wrongSitemap?.message ?? ''), JSON.stringify(wrongSitemap));
+
 // canonical:unique compares the canonical URLs a build declares. With none to
 // compare it printed "✅ 0 distinct canonical URL(s)" directly underneath
 // meta:canonical's finding that there are none — a green tick for a comparison

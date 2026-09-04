@@ -421,6 +421,17 @@ thing a version bump leaves behind. Each maps to a documented v7 breaking change
   of 19 pages and the set shrinks to 1, which reports 1/1 ✅. A dogfood agent
   reproduced exactly that. All → pass, none → fix, some → 💡 naming the pages.
   → `seo: meta:*`
+- **The three tags a search result is made of are checked offline too.**
+  `<title>`, `<meta name="description">` and `og:title` were **live-only** until
+  2026-09-04, which meant the *default* audit — the one you run without a URL —
+  never read them at all. A site could ship an empty `<title>` on every page,
+  pass `seo` clean, and hear about it only from whoever remembered `--url`.
+  They are judged over the same sitemap denominator as the rest of the head
+  surface, and the built-HTML matcher requires a non-empty `content`: a tag that
+  rendered as `content=""` has the markup and none of the value. That distinction
+  was itself a bug for one commit — `content\s*=\s*["'][^"']*\S` matches `content=""`,
+  because `\S` is happy to be the closing quote. The value has to be bounded on
+  both sides. → `seo: meta:title`, `meta:description`, `meta:og:title`
 - **`og:image:width`/`height` are advice, not a requirement.** A card renders
   without them; they only let a platform reserve space before fetching it. Two
   independently-built, well-made dogfood sites had these two as their *only*
@@ -437,11 +448,20 @@ thing a version bump leaves behind. Each maps to a documented v7 breaking change
   signal — its presence is the anti-pattern. → `seo: no-keywords`
 - **Brand fields set:** `siteName`, `siteUrl`, `tagline` feed the SEO meta. →
   `seo: brand.<field>` (and 💡 `brand:optional` for author/twitter handles)
-- **`robots.txt` served, pointing at the sitemap.** The built site must carry a
-  `robots.txt` with a `Sitemap:` line — that line is how a crawler that starts at
-  the root finds the full URL list. Read from `dist/robots.txt`, so any way of
-  producing it counts: an endpoint, a `public/` file, or an integration.
-  → `seo: robots` (`⏭` with no `dist/`)
+- **`robots.txt` served, pointing at the sitemap — with an absolute URL.** The
+  built site must carry a `robots.txt` with a `Sitemap:` line: that line is how a
+  crawler starting at the root finds the full URL list. Read from
+  `dist/robots.txt`, so any way of producing it counts — an endpoint, a
+  `public/` file, or an integration. The value is read **as a URL**, not as a
+  non-empty string: the spec requires an absolute one, and a relative
+  `Sitemap: /sitemap-index.xml` is the mistake that looks most correct. And
+  because `dist/` *is* the served surface on a static build, a line pointing at a
+  file this build never wrote earns a 💡 naming what it did write —
+  `@astrojs/sitemap` emits an index plus numbered parts, not `/sitemap.xml`,
+  which is Search Console's "sitemap could not be read" before anyone deploys.
+  The suggestion names the two platform primitives and no third-party
+  integration; this tool does not send anyone shopping (*Own it before you buy
+  it*, above). → `seo: robots` (`⏭` with no `dist/`)
 - **Sitemap carries lastmod.** Read from the built `sitemap*.xml`: how many
   `<url>` entries carry a `<lastmod>`. `@astrojs/sitemap` emits none unless a
   `serialize()` supplies one (verified against the integration docs), so the
@@ -449,6 +469,78 @@ thing a version bump leaves behind. Each maps to a documented v7 breaking change
   `astro.config` and passed two dogfood sites whose sitemaps had zero `lastmod`.
   Advisory: a crawler tolerates its absence, it just can't tell what changed.
   → `seo: sitemap:lastmod` (`⏭` with no `dist/`)
+
+- **The sitemap is judged against what Google actually does with it.** Verified
+  against Google's *Build and submit a sitemap* on 2026-09-04 rather than from
+  memory, because half of what a sitemap can carry is read by nobody:
+  - **`<changefreq>` and `<priority>` are documented as ignored.** They are in
+    the sitemap spec, they are what people hand-tune (a `priority` of 1.0 on the
+    homepage *feels* like it must do something), and Google's own documentation
+    lists both as unused. Shipping them is not a defect, just maintenance that
+    buys nothing — so this reports the fact and never fails, in either mode.
+    → 💡 `seo: sitemap:hints` (advisory in `policy.mjs`)
+  - **Absolute URLs, and inside the caps.** 50,000 URLs and 50 MB uncompressed
+    are per-file hard limits, and going over either loses the *whole file*
+    rather than the overflow. `@astrojs/sitemap` splits at `entryLimit` on its
+    own, so this fires on hand-rolled endpoints — which is exactly where a
+    relative `<loc>` shows up, the mistake that looks most correct because every
+    other line a site writes about itself is a path. A sitemap spanning several
+    origins is advice, not a finding: legal once each is verified in Search
+    Console, and far more often a stale `site`. → `seo: sitemap:urls`
+  - **`<lastmod>` is counted only where it parses.** Google reads it "if it's
+    consistently and verifiably accurate", and the value must be a W3C datetime
+    — `March 3, 2026` is a string that gets the element ignored. A malformed one
+    is therefore counted as the absence it effectively is, rather than as its own
+    required finding: making it 🔧 while a *missing* lastmod stays 💡 would tell a
+    site it is better off deleting the element than fixing it.
+    → 💡 `seo: sitemap:lastmod`
+
+- **Three ways a sitemap can contradict the site it describes.** A sitemap is a
+  request to index every URL in it, so the failures worth catching are the ones
+  where the site says the opposite somewhere else. None is visible from either
+  half alone, and all three are named errors in Search Console:
+  - **`noindex` on a submitted URL.** The page asks to be dropped while the
+    sitemap asks for it to be added. Usually a staging value that survived, and
+    the highest-consequence SEO defect there is — which is why nothing checked
+    it here until 2026-09-04 was the gap worth closing first. The discriminator
+    is the sitemap: the bundled i18n fixture `noindex`es its preview routes
+    *correctly*, and they are filtered out of the sitemap, so they are not
+    findings. → `seo: sitemap:noindex`
+  - **Blocked by `robots.txt`.** The crawler is told to fetch it and told not
+    to. Resolved the way the standard does — longest matching rule wins, `Allow`
+    wins a tie — which is why `Allow` is parsed at all: reading `Disallow` alone
+    reports `Disallow: /blog` + `Allow: /blog/public/` as blocking
+    `/blog/public/`, a finding against a correct file. → `seo: sitemap:blocked`
+  - **A canonical pointing elsewhere.** The URL is submitted and then disclaimed
+    by the page that answers it — Google's "Duplicate, submitted URL not selected
+    as canonical". *Unless the sitemap itself declared the consolidation:* a
+    locale fallback rewrite serves the default locale's page and correctly
+    canonicalises to it, and the entry's own `<xhtml:link>` alternates say so.
+    Without that exemption the bundled i18n fixture, which is correct, collected
+    two required findings — the check was written against it before it was
+    written against anything else. A trailing-slash-only difference is 💡: still
+    two URLs to a crawler, rarely the thing worth failing a build over.
+    → `seo: sitemap:canonical`
+
+  Backtested before shipping, counting the wrongs rather than the rights:
+  **6 real public sites plus both bundled examples, 8 corpora, 0 false
+  positives.** The one required finding it produced is real — a large,
+  well-built site whose sitemap submits `/blog/release-notes/<version>` for
+  pages that each canonicalise to a different `/blog/<slug>`, on all 8 sampled
+  pages. `sitemap:hints` fired once, on a sitemap carrying `<changefreq>` and
+  nothing else, 18,134 times.
+
+- **hreflang alternates on a multi-locale site.** Two or more locales in the
+  config and no `hreflang` anywhere means each translation competes with the
+  others as a duplicate. Either carrier counts: `@astrojs/sitemap`'s `i18n`
+  option writes `<xhtml:link rel="alternate">` into the sitemap (verified via
+  context7 against the integration docs, 2026-09-04), and a per-page
+  `<link rel="alternate" hreflang>` in the head says the same thing. It runs
+  **only** when the config names ≥2 locales — on a single-language site there is
+  nothing to alternate between, and firing there would be the one thing a check
+  must never do. This was a tracked gap for a month: the fixture smoke test
+  covered it, the audit did not. → `seo: hreflang`
+
 - **Exactly one `<h1>` per content page.** The `<h1>` is the page title; zero
   means no main heading, more than one dilutes the document outline for search
   engines and screen readers. Checked on built `dist/` HTML (pages with a
@@ -1498,9 +1590,10 @@ the bullet here is only its summary.
   instead of being auto-corrected. Detecting it properly means parsing every
   `.astro` template, which the no-deps tool doesn't do — the build itself is the
   honest gate here.
-- **hreflang alternates on multi-locale pages.** Paired-locale posts should emit
-  `rel="alternate" hreflang=…` (+ `x-default`); single-locale posts should omit
-  the block entirely. The fixture smoke test checks this; the audit doesn't yet.
+- ~~**hreflang alternates on multi-locale pages.**~~ Closed by `seo: hreflang`
+  — the practice is § seo above. `x-default` is deliberately *not* part of it:
+  `@astrojs/sitemap`'s `i18n` option does not emit one, so demanding it would be
+  a finding the baseline integration cannot satisfy.
 - ~~**Responsive `srcset`/`sizes`.**~~ Closed by `images: srcset:missing` — the
   practice is § images above. The thresholds came out of a measurement rather
   than taste, and the check was promoted out of advisory to house style on

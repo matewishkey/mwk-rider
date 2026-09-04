@@ -154,6 +154,10 @@ const ADVISORY = [
   'seo:meta:og:image:height',
   'seo:og:image:width',
   'seo:og:image:height',
+  // <changefreq> and <priority> are in the sitemap spec and Google's own
+  // documentation lists both as ignored. Emitting them is not a defect, just
+  // maintenance that buys nothing — so this reports the fact and never fails.
+  'seo:sitemap:hints',
   // Diagnosis, not verdict: what the LCP is waiting for, which third parties
   // weigh the most, and how the simulated numbers compare to the observed ones.
   // The scores next to them are the verdict; these are what make one readable.
