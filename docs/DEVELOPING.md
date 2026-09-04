@@ -165,6 +165,24 @@ the alternative is a starter that quietly stops complying with the tool that shi
   file path, and `existsSync` answers *true for a directory*. Neither could have been found
   on a corpus we wrote — which is the same lesson as round 7, arriving by a different road.
 
+  Round 9 (2026-09-04, issue #35) is the one to copy when the question is **whether to
+  widen a check at all**, and it is the round where the corpus answered a different
+  question than the one asked. The ask was a population containing the false-positive
+  shape; the instrument was two copies of the tool on the same input (round 6's method) —
+  `git archive HEAD tools` for the shipped one, a one-line patch for the candidate — over
+  27 mirrored showcase sites. Result: 494 candidates, 311 declaring a width, **0 findings
+  changed**. A null result is not a verdict on its own, so two things had to happen before
+  it counted. **First, a positive control**: a fixture carrying exactly the shape, proving
+  the widened tool fires on it and the shipped one does not — without that, "0 findings"
+  is indistinguishable from a broken probe. **Second, look at the population you did
+  measure, not just the delta**: the 311 were all one host, all `?width=600&dpr=2`, and
+  fetching one showed 1200×720 — the declared width was half the delivered one. That
+  killed the widening on a better argument than the null result, and turned up a real
+  defect in shipped code, since `dpr` is Cloudflare's own parameter and our check ignored
+  it. **The corpus is cheap enough to be worth building even when you expect to change
+  nothing** — astro.build/showcase is 29 live sites, the mirror is minutes, and the
+  by-product was worth more than the answer.
+
   **Most sibling repos have no `dist/` and the dist-reading checks are the interesting
   half**, so a real-site round usually means building them. Check `git check-ignore -q dist`
   first and skip any repo where it is not ignored — building there would drop hundreds of

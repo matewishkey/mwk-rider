@@ -719,6 +719,23 @@ works.
   own bytes (`tools/lib/image-size.mjs`); a remote host is unknowable offline,
   and an unknown width is never a finding.
 
+  **Delivered width, not the number in the URL — `dpr` multiplies it.**
+  Cloudflare's transform vocabulary has `dpr` (default 1, max 2), so
+  `width=600,dpr=2` delivers 1200 px while the URL says 600. Reading the stated
+  number alone put that under the 1000 px floor and the check went quiet on
+  exactly the image it exists for — a false *negative*, which is the tolerable
+  direction and still wrong. Measured rather than reasoned: a live resizer
+  carrying the same parameter returned 1200×720 for `?width=600&dpr=2` and
+  600×360 for `dpr=1` (2026-09-04, issue #35).
+
+  **Unknowable is reported, never silent — including a URL with no extension.**
+  An image CDN that serves by opaque id (`…/ads/9f3c-4a1e?rule=…`) has no file
+  extension, and the content-image gate dropped those before they reached the
+  unmeasurable tally, so a page carrying 53 of them reported `⏭ nothing to
+  check`. That is the same failure the tally was added for in #21, one gate
+  earlier. A remote `<img src>` with no extension is now counted and named —
+  counted, never judged.
+
   AVIF was the exception until issue #21, and it was the expensive kind of
   silence: a build that emits avif produced `⏭ nothing to check` — the same line
   a site with no images gets — because every candidate's width was unreadable.
@@ -1677,6 +1694,23 @@ the bullet here is only its summary.
   2026-09-03 once the wider sweep it was waiting for came in — **cumulative across
   both rounds**, 3 of ours plus 7 public: 10 sites, 66
   measurable candidates, 25 findings, 0 wrong (issue #21).
+- ~~**Trusting a remote URL's declared width.**~~ **Declined, and measured
+  rather than argued** (issue #35, 2026-09-04). `pinnedWidth()` reads `?w=`,
+  `width=` and `/w_1600/`, but only behind the `/cdn-cgi/image/` gate, so a
+  stock-photo URL stating its own width counted as unmeasurable. A 27-site
+  corpus off the Astro showcase — mirrored, 284 pages, 6101 `<img>`, 494 remote
+  non-transform candidates, 311 declaring a width — moved **0 findings** either
+  way when the gate was widened.
+  The reason to stop is better than the null result. On the one site in 27 that
+  declares widths at all, the declared width is a *request parameter*, not the
+  delivered size: `?width=600&dpr=2` measured 1200×720. So widening would read
+  the wrong number on 311 of 312 images, and the number a foreign CDN puts in a
+  URL means whatever that CDN says it means — a vocabulary we do not own and
+  cannot enumerate. **The half that is ours we fixed instead**: `dpr` on our own
+  transform syntax, and the extensionless URLs that were being dropped before
+  the unmeasurable tally (both § images above). The honest report stays what it
+  was — the image is named as unmeasurable rather than judged on a width no
+  guard can check.
 - **Offline heading scan beyond the canonical gate (see also `headings:order`,
   which now names the component rather than the built page).** Today the offline outline
   check only inspects pages with a `<link rel="canonical">`; a page that should

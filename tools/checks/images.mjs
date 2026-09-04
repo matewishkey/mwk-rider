@@ -449,9 +449,19 @@ function collectSingleWidth(html, rel, projectRoot, findings, seen) {
     // An SVG is resolution-independent — it has no ladder to be missing, even
     // when someone routes one through a transform that pins a width.
     if (SVG_OR_FAVICON_RE.test(src)) continue;
-    if (!isContentImageRef(src) && !IT_PREFIX_RE.test(src)) continue;
     if (seen.has(src)) continue;
     seen.add(src);
+    if (!isContentImageRef(src) && !IT_PREFIX_RE.test(src)) {
+      // An image CDN that serves by opaque id has no extension to read
+      // (Unsplash, and every marketplace thumbnailer). It is still an image —
+      // it is in an <img src> — so it is UNMEASURABLE, not absent. Dropping it
+      // here made the report say "nothing to check" on a mirrored page carrying
+      // 53 of them, which is exactly the failure the unmeasurable tally was
+      // added for in #21: twenty unreadable images and zero images printed the
+      // same line. Counted, never judged.
+      if (/^https?:\/\//i.test(src) && !extname(src.split('?')[0])) findings.singleWidthUnknown.push(src);
+      continue;
+    }
 
     // Two ways to know what width actually ships. A transform URL states it; a
     // local build artifact has it in its own bytes. Anything else — a remote
@@ -564,12 +574,25 @@ function walkDir(dir, callback, root) {
  * Covers the three common spellings: a Cloudflare transform
  * (`/cdn-cgi/image/width=1600,…`), a query parameter (`?w=1600`, `?width=1600`)
  * and a Cloudinary-style path segment (`/w_1600/`).
+ *
+ * `dpr` MULTIPLIES it, and the answer wanted here is delivered pixels, not the
+ * number in the URL. Cloudflare's own transform vocabulary has `dpr` (default
+ * 1, max 2 — verified in the Images docs), so this is our own syntax, not a
+ * foreign CDN's. Measured on a live resizer carrying the same parameter:
+ * `?width=600&dpr=2` returned 1200x720, so reading 600 understates it by half
+ * and drops it under the 1000px floor — the check goes quiet on an image that
+ * needed it. Found on 2026-09-04 while measuring whether a remote URL's
+ * declared width could be trusted (issue #35); the answer for a remote host is
+ * no, and this is the half of it that is ours to get right.
  */
 function pinnedWidth(url) {
   const m = url.match(/\bwidth=(\d{2,5})\b/)
         ?? url.match(/[?&]w=(\d{2,5})\b/)
         ?? url.match(/\/w_(\d{2,5})(?:[,/])/);
-  return m ? Number(m[1]) : null;
+  if (!m) return null;
+  const dpr = url.match(/\bdpr=(\d(?:\.\d+)?)\b/);
+  const scale = dpr ? Number(dpr[1]) : 1;
+  return Math.round(Number(m[1]) * (scale > 0 && scale <= 3 ? scale : 1));
 }
 
 function isContentImageRef(src) {

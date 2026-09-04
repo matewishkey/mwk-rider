@@ -2095,6 +2095,16 @@ check('  …and 💡 [baseline] in default mode — a threshold never fails a st
   wideDefault[0]?.outcome === 'suggest' && wideDefault[0]?.houseStyle === true, JSON.stringify(wideDefault[0]));
 check('  …and a /cdn-cgi/image/ URL is judged on the width it pins',
   singleRows({}, ONE_IMG('https://media.x.test/cdn-cgi/image/width=1600,format=auto,quality=80/hero.jpg'))[0]?.outcome === 'fix');
+// `dpr` MULTIPLIES the width the URL states, and it is Cloudflare's own
+// transform vocabulary (default 1, max 2), not a foreign CDN's. Reading the
+// stated number alone put a real 1200px delivery under the 1000px floor, so the
+// check went quiet on exactly the image it exists for. Measured on a live
+// resizer carrying the same parameter on 2026-09-04 (issue #35):
+// `?width=600&dpr=2` returned 1200x720.
+check('  …and dpr= multiplies it — width=600,dpr=2 delivers 1200px, not 600',
+  singleRows({}, ONE_IMG('https://media.x.test/cdn-cgi/image/width=600,dpr=2,format=auto/hero.jpg'))[0]?.outcome === 'fix');
+check('  …while the same URL at dpr=1 is the 600px it says, and stays under the floor',
+  singleRows({}, ONE_IMG('https://media.x.test/cdn-cgi/image/width=600,dpr=1,format=auto/hero.jpg'))[0]?.outcome === 'pass');
 
 // The blind spot this check shipped with (issue #21): a site whose build emits
 // avif reached the same `⏭ nothing to check` as a site with no images at all,
@@ -2150,6 +2160,17 @@ const unmeasurable = mkBuilt({
 const blind = runJson(unmeasurable, ['-s', 'images', '--strict']).json?.results.find(r => r.id === 'images/srcset-missing');
 check('images whose width cannot be read offline are counted and named, not silently dropped',
   /2 single-width <img> could not be measured offline/.test(blind?.message ?? '') && /media\.x\.test/.test(blind?.message ?? ''), JSON.stringify(blind));
+// An image CDN that serves by opaque id has no extension to read, so the
+// content-image gate dropped it BEFORE the tally above and the report went back
+// to claiming "nothing to check" — on a mirrored marketplace page carrying 53
+// of them (2026-09-04). Same failure as the line above, one gate earlier.
+const extensionless = mkBuilt({
+  'dist/index.html': '<html><head><link rel="canonical" href="https://x.test/"></head><body>'
+    + '<img src="https://img.x.test/api/v1/ads/9f3c-4a1e?rule=$_35.AUTO" alt="a"></body></html>',
+});
+const noExt = runJson(extensionless, ['-s', 'images', '--strict']).json?.results.find(r => r.id === 'images/srcset-missing');
+check('  …including a remote <img> whose URL has no file extension at all',
+  /1 single-width <img> could not be measured offline/.test(noExt?.message ?? ''), JSON.stringify(noExt));
 
 // Cross-origin images. tasmanvisa-web served every hero and card from
 // media.tasmanvisa.com with no preconnect: blog index LCP 5424 ms, ~3500 ms once
