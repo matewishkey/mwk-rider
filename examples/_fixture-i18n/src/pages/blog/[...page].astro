@@ -36,8 +36,17 @@ const sortedTypes = [...typeCounts.entries()].sort((a, b) => b[1] - a[1]);
 const sortedTags = [...tagCounts.entries()].sort((a, b) => b[1] - a[1]);
 
 const title = page.currentPage === 1 ? 'Blog' : `Blog · Page ${page.currentPage}`;
+import { config as brandConfig } from '../../../scripts/og.config.mjs';
+const brand = brandConfig.brand;
+// A description of its own, not the site tagline. 28 of this fixture's pages
+// shared one string, which tells a crawler they are the same page — found by
+// `seo: meta:unique:description`, which is advisory precisely because a shared
+// description is a weakness rather than a break.
+const description = page.currentPage === 1
+  ? `Every post on ${brand.siteName}, newest first.`
+  : `Page ${page.currentPage} of ${page.lastPage} — every post on ${brand.siteName}.`;
 ---
-<RootLayout title={title}>
+<RootLayout title={title} description={description}>
   <h1><Icon name="lucide:notebook-text" size={26} />Blog</h1>
   <p class="page-meta">
     Page {page.currentPage} of {page.lastPage} ·

@@ -2,9 +2,12 @@
 // canonical URL, OG meta, and the brand fields they need.
 // (Structured data / JSON-LD / llms.txt live in the data check.)
 
-import { eachDistHtml, isContentPage, headingOutline, headingAudit } from '../lib/html.mjs';
+import { existsSync, statSync } from 'node:fs';
+import { join } from 'node:path';
+
+import { eachDistHtml, isContentPage, headingOutline, headingAudit, attrValue } from '../lib/html.mjs';
 import { readSrcFiles, headMetaFiles } from '../lib/src-scan.mjs';
-import { distFiles, readDist, sitemapPages, sitemapPageFiles, sitemapEntries, decodePath, distRelative } from '../lib/dist.mjs';
+import { distDir, distFiles, readDist, sitemapPages, sitemapPageFiles, sitemapEntries, decodePath, distRelative } from '../lib/dist.mjs';
 import { editFile } from '../lib/remedy.mjs';
 
 const SEC = 'seo';
@@ -106,8 +109,10 @@ export async function run({ project, reporter }) {
   }
 
   checkRobots(project, reporter);
+  checkRobotsScope(project, reporter);
   checkSitemap(project, reporter);
   checkHreflang(project, reporter);
+  checkBuiltPages(project, reporter);
 
   // Heading outline on built content pages: exactly one <h1>, no skipped levels.
   // Scoped to pages with a canonical link, so OG-template / preview routes (no
@@ -654,4 +659,309 @@ function sampleOf(list, n = 3) {
 
 function truncate(s, n) {
   return s.length > n ? s.slice(0, n - 1) + '…' : s;
+}
+
+// --- the built pages, read once ----------------------------------------------
+
+// Seven checks below want different fields off the same HTML. Reading every
+// sitemap page once per check is seven full walks of dist/ and made the domain
+// quadratic on anything large, so the pass happens here and each check is handed
+// the result.
+// The names the checks below actually pass to the reporter — `meta:unique` is
+// two rules, not one, and a skip emitted under a name no check ever uses is a
+// catalogue entry with nothing behind it. tools/test.mjs asserts both directions
+// and caught exactly that.
+const PAGE_RULES = ['html:lang', 'canonical:value', 'links:internal', 'links:orphan', 'meta:unique:title', 'meta:unique:description', 'sitemap:coverage'];
+
+function scanPages(project) {
+  const out = [];
+  for (const [loc, file] of sitemapPageFiles(project.root)) {
+    const html = readDist(project.root, file);
+    const openTag = html.match(/<html\b([^>]*)>/i);
+    // Head-scoped, and that is not tidiness. `<title>` is also an SVG element:
+    // an inline diagram with labelled nodes puts three of them in the body, and
+    // counting those reported "more than one <title>" on four pages of a real
+    // documentation site that has exactly one each.
+    const head = headOf(html);
+    out.push({
+      loc, file, html,
+      lang: openTag ? attrValue(openTag[1], 'lang') : null,
+      titles: [...head.matchAll(/<title[^>]*>([\s\S]*?)<\/title>/gi)].map((m) => m[1].trim()),
+      description: head.match(/<meta(?=[^>]*\bname\s*=\s*["']description["'])[^>]*\bcontent\s*=\s*["']([^"']*)["'][^>]*>/i)?.[1]?.trim() ?? null,
+      canonicals: [...head.matchAll(/<link[^>]+rel=["']canonical["'][^>]*>/gi)]
+        .map((m) => m[0].match(/href=["']([^"']+)["']/)?.[1]).filter(Boolean),
+      hrefs: [...html.matchAll(/<a\b[^>]*?\shref=["']([^"']+)["']/gi)].map((m) => m[1]),
+    });
+  }
+  return out;
+}
+
+/** Everything before </head>, or the whole document when there is no such tag. */
+function headOf(html) {
+  const end = html.search(/<\/head\s*>/i);
+  if (end >= 0) return html.slice(0, end);
+  const body = html.search(/<body\b/i);
+  return body >= 0 ? html.slice(0, body) : html;
+}
+
+function checkBuiltPages(project, reporter) {
+  if (!project.hasDist) {
+    skipAll(reporter, PAGE_RULES, 'no dist/ — build the site to read the pages it ships');
+    return;
+  }
+  const pages = scanPages(project);
+  if (pages.length === 0) {
+    skipAll(reporter, PAGE_RULES, 'no sitemap URL resolves to a built page — nothing to read');
+    return;
+  }
+  checkLang(reporter, pages);
+  checkCanonicalValue(reporter, pages);
+  checkLinks(project, reporter, pages);
+  checkMetaUnique(project, reporter, pages);
+  checkSitemapCoverage(project, reporter, pages);
+}
+
+/**
+ * `<html lang>` — the one head attribute nothing here has ever read.
+ *
+ * A screen reader picks its pronunciation from it and a search engine uses it to
+ * decide who the page is for; without one both guess. WCAG 3.1.1 is a
+ * conformance failure, not a preference, which is why this is required on
+ * anyone's site rather than house style. It is also the prerequisite hreflang
+ * assumes: alternates that all declare the same language say nothing.
+ */
+function checkLang(reporter, pages) {
+  const missing = pages.filter((p) => !p.lang);
+  const malformed = pages.filter((p) => p.lang && !BCP47.test(p.lang));
+  if (!missing.length && !malformed.length) {
+    const langs = [...new Set(pages.map((p) => p.lang))];
+    reporter.pass(SEC, 'html:lang', `all ${pages.length} page(s) declare a language (${langs.slice(0, 4).join(', ')}${langs.length > 4 ? ' …' : ''})`);
+    return;
+  }
+  const parts = [
+    missing.length ? `${missing.length} page(s) have no lang on <html> — ${sampleOf(missing.map((p) => p.file))}` : '',
+    malformed.length ? `${malformed.length} declare one that is not a language tag — ${sampleOf(malformed.map((p) => `${p.file} (lang="${p.lang}")`))}` : '',
+  ].filter(Boolean);
+  reporter.fix(SEC, 'html:lang', parts.join('; '), 'set lang on <html> in the root layout (e.g. lang="en", or the page\'s own locale on a multi-locale site)');
+}
+
+// Loose BCP 47: a language subtag plus optional script/region/variant. Loose on
+// purpose — this is here to catch `lang=""` and `lang="english"`, not to referee
+// the registry.
+const BCP47 = /^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$/i;
+
+/**
+ * The page's declaration of its own address, once and absolute.
+ *
+ * Two canonicals is the failure that reads as diligence: Google discards the
+ * pair and falls back to guessing, so a page that declares its URL twice has
+ * declared it zero times. A relative canonical is the same class — legal HTML
+ * that resolves against whatever URL served the page, which is exactly the
+ * parameterised duplicate the canonical existed to collapse. Two <title>s are
+ * included because it is the same mistake in the same head: a component
+ * emitting one and a layout emitting another.
+ */
+function checkCanonicalValue(reporter, pages) {
+  const many = pages.filter((p) => p.canonicals.length > 1);
+  const relative = pages.filter((p) => p.canonicals.length === 1 && !/^[a-z][a-z0-9+.-]*:/i.test(p.canonicals[0]) && !p.canonicals[0].startsWith('//'));
+  const twoTitles = pages.filter((p) => p.titles.length > 1);
+  if (!many.length && !relative.length && !twoTitles.length) {
+    reporter.pass(SEC, 'canonical:value', `all ${pages.length} page(s) declare exactly one absolute canonical and one <title>`);
+    return;
+  }
+  const parts = [
+    many.length ? `${many.length} page(s) declare more than one canonical, which makes Google discard all of them — ${sampleOf(many.map((p) => p.file))}` : '',
+    relative.length ? `${relative.length} declare a relative canonical, which resolves against whatever URL served the page — ${sampleOf(relative.map((p) => `${p.file} (${p.canonicals[0]})`))}` : '',
+    twoTitles.length ? `${twoTitles.length} render more than one <title> — ${sampleOf(twoTitles.map((p) => p.file))}` : '',
+  ].filter(Boolean);
+  reporter.fix(SEC, 'canonical:value', parts.join('; '), 'emit exactly one canonical, built from the page\'s own absolute URL (new URL(Astro.url.pathname, Astro.site)), from one component');
+}
+
+/**
+ * Internal links that go nowhere, and pages nothing links to.
+ *
+ * A 404 behind an `<a>` is invisible to every other check here: the markup is
+ * perfect, the target simply is not there. It found a real one on the first run
+ * — the bundled i18n fixture's own blog emitted `href="/2"` for page two, which
+ * 404s for every visitor who clicks it.
+ *
+ * Orphans are advisory and always will be. `contact/thanks` in the starter is
+ * reached by a form redirect and is *correctly* linked from nowhere; nothing in
+ * the build distinguishes that from a page someone forgot to put in the nav.
+ * Reporting it is useful, failing a build over it is not.
+ */
+function checkLinks(project, reporter, pages) {
+  const byFile = new Map(pages.map((p) => [p.file, p]));
+  const broken = [], linked = new Set();
+
+  for (const page of pages) {
+    for (const href of page.hrefs) {
+      // Off-site, in-page, and non-http schemes are somebody else's problem —
+      // and a mailto: or tel: is not a link this can resolve at all.
+      if (!href || /^(?:[a-z][a-z0-9+.-]*:|\/\/|#)/i.test(href)) continue;
+      const path = resolveHref(page.loc, href);
+      if (path == null) continue;
+      const target = resolveDistPath(project.root, path);
+      if (target) { linked.add(target); continue; }
+      broken.push(`${page.file} → ${href}`);
+    }
+  }
+
+  if (broken.length === 0) reporter.pass(SEC, 'links:internal', `every internal link across ${pages.length} page(s) resolves to something this build shipped`);
+  else reporter.fix(SEC, 'links:internal', `${broken.length} internal link(s) point at something this build did not produce — ${sampleOf(broken)}`, 'fix the href, or ship the page it names — a link that 404s is invisible to every other check here, because the markup is correct');
+
+  // The homepage is nobody's orphan: it is what a visitor arrives at.
+  const orphans = pages.filter((p) => p.file !== 'index.html' && !linked.has(p.file));
+  if (orphans.length === 0) reporter.pass(SEC, 'links:orphan', `every published page is linked from at least one other`);
+  else reporter.suggest(SEC, 'links:orphan', `${orphans.length}/${pages.length} published page(s) are linked from nowhere on this site — ${sampleOf(orphans.map((p) => p.file))}`, 'link them from the nav, a footer or an index — or, if they are reached by a redirect (a form thank-you page), this is correct and there is nothing to do');
+}
+
+/**
+ * An href resolved the way a browser resolves it: against the page's URL.
+ *
+ * Against its FILE PATH is the intuitive version and it is wrong. A page built
+ * to `blog/announcing-vite2/index.html` is *served* at `/blog/announcing-vite2`,
+ * so `./announcing-vite3` on it means `/blog/announcing-vite3` — the sibling —
+ * not a child of itself. Both bundled examples link with absolute paths and so
+ * never exercised the difference; a real 57-page site did, and the file-path
+ * version reported 99 working links as broken.
+ */
+function resolveHref(fromLoc, href) {
+  try { return decodePath(new URL(href, fromLoc).pathname); } catch { return null; }
+}
+
+/**
+ * What a path actually serves, or null.
+ *
+ * Any file counts, not just HTML: `/rss.xml`, `/llms.txt` and `/og/default.png`
+ * are perfectly good link targets, and treating them as broken would have
+ * reported the starter's own footer.
+ */
+function resolveDistPath(root, path) {
+  const clean = path.replace(/^\/+|\/+$/g, '');
+  if (!clean) return isFile(root, 'index.html') ? 'index.html' : null;
+  // Directory forms FIRST, and the bare path only if it is a regular file.
+  // `existsSync` is true for a directory, so `/blog` "resolved" to the `blog/`
+  // folder rather than to `blog/index.html` — every link to a section landed on
+  // a path no page could ever match, and links:orphan reported 42 of 43 pages
+  // as unlinked on a site whose nav works.
+  for (const candidate of [`${clean}/index.html`, `${clean}.html`, clean]) {
+    if (isFile(root, candidate)) return candidate;
+  }
+  return null;
+}
+
+function isFile(root, rel) {
+  try { return statSync(join(distDir(root), rel)).isFile(); } catch { return false; }
+}
+
+/**
+ * Two pages, one title — with the one exemption that keeps it honest.
+ *
+ * A duplicate title or description tells a crawler two URLs are the same page,
+ * which is the thing canonical exists to say deliberately. Locale pairs are the
+ * legitimate case and they are common: the fixture's four en/hu pairs share a
+ * title by design, so a page is exempt when the sitemap already declares the
+ * other as its hreflang alternate — the same discriminator `sitemap:canonical`
+ * uses.
+ *
+ * Unlike `canonical:unique` this has no majority threshold, because the two
+ * findings are not the same shape: a canonical shared site-wide de-indexes the
+ * site and a canonical shared by two pages is usually deliberate, whereas two
+ * pages with the same title is already a problem for those two. Advisory in
+ * every mode, which is what makes the lower bar affordable.
+ */
+function checkMetaUnique(project, reporter, pages) {
+  const alternates = new Map();
+  for (const e of sitemapEntries(project.root).entries) {
+    alternates.set(normalizeUrl(e.loc)?.path, new Set(e.alternates.map((a) => normalizeUrl(a)?.path)));
+  }
+  const paired = (a, b) => {
+    const [pa, pb] = [normalizeUrl(a.loc)?.path, normalizeUrl(b.loc)?.path];
+    return alternates.get(pa)?.has(pb) || alternates.get(pb)?.has(pa);
+  };
+
+  const report = (field, get) => {
+    const groups = new Map();
+    for (const p of pages) {
+      const v = get(p);
+      if (!v) continue;
+      if (!groups.has(v)) groups.set(v, []);
+      groups.get(v).push(p);
+    }
+    // A group is a finding only once the locale pairs are taken out of it.
+    const dupes = [...groups.entries()]
+      .map(([value, ps]) => [value, ps.filter((p, i) => !ps.some((q, j) => j !== i && paired(p, q)) || ps.filter((q) => !paired(p, q)).length > 1)])
+      .filter(([, ps]) => ps.length > 1)
+      .sort((a, b) => b[1].length - a[1].length);
+    if (dupes.length === 0) {
+      reporter.pass(SEC, `meta:unique:${field}`, `${groups.size} distinct ${field}(s) across ${pages.length} page(s)`);
+      return;
+    }
+    const worst = dupes[0];
+    reporter.suggest(SEC, `meta:unique:${field}`, `${dupes.length} ${field}(s) are shared by more than one page — the worst covers ${worst[1].length}: "${truncate(worst[0], 50)}" on ${sampleOf(worst[1].map((p) => p.file))}`, `give each page its own ${field}; two pages with the same one tell a crawler they are the same page`);
+  };
+
+  report('title', (p) => p.titles[0]);
+  report('description', (p) => p.description);
+}
+
+/**
+ * The inverse of the denominator: what got built and never declared.
+ *
+ * Every coverage check here judges the pages the sitemap lists. This is the only
+ * one that asks what the sitemap left out — a page that ships, is indexable, and
+ * is not submitted is a page relying on being stumbled upon.
+ *
+ * Four exemptions, each measured rather than assumed. An error page is the one
+ * that caught us out: both bundled examples ship a `404.html` carrying a
+ * canonical and no noindex, so it looks publishable to every test above and must
+ * never be submitted.
+ */
+function checkSitemapCoverage(project, reporter, pages) {
+  const declared = new Set(pages.map((p) => p.file));
+  const rules = robotsRules(readDist(project.root, 'robots.txt'));
+  const missing = [];
+  eachDistHtml(project.root, (rel, html) => {
+    const file = distRelative(project.root, rel);
+    if (declared.has(file)) return;
+    if (ERROR_PAGE.test(file)) return;                    // 404/500 — shipped, never submitted
+    if (!isContentPage(html)) return;                     // no canonical: an OG template or preview route
+    if (NOINDEX_RE.test(html)) return;                    // deliberately withheld, and sitemap:noindex owns that case
+    const path = `/${file.replace(/index\.html$/, '').replace(/\.html$/, '')}`;
+    if (rules.length && isBlocked(rules, path)) return;   // robots.txt already says don't
+    missing.push(file);
+  });
+
+  if (missing.length === 0) reporter.pass(SEC, 'sitemap:coverage', `every indexable built page is in the sitemap (${pages.length})`);
+  else reporter.fix(SEC, 'sitemap:coverage', `${missing.length} built page(s) look publishable but are not in the sitemap — ${sampleOf(missing)}`, 'include them (they are in dist/, carry a canonical and are not noindex), or exclude them deliberately with @astrojs/sitemap\'s filter');
+}
+
+const ERROR_PAGE = /(^|\/)(404|500)(\/index)?\.html$/i;
+
+/**
+ * `Disallow: /` for every crawler — the whole site, withheld.
+ *
+ * Nearly always a staging robots.txt that shipped, and it is total: no sitemap,
+ * canonical or JSON-LD below it can matter. Resolved with the same longest-match
+ * logic as `sitemap:blocked`, so a `Disallow: /` that a longer `Allow:` reopens
+ * is correctly not a finding.
+ */
+function checkRobotsScope(project, reporter) {
+  if (!project.hasDist) {
+    reporter.skip(SEC, 'robots:blocks-all', 'no dist/ — build the site to read the robots.txt it ships');
+    return;
+  }
+  const text = readDist(project.root, 'robots.txt');
+  if (!text.trim()) {
+    reporter.skip(SEC, 'robots:blocks-all', 'no robots.txt in dist/ — seo: robots reports that; there is no rule here to read');
+    return;
+  }
+  const rules = robotsRules(text);
+  const blocking = isBlocked(rules, '/');
+  if (blocking) {
+    reporter.fix(SEC, 'robots:blocks-all', `dist/robots.txt disallows the whole site for every crawler (Disallow: ${blocking}) — nothing else in this audit can matter while that ships`, 'remove the site-wide Disallow, or narrow it to the paths you actually mean to withhold', { file: 'dist/robots.txt' });
+    return;
+  }
+  reporter.pass(SEC, 'robots:blocks-all', rules.length ? `${rules.length} rule(s) for *, none of which blocks the site root` : 'nothing disallowed for *', { file: 'dist/robots.txt' });
 }

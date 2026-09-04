@@ -91,6 +91,12 @@ const HOUSE_STYLE = [
   // can justify one width, so a stranger's site is never failed for it.
   'images:srcset:missing',
 
+  // Which pages a site chooses to submit is its own call — a deliberately
+  // unlisted-but-indexable page is a legitimate thing to ship. The three
+  // contradictions in seo:sitemap:* stay universal: those are the site
+  // disagreeing with itself, which is a defect on anyone's site.
+  'seo:sitemap:coverage',
+
   // --- content surface: valuable, but blog/content-site specific ---------------
   'data:llms.txt',
   'data:llms.txt:filter',
@@ -154,6 +160,16 @@ const ADVISORY = [
   'seo:meta:og:image:height',
   'seo:og:image:width',
   'seo:og:image:height',
+  // A published page nothing links to is worth knowing and is not always a
+  // mistake: the starter's contact/thanks is reached by a form redirect and is
+  // correctly linked from nowhere. Nothing in a build tells that apart from a
+  // page someone forgot to put in the nav, so the tool reports and does not rule.
+  'seo:links:orphan',
+  // A shared title or description is a weakness, not a break — and the one
+  // legitimate case (locale alternates) is already exempted inside the check, so
+  // what is left is a judgement about content rather than a defect in it.
+  'seo:meta:unique:title',
+  'seo:meta:unique:description',
   // <changefreq> and <priority> are in the sitemap spec and Google's own
   // documentation lists both as ignored. Emitting them is not a defect, just
   // maintenance that buys nothing — so this reports the fact and never fails.

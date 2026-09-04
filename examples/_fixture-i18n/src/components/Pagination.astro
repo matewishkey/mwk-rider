@@ -28,11 +28,22 @@ const { page, basePath } = Astro.props;
 // "directory" and emit URLs like /blog/tag/architecture/2 correctly anyway,
 // but explicit is safer when we re-render the same component from different
 // route trees.
+//`page.url.first` is undefined WHEN YOU ARE ON THE FIRST PAGE — Astro
+// documents it as "url of the first page (if the current page is not the first
+// page)". The old `?? ''` fallback therefore produced `/2` instead of `/blog/2`
+// on page one of every paginated route: a link that 404s for anyone who clicks
+// it, on markup that is otherwise perfect. `seo: links:internal` found it.
+// `page.url.current` is the one member that is always present, so the base is
+// derived from it, with a trailing page number stripped.
+function pageBase(): string {
+  const base = basePath ?? page.url.first ?? String(page.url.current).replace(/\/\d+$/, '');
+  return base.replace(/\/$/, '') || '/';
+}
+
 function pageHref(p: number): string {
-  if (!basePath) {
-    return p === 1 ? page.url.first ?? '' : `${(page.url.first ?? '').replace(/\/$/, '')}/${p}`;
-  }
-  return p === 1 ? basePath : `${basePath.replace(/\/$/, '')}/${p}`;
+  const base = pageBase();
+  if (p === 1) return base;
+  return base === '/' ? `/${p}` : `${base}/${p}`;
 }
 
 const { currentPage, lastPage } = page;

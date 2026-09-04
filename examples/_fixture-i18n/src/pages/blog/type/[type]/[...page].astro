@@ -28,8 +28,15 @@ const { type } = Astro.params;
 const title = page.currentPage === 1
   ? `Type: ${type}`
   : `Type: ${type} · Page ${page.currentPage}`;
+// A description of its own, not the site tagline. 28 of this fixture's pages
+// shared one string, which tells a crawler they are the same page — found by
+// `seo: meta:unique:description`, which is advisory precisely because a shared
+// description is a weakness rather than a break.
+const description = page.currentPage === 1
+  ? `Every ${type} post — ${page.total} in total.`
+  : `${type} posts, page ${page.currentPage} of ${page.lastPage}.`;
 ---
-<RootLayout title={title}>
+<RootLayout title={title} description={description}>
   <p class="breadcrumb"><a href="/blog">← Blog</a></p>
   <h1><Icon name="lucide:folder" size={26} />{type}</h1>
   <p class="page-meta">

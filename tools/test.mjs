@@ -2390,6 +2390,158 @@ const commented = row(commentOnly, 'analytics', 'analytics/provider');
 check('a beacon named only in a comment is not wiring',
   commented?.outcome === 'suggest' && !/wired/.test(commented?.message ?? ''), JSON.stringify(commented));
 
+// --- the seven blind spots, and the guard on each ----------------------------
+// Five of these would have fired on our own compliant examples written the
+// obvious way, so every check below is paired with the case that must NOT fire.
+console.log('the checks the competitors had and we did not:');
+
+const SPOT_PAGE = ({ lang = ' lang="en"', canonical = 'https://x.test/', title = 't', desc = 'd', body = '<h1>t</h1>', head = '' } = {}) =>
+  `<html${lang}><head><link rel="canonical" href="${canonical}">${head}<title>${title}</title>`
+  + `<meta name="description" content="${desc}"><meta property="og:title" content="${title}">`
+  + `<meta property="og:image" content="/c.png"><meta property="og:type" content="website">`
+  + `<meta property="og:url" content="${canonical}"></head><body>${body}</body></html>`;
+const SPOT_SITEMAP = (...paths) => `<?xml version="1.0"?><urlset>${paths.map((p) => `<url><loc>https://x.test${p}</loc><lastmod>2026-01-01</lastmod></url>`).join('')}</urlset>`;
+const spotRow = (dir, id) => row(dir, 'seo', id);
+
+// html:lang — the one head attribute nothing here had ever read.
+const noLang = spotRow(mkBuilt({
+  'dist/sitemap-0.xml': SPOT_SITEMAP('/'), 'dist/index.html': SPOT_PAGE({ lang: '' }),
+}), 'seo/html-lang');
+check('<html> with no lang → fix (WCAG 3.1.1)', noLang?.outcome === 'fix', JSON.stringify(noLang));
+const badLang = spotRow(mkBuilt({
+  'dist/sitemap-0.xml': SPOT_SITEMAP('/'), 'dist/index.html': SPOT_PAGE({ lang: ' lang="english"' }),
+}), 'seo/html-lang');
+check('  …and a value that is not a language tag → fix', badLang?.outcome === 'fix', JSON.stringify(badLang));
+const okLang = spotRow(mkBuilt({
+  'dist/sitemap-0.xml': SPOT_SITEMAP('/'), 'dist/index.html': SPOT_PAGE({ lang: ' lang="en-AU"' }),
+}), 'seo/html-lang');
+check('  …while a region subtag is fine → pass', okLang?.outcome === 'pass', JSON.stringify(okLang));
+
+// canonical:value — declared twice is declared zero times.
+const twoCanon = spotRow(mkBuilt({
+  'dist/sitemap-0.xml': SPOT_SITEMAP('/'),
+  'dist/index.html': SPOT_PAGE({ head: '<link rel="canonical" href="https://x.test/other">' }),
+}), 'seo/canonical-value');
+check('two <link rel=canonical> on one page → fix (Google discards both)',
+  twoCanon?.outcome === 'fix', JSON.stringify(twoCanon));
+const relCanon = spotRow(mkBuilt({
+  'dist/sitemap-0.xml': SPOT_SITEMAP('/'), 'dist/index.html': SPOT_PAGE({ canonical: '/' }),
+}), 'seo/canonical-value');
+check('  …and a relative canonical → fix', relCanon?.outcome === 'fix', JSON.stringify(relCanon));
+
+// links:internal — the check that found a real bug in our own fixture.
+const brokenLink = spotRow(mkBuilt({
+  'dist/sitemap-0.xml': SPOT_SITEMAP('/'),
+  'dist/index.html': SPOT_PAGE({ body: '<h1>t</h1><a href="/2">page 2</a>' }),
+}), 'seo/links-internal');
+check('a link to a page this build never produced → fix', brokenLink?.outcome === 'fix', JSON.stringify(brokenLink));
+// THE GUARD: a non-HTML asset is a perfectly good link target. Treating one as
+// broken would have reported the starter's own footer.
+const assetLink = spotRow(mkBuilt({
+  'dist/sitemap-0.xml': SPOT_SITEMAP('/'),
+  'dist/index.html': SPOT_PAGE({ body: '<h1>t</h1><a href="/rss.xml">feed</a> <a href="mailto:a@b.c">mail</a> <a href="#top">top</a> <a href="https://elsewhere.test/x">out</a>' }),
+  'dist/rss.xml': '<rss/>',
+}), 'seo/links-internal');
+check('  …while /rss.xml, mailto:, # and off-site links are not broken links',
+  assetLink?.outcome === 'pass', JSON.stringify(assetLink));
+// THE OTHER GUARD: `/blog` must resolve to blog/index.html, not to the `blog/`
+// DIRECTORY. existsSync says yes to a directory, which made every section link
+// resolve to a path no page could match — 42 of 43 fixture pages read as orphans.
+const sectionLink = spotRow(mkBuilt({
+  'dist/sitemap-0.xml': SPOT_SITEMAP('/', '/blog'),
+  'dist/index.html': SPOT_PAGE({ body: '<h1>t</h1><a href="/blog">blog</a>' }),
+  'dist/blog/index.html': SPOT_PAGE({ canonical: 'https://x.test/blog', title: 'b', desc: 'bd' }),
+  'dist/blog/post/index.html': SPOT_PAGE({ canonical: 'https://x.test/blog/post', title: 'p', desc: 'pd' }),
+}), 'seo/links-orphan');
+check('  …and a link to a section resolves to its index.html, not the directory',
+  sectionLink?.outcome === 'pass', JSON.stringify(sectionLink));
+
+// THE THIRD GUARD, and the one a real site had to teach us: a relative href
+// resolves against the page's URL, not its file path. `blog/a/index.html` is
+// SERVED at /blog/a, so `./b` on it means /blog/b — the sibling — not a child of
+// itself. Both bundled examples link with absolute paths and never exercised the
+// difference; a real 57-page site reported 99 working links as broken.
+const relativeHref = spotRow(mkBuilt({
+  'dist/sitemap-0.xml': SPOT_SITEMAP('/blog/a', '/blog/b'),
+  'dist/blog/a/index.html': SPOT_PAGE({ canonical: 'https://x.test/blog/a', title: 'a', desc: 'ad', body: '<h1>a</h1><a href="./b">next</a>' }),
+  'dist/blog/b/index.html': SPOT_PAGE({ canonical: 'https://x.test/blog/b', title: 'b', desc: 'bd' }),
+}), 'seo/links-internal');
+check('  …and a relative href resolves against the page URL, not its file path',
+  relativeHref?.outcome === 'pass', JSON.stringify(relativeHref));
+
+// <title> is an SVG element too. An inline diagram with labelled nodes puts
+// three in the body, and counting those reported "more than one <title>" on four
+// pages of a real docs site that has exactly one each.
+const svgTitle = spotRow(mkBuilt({
+  'dist/sitemap-0.xml': SPOT_SITEMAP('/'),
+  'dist/index.html': SPOT_PAGE({ body: '<h1>t</h1><svg><title>node a</title><title>node b</title></svg>' }),
+}), 'seo/canonical-value');
+check('  …and a <title> inside an inline <svg> is not a second document title',
+  svgTitle?.outcome === 'pass', JSON.stringify(svgTitle));
+
+// links:orphan — advisory, because a form thank-you page is a legitimate orphan.
+const orphan = spotRow(mkBuilt({
+  'dist/sitemap-0.xml': SPOT_SITEMAP('/', '/thanks'),
+  'dist/index.html': SPOT_PAGE(),
+  'dist/thanks/index.html': SPOT_PAGE({ canonical: 'https://x.test/thanks', title: 'ty', desc: 'tyd' }),
+}), 'seo/links-orphan');
+check('a published page nothing links to → 💡, never a required finding',
+  orphan?.outcome === 'suggest', JSON.stringify(orphan));
+
+// meta:unique — THE GUARD is the locale pair, the same exemption sitemap:canonical uses.
+const dupTitle = spotRow(mkBuilt({
+  'dist/sitemap-0.xml': SPOT_SITEMAP('/a', '/b'),
+  'dist/a/index.html': SPOT_PAGE({ canonical: 'https://x.test/a', title: 'Same' }),
+  'dist/b/index.html': SPOT_PAGE({ canonical: 'https://x.test/b', title: 'Same' }),
+}), 'seo/meta-unique-title');
+check('two pages sharing a <title> → 💡', dupTitle?.outcome === 'suggest', JSON.stringify(dupTitle));
+const localePair = spotRow(mkBuilt({
+  'dist/sitemap-0.xml': '<?xml version="1.0"?><urlset>'
+    + '<url><loc>https://x.test/a</loc><xhtml:link rel="alternate" hreflang="hu" href="https://x.test/hu/a"/></url>'
+    + '<url><loc>https://x.test/hu/a</loc><xhtml:link rel="alternate" hreflang="en" href="https://x.test/a"/></url></urlset>',
+  'dist/a/index.html': SPOT_PAGE({ canonical: 'https://x.test/a', title: 'Same' }),
+  'dist/hu/a/index.html': SPOT_PAGE({ canonical: 'https://x.test/hu/a', title: 'Same' }),
+}), 'seo/meta-unique-title');
+check('  …but not when the sitemap declares them hreflang alternates of each other',
+  localePair?.outcome === 'pass', JSON.stringify(localePair));
+
+// sitemap:coverage — THE GUARD is the error page. Both bundled examples ship a
+// 404.html that carries a canonical and no noindex, so it looks publishable to
+// every other test here and must never be submitted.
+const notListed = spotRow(mkBuilt({
+  'dist/sitemap-0.xml': SPOT_SITEMAP('/'),
+  'dist/index.html': SPOT_PAGE(),
+  'dist/secret/index.html': SPOT_PAGE({ canonical: 'https://x.test/secret', title: 's', desc: 'sd' }),
+}), 'seo/sitemap-coverage');
+check('an indexable built page missing from the sitemap → fix under --strict',
+  notListed?.outcome === 'fix', JSON.stringify(notListed));
+const errorPage = spotRow(mkBuilt({
+  'dist/sitemap-0.xml': SPOT_SITEMAP('/'),
+  'dist/index.html': SPOT_PAGE(),
+  'dist/404.html': SPOT_PAGE({ canonical: 'https://x.test/404', title: '404', desc: 'nope' }),
+}), 'seo/sitemap-coverage');
+check('  …while a 404 page is not "missing" from it', errorPage?.outcome === 'pass', JSON.stringify(errorPage));
+const withheld = spotRow(mkBuilt({
+  'dist/sitemap-0.xml': SPOT_SITEMAP('/'),
+  'dist/index.html': SPOT_PAGE(),
+  'dist/draft/index.html': SPOT_PAGE({ canonical: 'https://x.test/draft', title: 'd', desc: 'dd', head: '<meta name="robots" content="noindex">' }),
+}), 'seo/sitemap-coverage');
+check('  …nor is a deliberately noindexed one', withheld?.outcome === 'pass', JSON.stringify(withheld));
+
+// robots:blocks-all — total, and nearly always a staging file that shipped.
+const blockAll = spotRow(mkBuilt({
+  'dist/index.html': SPOT_PAGE(),
+  'dist/robots.txt': 'User-agent: *\nDisallow: /\nSitemap: https://x.test/sitemap-0.xml\n',
+  'dist/sitemap-0.xml': SPOT_SITEMAP('/'),
+}), 'seo/robots-blocks-all');
+check('robots.txt disallowing the whole site → fix', blockAll?.outcome === 'fix', JSON.stringify(blockAll));
+const reopened = spotRow(mkBuilt({
+  'dist/index.html': SPOT_PAGE(),
+  'dist/robots.txt': 'User-agent: *\nDisallow: /\nAllow: /$\nSitemap: https://x.test/sitemap-0.xml\n',
+  'dist/sitemap-0.xml': SPOT_SITEMAP('/'),
+}), 'seo/robots-blocks-all');
+check('  …but not when a longer Allow reopens the root', reopened?.outcome === 'pass', JSON.stringify(reopened));
+
 // --- --fix: the remedies, and the loop that proves them ----------------------
 // A remedy is only attached when the check already MEASURED the answer, so the
 // interesting assertions are the refusals: what the engine declines to touch is

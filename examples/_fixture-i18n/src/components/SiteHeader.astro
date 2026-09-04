@@ -23,6 +23,12 @@ const lang = (Astro.currentLocale as string) ?? 'en';
 const isHu = lang === 'hu';
 const homePath = isHu ? '/hu' : '/';
 const blogPath = isHu ? '/hu/blog' : '/blog';
+// Published and reachable, which are two different things: these three shipped,
+// were in the sitemap, carried perfect head meta — and nothing on the site
+// linked to them. `seo: links:orphan` is the only check that could see it.
+const aboutPath = isHu ? '/hu/about' : '/about';
+const designPath = isHu ? '/hu/design' : '/design';
+const mediaKitPath = isHu ? '/hu/media-kit' : '/media-kit';
 const otherLocaleHome = isHu ? '/' : '/hu';
 const otherLocaleLabel = isHu ? 'English' : 'Magyar';
 ---
@@ -33,6 +39,9 @@ const otherLocaleLabel = isHu ? 'English' : 'Magyar';
       <strong>{brand.siteName}</strong>
     </a>
     <a href={blogPath}><Icon name="lucide:notebook-text" size={16} />Blog</a>
+    <a href={aboutPath}><Icon name="lucide:file-text" size={16} />About</a>
+    <a href={designPath}><Icon name="lucide:palette" size={16} />Design</a>
+    <a href={mediaKitPath}><Icon name="lucide:image" size={16} />Media kit</a>
     <a href="/preview"><Icon name="lucide:layout-template" size={16} />Preview</a>
   </nav>
   <div class="right">

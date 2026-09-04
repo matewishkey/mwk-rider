@@ -29,8 +29,15 @@ const { tag } = Astro.params;
 const title = page.currentPage === 1
   ? `Címke: ${tag}`
   : `Címke: ${tag} · Oldal ${page.currentPage}`;
+// A description of its own, not the site tagline. 28 of this fixture's pages
+// shared one string, which tells a crawler they are the same page — found by
+// `seo: meta:unique:description`, which is advisory precisely because a shared
+// description is a weakness rather than a break.
+const description = page.currentPage === 1
+  ? `“${tag}” címkéjű bejegyzések — összesen ${page.total}.`
+  : `“${tag}” címkéjű bejegyzések, ${page.currentPage}. oldal a(z) ${page.lastPage}-ből.`;
 ---
-<RootLayout title={title}>
+<RootLayout title={title} description={description}>
   <p class="breadcrumb"><a href="/hu/blog">← Blog</a></p>
   <h1><Icon name="lucide:tag" size={26} />{tag}</h1>
   <p class="page-meta">

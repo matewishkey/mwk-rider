@@ -561,6 +561,83 @@ thing a version bump leaves behind. Each maps to a documented v7 breaking change
   fall back to the built path, because a confidently wrong pointer is worse than
   the artifact.
 
+### The blind spots, closed 2026-09-04
+
+Seven things three competing Astro auditors check and this one did not. The list came from
+reading their rule ids rather than their marketing —
+[`astro-seo-audit`](https://github.com/namanlabc/astro-seo-audit)'s `src/rules/` and
+[`astro-post-audit`](https://github.com/casoon/astro-post-audit)'s documented categories.
+Each is paired below with the case that must **not** fire, because five of the seven
+would have flagged our own compliant examples written the obvious way.
+
+Two of them found real bugs in `examples/_fixture-i18n` — the site this repo holds up as
+the existence proof of the baseline — before a line of the checks had shipped. That is the
+argument for all seven.
+
+- **`<html lang>` — the one head attribute nothing here had ever read.** A screen reader
+  takes its pronunciation from it and a search engine takes the page's audience; without
+  one both guess. WCAG 3.1.1 is a conformance failure rather than a preference, which is
+  why it is required on anyone's site. It is also what `hreflang` quietly assumes:
+  alternates that all declare the same language say nothing. Loose BCP 47 — this is here to
+  catch `lang=""` and `lang="english"`, not to referee the registry. → `seo: html:lang`
+- **One canonical, absolute, and one `<title>`.** Two canonicals is the failure that reads
+  as diligence: Google discards the pair, so a page that declared its URL twice declared it
+  zero times. A relative canonical is the same class — legal HTML that resolves against
+  whatever URL served the page, which is exactly the parameterised duplicate a canonical
+  exists to collapse. *The guard:* `<title>` is also an **SVG** element. An inline diagram
+  with labelled nodes puts three in the body, and counting those reported "more than one
+  `<title>`" on four pages of a real documentation site that has exactly one each — so the
+  scan is head-scoped. → `seo: canonical:value`
+- **Internal links that go nowhere.** A 404 behind an `<a>` is invisible to every other
+  check here: the markup is perfect, the target simply is not there. It found one on the
+  first run — the bundled fixture's own blog emitted `href="/2"` for page two, because
+  Astro documents `page.url.first` as *undefined when you are on the first page* and the
+  component's `?? ''` fallback turned that into a root-relative link. Page two of our
+  reference blog 404'd. *Two guards:* any built file is a valid target, not just HTML
+  (`/rss.xml`, `/llms.txt`, `/og/default.png` — treating those as broken reported the
+  starter's own footer); and **a relative href resolves against the page's URL, not its
+  file path**. A page built to `blog/a/index.html` is served at `/blog/a`, so `./b` means
+  the sibling, not a child of itself — the file-path version reported 99 working links as
+  broken on a real 57-page site. Both bundled examples link with absolute paths and never
+  exercised the difference, which is precisely why a real corpus is not optional.
+  → `seo: links:internal`
+- **Pages nothing links to.** Three of the fixture's own pages — `/about`, `/design`,
+  `/media-kit` — shipped, sat in the sitemap, carried perfect head meta, and were linked
+  from nowhere on the site. `browser: nav:reach` checks that every route *the nav offers*
+  survives to phone width; it had never asked whether a published page is offered at all.
+  **Advisory, permanently:** the starter's `contact/thanks` is reached by a form redirect
+  and is correctly an orphan, and nothing in a build distinguishes that from a page someone
+  forgot. → 💡 `seo: links:orphan`
+- **A title or description used twice.** It tells a crawler two URLs are the same page,
+  which is what a canonical exists to say deliberately. *The guard* is the locale pair, and
+  it is the same discriminator `sitemap:canonical` uses: a page is exempt when the sitemap
+  itself declares the other as its `hreflang` alternate. Unlike `canonical:unique` there is
+  no majority threshold, because the two are not the same shape — a canonical shared
+  site-wide de-indexes a site, whereas two pages sharing a title is already a problem for
+  those two. Advisory in every mode, which is what makes the lower bar affordable.
+  → 💡 `seo: meta:unique:title`, `meta:unique:description`
+- **What the sitemap left out.** Every other coverage check judges the pages the sitemap
+  lists; this is the only one that asks what is missing from it. *Four exemptions, each
+  measured:* an error page (both examples ship a `404.html` carrying a canonical and no
+  noindex, so it looks publishable to every other test here), a page with no canonical (an
+  OG template or preview route), a `noindex` page — `sitemap:noindex` owns that case — and
+  one robots.txt already disallows. House style: which pages a site submits is its own
+  call, unlike the three `sitemap:*` contradictions, which are the site disagreeing with
+  itself. → 💡 `seo: sitemap:coverage` (🔧 under `--strict`)
+- **`Disallow: /` for everyone.** Nearly always a staging `robots.txt` that shipped, and it
+  is total — no sitemap, canonical or JSON-LD underneath it can matter. Resolved with the
+  same longest-match logic as `sitemap:blocked`, so a site-wide `Disallow` that a longer
+  `Allow` reopens is correctly not a finding. → `seo: robots:blocks-all`
+
+**Backtested before shipping, counting the wrongs.** Eight corpora — six real public sites
+plus both bundled examples — and, because the link-graph checks are meaningless against a
+partial mirror, one **complete** 57-page mirror of a real site for those three. Final count:
+**0 false positives.** Getting there cost two bugs of our own, both found by that complete
+mirror and both now regression-tested: the relative-href resolution above, and `existsSync`
+answering *true for a directory*, which made every link to a section resolve to a path no
+page could match and reported 42 of the fixture's 43 pages as orphans on a site whose nav
+works.
+
 ## images — content images delivered well
 
 *Check files: `tools/checks/images.mjs` (offline: source + built `dist/`) and
