@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync, existsSync, utimesSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { imageSize } from './lib/image-size.mjs';
+import { deflateSync, crc32 } from 'node:zlib';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const AUDIT = join(here, 'audit.mjs');
@@ -2388,6 +2389,132 @@ const commentOnly = mkBuilt({}, { src: {
 const commented = row(commentOnly, 'analytics', 'analytics/provider');
 check('a beacon named only in a comment is not wiring',
   commented?.outcome === 'suggest' && !/wired/.test(commented?.message ?? ''), JSON.stringify(commented));
+
+// --- --fix: the remedies, and the loop that proves them ----------------------
+// A remedy is only attached when the check already MEASURED the answer, so the
+// interesting assertions are the refusals: what the engine declines to touch is
+// what makes the rest of it trustworthy.
+console.log('--fix applies what a check already measured, and proves it by re-running:');
+
+function pngBytes(w, h) {
+  const chunk = (type, data) => {
+    const body = Buffer.concat([Buffer.from(type), data]);
+    const len = Buffer.alloc(4); len.writeUInt32BE(data.length);
+    const crc = Buffer.alloc(4); crc.writeUInt32BE(crc32(body) >>> 0);
+    return Buffer.concat([len, body, crc]);
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4);
+  ihdr[8] = 8; ihdr[9] = 2;
+  const raw = Buffer.concat(Array.from({ length: h }, () => Buffer.concat([Buffer.from([0]), Buffer.alloc(w * 3, 0xcc)])));
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', ihdr), chunk('IDAT', deflateSync(raw)), chunk('IEND', Buffer.alloc(0)),
+  ]);
+}
+
+function mkFixable({ pkg = {}, files = {} } = {}) {
+  const dir = tmpProject('rider-fix-');
+  writeFileSync(join(dir, 'package.json'), JSON.stringify({
+    name: 'fx', type: 'module', dependencies: { astro: '^7.1.6' }, ...pkg,
+  }, null, 2));
+  writeFileSync(join(dir, 'astro.config.mjs'), "export default { output: 'static' };\n");
+  for (const [rel, body] of Object.entries(files)) {
+    const full = join(dir, rel);
+    mkdirSync(dirname(full), { recursive: true });
+    writeFileSync(full, body);
+  }
+  return dir;
+}
+
+const KEYWORDS_SEO = '---\nconst { title } = Astro.props;\n---\n<title>{title}</title>\n<meta name="keywords" content="a, b" />\n<link rel="canonical" href={Astro.url.href} />\n';
+
+// The end-to-end case: five findings, five remedies, and a re-audit that has to
+// agree before the run is allowed to call any of them fixed.
+const fixDir = mkFixable({
+  files: {
+    'tsconfig.json': JSON.stringify({ extends: 'astro/tsconfigs/base', exclude: ['node_modules'] }, null, 2),
+    'src/components/SEO.astro': KEYWORDS_SEO,
+    'src/pages/index.astro': '---\n---\n<html><head></head><body><h1>h</h1>\n<img src="/hero.png" alt="a">\n</body></html>\n',
+  },
+});
+mkdirSync(join(fixDir, 'public'), { recursive: true });
+writeFileSync(join(fixDir, 'public', 'hero.png'), pngBytes(1600, 900));
+
+const dry = runJson(fixDir, ['--strict', '--dry-run']);
+const plan = dry.json?.fix?.plan ?? [];
+check('--dry-run lists the exact changes', plan.length >= 5, JSON.stringify(plan));
+check('  …and writes nothing', !existsSync(join(fixDir, 'public', '_headers')));
+check('  …including the width/height it read out of the image itself',
+  plan.some((p) => p.id === 'perf/cls-img-dimensions' && /width="1600" height="900"/.test(p.change)),
+  JSON.stringify(plan.find((p) => p.id === 'perf/cls-img-dimensions')));
+
+const applied = runJson(fixDir, ['--strict', '--fix']);
+const out = applied.json?.fix ?? {};
+check('--fix applies them', (out.applied ?? []).length >= 5, JSON.stringify(out.skipped ?? out));
+check('  …and the re-audit confirms each one is gone', (out.unresolved ?? ['x']).length === 0, JSON.stringify(out.unresolved));
+check('  …nothing regressed, so nothing was reverted', out.reverted === false, JSON.stringify(out.regressed));
+check('  …the keywords meta is gone from the source',
+  !/name="keywords"/.test(readFileSync(join(fixDir, 'src/components/SEO.astro'), 'utf8')));
+check('  …the <img> carries the measured dimensions',
+  /<img width="1600" height="900" src="\/hero\.png"/.test(readFileSync(join(fixDir, 'src/pages/index.astro'), 'utf8')));
+// The array merge, which is the difference between adding "dist" and deleting
+// whatever the project already excluded.
+const ts = JSON.parse(readFileSync(join(fixDir, 'tsconfig.json'), 'utf8'));
+check('  …and a JSON array remedy MERGES rather than replaces',
+  ts.exclude.includes('node_modules') && ts.exclude.includes('dist'), JSON.stringify(ts));
+
+const again = runJson(fixDir, ['--strict', '--fix']);
+check('  …a second --fix finds nothing left to do (idempotent)',
+  (again.json?.fix?.applied ?? []).length === 0, JSON.stringify(again.json?.fix));
+
+// --- the refusals ------------------------------------------------------------
+const { applyRemedy, copyFromStarter, editFile, setJson } = await import('./lib/remedy.mjs');
+
+const occupied = mkFixable({ files: { 'public/_headers': '/custom\n  X-Mine: 1\n' } });
+const clash = applyRemedy(occupied, copyFromStarter('public/_headers'));
+check('a copy remedy never overwrites an existing file',
+  clash.ok === false && /already exists/.test(clash.reason), JSON.stringify(clash));
+check('  …and leaves the original bytes untouched',
+  readFileSync(join(occupied, 'public/_headers'), 'utf8') === '/custom\n  X-Mine: 1\n');
+
+const twice = mkFixable({ files: { 'src/pages/a.astro': '<img src="/x.png">\n<img src="/x.png">\n' } });
+const twoHits = applyRemedy(twice, editFile('src/pages/a.astro', '<img src="/x.png">', '<img width="1" height="1" src="/x.png">'));
+check('an edit remedy refuses when the text occurs more than once',
+  twoHits.ok === false && /2 times/.test(twoHits.reason), JSON.stringify(twoHits));
+
+const shaped = mkFixable({ files: { 'tsconfig.json': JSON.stringify({ compilerOptions: 'not-an-object' }) } });
+const wrongShape = applyRemedy(shaped, setJson('tsconfig.json', ['compilerOptions', 'strict'], true));
+check('a json remedy refuses a file that is not shaped the way the check assumed',
+  wrongShape.ok === false, JSON.stringify(wrongShape));
+
+// A remote image cannot be measured offline, so there is no remedy — the honest
+// outcome. A guessed width would be worse than none, because it would look like
+// the tool knew.
+const remote = mkFixable({ files: { 'src/pages/index.astro': '<img src="https://cdn.test/a.png" alt="a">\n' } });
+const remoteRow = runJson(remote, ['-s', 'perf', '--strict']).json?.results.find((r) => r.id === 'perf/cls-img-dimensions');
+check('an <img> this tool cannot measure gets the finding and NO remedy',
+  remoteRow?.outcome === 'fix' && remoteRow?.remedy === undefined, JSON.stringify(remoteRow));
+
+// --- the revert path ---------------------------------------------------------
+// Driven directly, because no real remedy introduces a finding — which is the
+// point of them. A synthetic one that does proves the guard fires and that the
+// file comes back byte for byte.
+const { runFix } = await import('./lib/fixer.mjs');
+const sabotage = mkFixable({ files: { 'src/components/SEO.astro': '<title>{t}</title>\n<link rel="canonical" href={c} />\n' } });
+const originalBytes = readFileSync(join(sabotage, 'src/components/SEO.astro'), 'utf8');
+const sabotaged = runFix({
+  root: sabotage,
+  results: [{
+    id: 'modules/engines-node', outcome: 'fix',
+    remedy: editFile('src/components/SEO.astro', '<title>{t}</title>', '<title>{t}</title>\n<meta name="keywords" content="x" />'),
+  }],
+  args: ['--strict'], dryRun: false, json: true,
+});
+check('a change that introduces a new required finding is REVERTED',
+  sabotaged.reverted === true && sabotaged.regressed.includes('seo/no-keywords'), JSON.stringify(sabotaged));
+check('  …and the file comes back byte for byte',
+  readFileSync(join(sabotage, 'src/components/SEO.astro'), 'utf8') === originalBytes);
 
 console.log('--rules is the catalogue, and it does not drift:');
 // The catalogue is what an agent reads to learn what this tool checks. If a

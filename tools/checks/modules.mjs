@@ -6,6 +6,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { BASELINE_SEARCH, installedEngines, describeEngine } from '../lib/search-engines.mjs';
 import { stripComments } from '../lib/src-scan.mjs';
+import { setJson } from '../lib/remedy.mjs';
 
 // First-party adapters. The list is a convenience for naming what it found —
 // `adapter:` in astro.config is what actually decides, so a third-party adapter
@@ -90,7 +91,10 @@ export async function run({ project, reporter }) {
   // engines.node >= 22.12.0 — Astro 7's own engines floor
   const nodeEng = pkg.engines?.node;
   if (!atLeast(nodeEng, 22, 12)) {
-    reporter.fix(SEC, 'engines.node', `${nodeEng ?? 'unset'} (need >= 22.12.0, Astro 7's floor)`, 'set "engines.node" to ">=22.12.0" in package.json');
+    // A remedy: the floor is a constant this check already knows, and setting a
+    // key in package.json needs no parser and no judgement.
+    reporter.fix(SEC, 'engines.node', `${nodeEng ?? 'unset'} (need >= 22.12.0, Astro 7's floor)`, 'set "engines.node" to ">=22.12.0" in package.json',
+      { remedy: setJson('package.json', ['engines', 'node'], '>=22.12.0') });
   } else {
     reporter.pass(SEC, 'engines.node', nodeEng);
   }
@@ -294,7 +298,14 @@ export async function run({ project, reporter }) {
       ? ext.includes('astro/tsconfigs/strict')
       : Array.isArray(ext) && ext.some((e) => e.includes('astro/tsconfigs/strict'));
     if (strict) reporter.pass(SEC, 'tsconfig:strict', `tsconfig.json extends "${Array.isArray(ext) ? ext.join('", "') : ext}"`);
-    else reporter.fix(SEC, 'tsconfig:strict', `extends "${ext ?? 'nothing'}"`, 'extend "astro/tsconfigs/strict" in tsconfig.json');
+    // The remedy is attached only when `extends` is absent or is Astro's own
+    // weaker base. Anything else — a monorepo's shared config, `strictest`,
+    // an array — and rewriting the key would DELETE what the project extends,
+    // which is a far worse outcome than the finding it set out to clear.
+    else reporter.fix(SEC, 'tsconfig:strict', `extends "${ext ?? 'nothing'}"`, 'extend "astro/tsconfigs/strict" in tsconfig.json',
+      (ext == null || ext === 'astro/tsconfigs/base')
+        ? { remedy: setJson('tsconfig.json', ['extends'], 'astro/tsconfigs/strict') }
+        : {});
 
     // Astro's own tsconfigs exclude dist/, but only relative to the config that
     // declares them — a project that sets its own `exclude` replaces that list
@@ -308,7 +319,10 @@ export async function run({ project, reporter }) {
     } else if (excludesDist) {
       reporter.pass(SEC, 'tsconfig:exclude-dist', `"exclude": [${exclude.map((e) => `"${e}"`).join(', ')}]`);
     } else {
-      reporter.fix(SEC, 'tsconfig:exclude-dist', `"exclude": [${exclude.map((e) => `"${e}"`).join(', ')}] replaces the one from astro/tsconfigs and does not cover dist — \`astro check\` type-checks the built bundle`, 'add "dist" to the exclude array');
+      // An array remedy MERGES — the project's own exclude entries are why this
+      // finding exists, so replacing the list would be the same bug in reverse.
+      reporter.fix(SEC, 'tsconfig:exclude-dist', `"exclude": [${exclude.map((e) => `"${e}"`).join(', ')}] replaces the one from astro/tsconfigs and does not cover dist — \`astro check\` type-checks the built bundle`, 'add "dist" to the exclude array',
+        { remedy: setJson('tsconfig.json', ['exclude'], ['dist']) });
     }
   } else {
     reporter.fix(SEC, 'tsconfig:strict', 'tsconfig.json missing', 'create tsconfig.json extending astro/tsconfigs/strict');

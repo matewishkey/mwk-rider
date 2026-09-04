@@ -115,13 +115,20 @@ export class Reporter {
   // agent tokens to read and tells it nothing.
   _record(r, at = {}) {
     const row = { id: at.id ?? ruleId(r.section, r.name), ...r, source: this.source };
+    // The machine-applicable half of the finding, when the check knew the exact
+    // edit. See lib/remedy.mjs for the bar a check has to clear to attach one.
+    if (at.remedy) row.remedy = at.remedy;
     if (at.file) row.file = at.file;
     if (at.line != null) row.line = at.line;
     if (at.url) row.url = at.url;
     this.results.push(row);
   }
 
-  finish() {
+  // `extra` is merged into the --json document rather than printed after it.
+  // Two JSON objects on stdout is not JSON, and every consumer that did
+  // `JSON.parse(stdout)` got null — including this repo's own test suite, which
+  // is how the mistake was caught within the hour.
+  finish(extra = {}) {
     if (this.json) {
       // Unindented: --json is read by machines, and pretty-printing a clean run
       // tripled its size for no reader's benefit.
@@ -129,6 +136,7 @@ export class Reporter {
         results: this.results,
         errors: this.errors,
         summary: this._counts(),
+        ...extra,
       }));
       return;
     }

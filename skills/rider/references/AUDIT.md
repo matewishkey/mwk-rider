@@ -14,6 +14,14 @@ Look at `astro.config.*`, `package.json`, and `src/content.config.ts` to summari
 
 ## Step 2 — Build first, then audit
 
+**Some findings can be applied rather than described.** A finding carrying a `remedy` in
+`--json` has a machine-applicable fix the check itself computed — `node audit.mjs --dry-run`
+lists them, `--fix` applies them and then re-runs the audit to prove each one worked,
+reverting the whole set if anything new appeared. Prefer that over hand-editing: it is the
+same change every time, and it is verified. Findings **without** a remedy are the ones no
+tool can settle (what should the alt text say, which of the sitemap and the page is wrong)
+— those are yours to reason about, and the prose fix is the brief.
+
 **Build the site before auditing it if you can.** Many checks read `dist/` — the robots.txt, the sitemap's `<lastmod>`, the JSON-LD actually emitted, the built feed, image bytes, alt text. Without a build they report `⏭` and say so, and the audit sees far less than it could.
 
 ```bash

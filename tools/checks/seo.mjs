@@ -5,6 +5,7 @@
 import { eachDistHtml, isContentPage, headingOutline, headingAudit } from '../lib/html.mjs';
 import { readSrcFiles, headMetaFiles } from '../lib/src-scan.mjs';
 import { distFiles, readDist, sitemapPages, sitemapPageFiles, sitemapEntries, decodePath, distRelative } from '../lib/dist.mjs';
+import { editFile } from '../lib/remedy.mjs';
 
 const SEC = 'seo';
 
@@ -76,7 +77,15 @@ export async function run({ project, reporter }) {
 
   // Anti-pattern: <meta name="keywords"> (ignored by search engines, signals spam)
   const kw = srcFiles.find((f) => /name=["']keywords["']/.test(f.code));
-  if (kw) reporter.fix(SEC, 'no-keywords', `<meta name="keywords"> in ${kw.path} (anti-pattern)`, 'remove the keywords meta');
+  if (kw) {
+    // Deleting a tag is the rare fix with exactly one right answer: there is no
+    // correct <meta name="keywords">, so there is nothing to decide. The tag is
+    // taken from the comment-blanked source, which is what matched — a keywords
+    // meta inside a comment is not a finding and must not be edited either.
+    const tag = kw.code.match(/<meta[^>]*name=["']keywords["'][^>]*>/i)?.[0];
+    reporter.fix(SEC, 'no-keywords', `<meta name="keywords"> in ${kw.path} (anti-pattern)`, 'remove the keywords meta',
+      tag ? { file: kw.path, remedy: editFile(kw.path, tag, '') } : { file: kw.path });
+  }
   else    reporter.pass(SEC, 'no-keywords', `not emitted by any of the ${srcFiles.length} source file(s) under src/`);
 
   // Brand fields (only checkable when scripts/og.config.mjs declares them)

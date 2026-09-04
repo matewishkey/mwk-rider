@@ -52,6 +52,8 @@ try {
       quiet:    { type: 'boolean' },
       verbose:  { type: 'boolean' },
       rules:    { type: 'boolean' },
+      fix:      { type: 'boolean' },
+      'dry-run': { type: 'boolean' },
       help:     { type: 'boolean', short: 'h' },
     },
     allowPositionals: true,
@@ -76,6 +78,9 @@ Usage:
   rider --json                Machine-readable output
   rider --quiet               Hide the ✅ lines (findings, 💡 and ⏭ still print)
   rider --verbose             Show them even when output is piped or $CI is set
+  rider --dry-run             Show the exact changes --fix would make, write nothing
+  rider --fix                 Apply them, then re-run the audit to prove they worked
+  rider --strict --fix        …including the baseline (house-style) findings
   rider --rules --json        Every rule id, severity, mode and why; runs nothing
 
 Offline domains: ${Object.keys(OFFLINE).join(', ')}
@@ -234,6 +239,32 @@ if (values.url) {
   }
 } else if (wanted && URL_ONLY.some((d) => wanted.has(d))) {
   reporter.error(`${URL_ONLY.join('/')} checks need --url <base>`);
+}
+
+// --fix runs on the findings this run actually produced, before the report is
+// printed so its result can be part of the same --json document. It never invents
+// work: a remedy comes from a check that already measured the answer, and the
+// audit is re-run afterwards to prove the finding is gone and nothing new
+// appeared. See lib/fixer.mjs — the verification is the point, not the writing.
+if ((values.fix || values['dry-run']) && project) {
+  const { runFix, printFixReport } = await import('./lib/fixer.mjs');
+  const out = runFix({
+    root: project.root,
+    results: reporter.results,
+    args: process.argv.slice(2),
+    dryRun: !!values['dry-run'],
+    json: !!values.json,
+  });
+  reporter.finish({ fix: out });
+  if (!values.json) printFixReport(out, { dryRun: !!values['dry-run'] });
+  // A run that fixed everything it found should not still exit 1 — CI would
+  // never go green on a `--fix` step. A reverted or unresolved one still fails.
+  if (values.fix && !out.reverted && out.unresolved?.length === 0 && out.fixed?.length) {
+    const stillFailing = reporter.results.some(
+      (r) => (r.outcome === 'fix' || r.outcome === 'block') && !out.fixed.includes(r.id));
+    if (!stillFailing) process.exit(0);
+  }
+  process.exit(reporter.exitCode());
 }
 
 reporter.finish();

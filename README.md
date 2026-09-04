@@ -99,6 +99,31 @@ outright broken, because it read the `dist/` the last good build left behind.
 
 The static domains answer *"is it wired right?"*; `lighthouse` answers *"what's the real score?"* — complementary layers.
 
+## Fixing, without hand-writing the fix
+
+A plain run writes nothing. `--fix` is you asking it to, and it applies only findings that
+carry a **remedy** — the machine-applicable half of a finding, attached by the check that
+found it.
+
+```
+node audit.mjs --dry-run          # the exact changes, written nowhere
+node audit.mjs --fix              # apply them, then re-audit to prove they worked
+node audit.mjs --strict --fix     # …including the baseline findings
+```
+
+**A remedy is attached only when the fix is fully determined by what the check already
+measured.** `perf: cls:img-dimensions` qualifies: the width and height come out of the
+image's own bytes, so there is exactly one right answer and the tool already has it.
+`images: alt` never will — nothing tells you what the alt text should say, and a remedy
+that guesses is worse than none, because it looks like the tool knew. Findings without one
+still print their prose fix; that is not a degraded outcome, it is an honest one.
+
+What makes it deterministic is not the writing but the loop after it: the audit **runs
+again**, and every finding claimed as fixed has to be gone with nothing required appearing
+that was not there before. If anything did, the entire set is reverted byte for byte — a
+fixer that can leave a project worse than it found it is not worth having.
+
+
 **This tool assumes a specific baseline** (Astro 7+, static output, Cloudflare delivery, Cloudflare Web Analytics) and validates compliance against it. It does not set anything up or migrate. If your stack differs, the checks are small and readable — fork and adjust.
 
 **The *why* behind every check lives in [`BEST-PRACTICES.md`](BEST-PRACTICES.md)** — a living practice↔check registry. The governing rule: every practice there has an enforcing check, and a practice with no check is a tracked *gap*, not a practice.

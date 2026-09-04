@@ -14,6 +14,8 @@ import { SKIP_DIST, distDir, distRelative } from '../lib/dist.mjs';
 import { astroBlock, MIN_IMMUTABLE_MAXAGE, CANONICAL_MAXAGE } from '../lib/headers.mjs';
 import { embedProduct, fetchableMarkup } from '../lib/embed-hosts.mjs';
 import { fontFamilies } from '../lib/fonts-config.mjs';
+import { imageSize } from '../lib/image-size.mjs';
+import { copyFromStarter, editFile } from '../lib/remedy.mjs';
 import { outOfFlowSelectors, inlineStyles, isOutOfFlow } from '../lib/css-flow.mjs';
 
 const SEC = 'perf';
@@ -35,7 +37,12 @@ export async function run({ project, reporter }) {
 function checkHeaders(project, reporter) {
   const path = join(project.root, 'public', '_headers');
   if (!existsSync(path)) {
-    reporter.fix(SEC, '_headers', 'public/_headers missing — hashed bundles served max-age=0 (every repeat visit re-validates all JS/CSS)', 'add public/_headers marking /_astro/* immutable');
+    // The one starter file with no coupling to the project around it: pure
+    // static text, no imports, no collection names, no layout. Every other
+    // artifact the baseline asks for reaches back into og.config or a layout,
+    // which is why this is the only `copy` remedy in the tool.
+    reporter.fix(SEC, '_headers', 'public/_headers missing — hashed bundles served max-age=0 (every repeat visit re-validates all JS/CSS)', 'add public/_headers marking /_astro/* immutable',
+      { remedy: copyFromStarter('public/_headers') });
     return;
   }
 
@@ -83,7 +90,7 @@ function checkCls(project, reporter) {
       // …but an out-of-flow image has nothing to shift, and width/height would
       // be overridden anyway. See lib/css-flow.mjs for why this carve-out exists.
       if (isOutOfFlow(attrs, flow)) { outOfFlow++; continue; }
-      offenders.push({ file: relPath, line: lineOf(text, m.index), src });
+      offenders.push({ file: relPath, line: lineOf(text, m.index), src, tag: m[0], attrs });
     }
   });
 
@@ -94,9 +101,48 @@ function checkCls(project, reporter) {
     reporter.pass(SEC, 'cls:img-dimensions', `all ${scanned} content <img> reserve their space${aside}`);
   } else {
     for (const o of offenders) {
-      reporter.fix(SEC, 'cls:img-dimensions', `<img src="${truncate(o.src, 60)}"> lacks width/height → layout shift (CLS)`, 'use <Image> from astro:assets (bakes width/height), or add explicit width + height', { file: o.file, line: o.line });
+      // The remedy exists only when the image's OWN BYTES answered the question.
+      // That is the bar from lib/remedy.mjs: intrinsic width and height are a
+      // measurement this tool already knows how to take, not a guess. A remote
+      // src, or a format image-size.mjs cannot read, gets the prose and no
+      // remedy — which is the honest outcome, not a degraded one.
+      const dims = intrinsic(project.root, o);
+      reporter.fix(SEC, 'cls:img-dimensions', `<img src="${truncate(o.src, 60)}"> lacks width/height → layout shift (CLS)`, 'use <Image> from astro:assets (bakes width/height), or add explicit width + height',
+        { file: o.file, line: o.line, ...(dims ? { remedy: editFile(o.file, o.tag, withDimensions(o, dims)) } : {}) });
     }
   }
+}
+
+/**
+ * The image's intrinsic size, read off disk, or null.
+ *
+ * Only local images: `/x.png` is public/, anything relative resolves against
+ * the file that referenced it, and a remote URL is not fetched — an offline
+ * check does not go to the network, and a fix that depends on someone else's
+ * server is not deterministic anyway.
+ */
+function intrinsic(root, { src, file }) {
+  if (/^(?:[a-z]+:)?\/\//i.test(src)) return null;
+  const path = src.startsWith('/')
+    ? join(root, 'public', src.slice(1))
+    : join(root, file, '..', src);
+  try { return imageSize(readFileSync(path)); } catch { return null; }
+}
+
+/**
+ * The same tag with the missing dimension attributes inserted.
+ *
+ * Only the missing ones: this check fires when EITHER is absent, so a tag that
+ * already declares a width must not get a second one. Inserted right after
+ * `<img`, which is the one position that is correct regardless of how the rest
+ * of the tag is written.
+ */
+function withDimensions({ tag, attrs }, { w, h }) {
+  const add = [
+    attrValue(attrs, 'width') == null ? ` width="${w}"` : '',
+    attrValue(attrs, 'height') == null ? ` height="${h}"` : '',
+  ].join('');
+  return tag.replace(/^<img/i, `<img${add}`);
 }
 
 // Every stylesheet the source carries: the `<style>` blocks inside components
