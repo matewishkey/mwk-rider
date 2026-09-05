@@ -162,7 +162,7 @@ compliant by construction rather than by intention.
 You get a working blog, a contact form that sends real email through Cloudflare
 Email Service (free to a verified address, no API key to store), cookieless
 analytics, a media kit, a design reference page, RSS, `/llms.txt` and a sitemap
-with real `<lastmod>`. Two dashboard steps are left for you, and it says which.
+with real `<lastmod>`. Three dashboard steps are left for you, and it says which.
 
 Or call the script directly — it's a plain CLI, Claude Code is optional:
 
