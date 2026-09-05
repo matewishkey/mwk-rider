@@ -10,13 +10,14 @@
 //      that never got resized". A responsive image is judged as a LADDER, not as
 //      individual files: see judgeDistSizes.
 
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join, extname, relative } from 'node:path';
 import { transformSmells } from '../lib/cf-image.mjs';
 import { eachDistHtml, contentImgs, attrValue, srcsetUrls } from '../lib/html.mjs';
 import { imageSize } from '../lib/image-size.mjs';
 import { SKIP_DIST, distDir } from '../lib/dist.mjs';
 import { truncate } from '../lib/text.mjs';
+import { walkFiles } from '../lib/walk.mjs';
 
 const SEC = 'images';
 
@@ -553,20 +554,8 @@ function distPathOf(url, projectRoot) {
 // Helpers --------------------------------------------------------------------
 
 function walkDir(dir, callback, root) {
-  if (!existsSync(dir)) return;
-  const stack = [dir];
-  while (stack.length) {
-    const d = stack.pop();
-    let entries;
-    try { entries = readdirSync(d, { withFileTypes: true }); }
-    catch { continue; }
-    for (const e of entries) {
-      if (e.name === 'node_modules' || e.name.startsWith('.') || SKIP_DIST.has(e.name)) continue;
-      const full = join(d, e.name);
-      if (e.isDirectory()) stack.push(full);
-      else callback(relative(root, full));
-    }
-  }
+  const skip = (n) => n === 'node_modules' || n.startsWith('.') || SKIP_DIST.has(n);
+  for (const full of walkFiles(dir, { skip })) callback(relative(root, full));
 }
 
 /**

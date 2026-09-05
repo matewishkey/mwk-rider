@@ -1,29 +1,19 @@
 // Minimal HTML helpers for scanning built (dist/) and served HTML — shared by the
 // images (alt text) and seo (heading order) checks so both read pages the same way.
 
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { SKIP_DIST, distDir } from './dist.mjs';
+import { walkFiles } from './walk.mjs';
 
 // Walk dist/**/*.html, calling cb(relPath, html) for each file.
 export function eachDistHtml(root, cb) {
   const dist = distDir(root);
   if (!existsSync(dist)) return;
-  const stack = [dist];
-  while (stack.length) {
-    const d = stack.pop();
-    let entries;
-    try { entries = readdirSync(d, { withFileTypes: true }); }
-    catch { continue; }
-    for (const e of entries) {
-      if (e.name.startsWith('.') || SKIP_DIST.has(e.name)) continue;
-      const full = join(d, e.name);
-      if (e.isDirectory()) stack.push(full);
-      else if (e.name.endsWith('.html')) {
-        try { cb(relative(root, full), readFileSync(full, 'utf8')); }
-        catch {}
-      }
-    }
+  for (const full of walkFiles(dist, { skip: (n) => n.startsWith('.') || SKIP_DIST.has(n) })) {
+    if (!full.endsWith('.html')) continue;
+    try { cb(relative(root, full), readFileSync(full, 'utf8')); }
+    catch {}
   }
 }
 

@@ -2,8 +2,9 @@
 // installed / does the source mention it" to "did the build actually produce
 // it", and they all need the same two primitives.
 
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
+import { walkFiles } from './walk.mjs';
 
 /**
  * Never walked inside the static root.
@@ -57,17 +58,9 @@ export function distFiles(root, re) {
   const dist = distDir(root);
   if (!existsSync(dist)) return [];
   const out = [];
-  const stack = [dist];
-  while (stack.length) {
-    const d = stack.pop();
-    let entries;
-    try { entries = readdirSync(d, { withFileTypes: true }); } catch { continue; }
-    for (const e of entries) {
-      if (e.name.startsWith('.') || SKIP_DIST.has(e.name)) continue;
-      const full = join(d, e.name);
-      if (e.isDirectory()) stack.push(full);
-      else if (re.test(relative(dist, full))) out.push(relative(dist, full));
-    }
+  for (const full of walkFiles(dist, { skip: (n) => n.startsWith('.') || SKIP_DIST.has(n) })) {
+    const rel = relative(dist, full);
+    if (re.test(rel)) out.push(rel);
   }
   return out.sort();
 }

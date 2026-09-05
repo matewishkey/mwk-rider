@@ -18,6 +18,7 @@ import { imageSize } from '../lib/image-size.mjs';
 import { copyFromStarter, editFile } from '../lib/remedy.mjs';
 import { outOfFlowSelectors, inlineStyles, isOutOfFlow } from '../lib/css-flow.mjs';
 import { truncate } from '../lib/text.mjs';
+import { walkFiles } from '../lib/walk.mjs';
 
 const SEC = 'perf';
 
@@ -173,21 +174,8 @@ function isContentImageRef(src) {
 }
 
 function walkSource(root, callback) {
-  const src = join(root, 'src');
-  if (!existsSync(src)) return;
-  const stack = [src];
-  while (stack.length) {
-    const dir = stack.pop();
-    let entries;
-    try { entries = readdirSync(dir, { withFileTypes: true }); }
-    catch { continue; }
-    for (const e of entries) {
-      if (e.name === 'node_modules' || e.name === 'dist' || e.name.startsWith('.')) continue;
-      const full = join(dir, e.name);
-      if (e.isDirectory()) stack.push(full);
-      else callback(relative(root, full));
-    }
-  }
+  const skip = (n) => n === 'node_modules' || n === 'dist' || n.startsWith('.');
+  for (const full of walkFiles(join(root, 'src'), { skip })) callback(relative(root, full));
 }
 
 function lineOf(text, index) {
@@ -745,19 +733,7 @@ function reportPreloadPairs(issues, preloads, reporter) {
 
 function distTree(dir) {
   const out = [];
-  if (!existsSync(dir)) return out;
-  const stack = [dir];
-  while (stack.length) {
-    const d = stack.pop();
-    let entries;
-    try { entries = readdirSync(d, { withFileTypes: true }); } catch { continue; }
-    for (const e of entries) {
-      if (e.name.startsWith('.') || SKIP_DIST.has(e.name)) continue;
-      const full = join(d, e.name);
-      if (e.isDirectory()) stack.push(full);
-      else out.push(full);
-    }
-  }
+  for (const full of walkFiles(dir, { skip: (n) => n.startsWith('.') || SKIP_DIST.has(n) })) out.push(full);
   return out;
 }
 

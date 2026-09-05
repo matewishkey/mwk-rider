@@ -17,6 +17,7 @@ import {
   deprecatedShapes,
 } from '../lib/jsonld.mjs';
 import { installedEngines, describeEngine } from '../lib/search-engines.mjs';
+import { walkFiles } from '../lib/walk.mjs';
 
 const SEC = 'data';
 
@@ -217,18 +218,7 @@ function listPages(root) {
   const dir = join(root, 'src', 'pages');
   if (!existsSync(dir)) return [];
   const out = [];
-  const stack = [dir];
-  while (stack.length) {
-    const d = stack.pop();
-    let entries;
-    try { entries = readdirSync(d, { withFileTypes: true }); } catch { continue; }
-    for (const e of entries) {
-      if (e.name.startsWith('.')) continue;
-      const full = join(d, e.name);
-      if (e.isDirectory()) stack.push(full);
-      else out.push(relative(root, full));
-    }
-  }
+  for (const full of walkFiles(dir, { skip: (n) => n.startsWith('.') })) out.push(relative(root, full));
   return out;
 }
 

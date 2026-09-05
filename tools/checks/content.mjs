@@ -9,6 +9,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { eachDistHtml, attrValue } from '../lib/html.mjs';
 import { distRelative, distDir } from '../lib/dist.mjs';
+import { walkFiles } from '../lib/walk.mjs';
 
 const SEC = 'content';
 
@@ -285,18 +286,8 @@ function checkAmbiguousQuotes(project, reporter) {
 function markdownFiles(root) {
   const base = join(root, 'src');
   const out = [];
-  if (!existsSync(base)) return out;
-  const stack = [base];
-  while (stack.length) {
-    const d = stack.pop();
-    let entries;
-    try { entries = readdirSync(d, { withFileTypes: true }); } catch { continue; }
-    for (const e of entries) {
-      if (e.name.startsWith('.') || e.name === 'node_modules') continue;
-      const full = join(d, e.name);
-      if (e.isDirectory()) stack.push(full);
-      else if (/\.mdx?$/i.test(e.name)) out.push(relative(root, full));
-    }
+  for (const full of walkFiles(base, { skip: (n) => n.startsWith('.') || n === 'node_modules' })) {
+    if (/\.mdx?$/i.test(full)) out.push(relative(root, full));
   }
   return out;
 }

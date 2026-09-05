@@ -7,6 +7,7 @@ import { join, relative } from 'node:path';
 import { BASELINE_SEARCH, installedEngines, describeEngine } from '../lib/search-engines.mjs';
 import { stripComments } from '../lib/src-scan.mjs';
 import { setJson } from '../lib/remedy.mjs';
+import { walkFiles } from '../lib/walk.mjs';
 
 // First-party adapters. The list is a convenience for naming what it found —
 // `adapter:` in astro.config is what actually decides, so a third-party adapter
@@ -498,17 +499,8 @@ async function collectSrc(root, regex) {
 }
 
 function* walkSrc(src) {
-  const stack = [src];
-  while (stack.length) {
-    const dir = stack.pop();
-    let entries;
-    try { entries = readdirSync(dir, { withFileTypes: true }); }
-    catch { continue; }
-    for (const e of entries) {
-      const full = join(dir, e.name);
-      if (e.isDirectory()) stack.push(full);
-      else if (/\.(astro|tsx?|jsx?|mdx?)$/.test(e.name)) yield full;
-    }
+  for (const full of walkFiles(src)) {
+    if (/\.(astro|tsx?|jsx?|mdx?)$/.test(full)) yield full;
   }
 }
 

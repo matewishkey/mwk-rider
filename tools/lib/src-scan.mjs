@@ -7,8 +7,9 @@
 // and the individual meta checks then never ran at all — indistinguishable in
 // the output from "checked and passed". Detect the tags, not the filename.
 
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { join, relative, basename } from 'node:path';
+import { walkFiles } from './walk.mjs';
 
 const SOURCE_EXT = /\.(astro|tsx?|jsx?|mdx?)$/;
 // Prose, not syntax: in .md/.mdx a `//` or a slash-star is text, so the JS
@@ -97,26 +98,18 @@ export function readSrcFiles(root, { subdir = 'src', exts = SOURCE_EXT } = {}) {
   const base = join(root, subdir);
   if (!existsSync(base)) return [];
   const out = [];
-  const stack = [base];
-  while (stack.length) {
-    const dir = stack.pop();
-    let entries;
-    try { entries = readdirSync(dir, { withFileTypes: true }); }
-    catch { continue; }
-    for (const e of entries) {
-      const full = join(dir, e.name);
-      if (e.isDirectory()) { if (!SKIP_DIR.has(e.name)) stack.push(full); continue; }
-      if (!exts.test(e.name)) continue;
-      try {
-        const text = readFileSync(full, 'utf8');
-        out.push({
-          path: relative(root, full),
-          text,
-          code: stripComments(text, { js: !MARKDOWN_EXT.test(e.name) }),
-        });
-      }
-      catch { /* unreadable file — skip, never fail the audit over it */ }
+  for (const full of walkFiles(base, { skip: (n, e) => e.isDirectory() && SKIP_DIR.has(n) })) {
+    const name = basename(full);
+    if (!exts.test(name)) continue;
+    try {
+      const text = readFileSync(full, 'utf8');
+      out.push({
+        path: relative(root, full),
+        text,
+        code: stripComments(text, { js: !MARKDOWN_EXT.test(name) }),
+      });
     }
+    catch { /* unreadable file — skip, never fail the audit over it */ }
   }
   return out;
 }
