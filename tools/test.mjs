@@ -2823,15 +2823,29 @@ const docText = (rel) => readFileSync(join(here, '..', rel), 'utf8');
 // one severity each ("`data: jsonld:breadcrumb` (house), `…-shape` (universal)")
 // is skipped rather than guessed at. That is what keeps this at zero false
 // positives; widening the window is how it starts crying wolf.
-const sevOf = new Map();
-for (const r of catalogue) {
-  const [dom, ...rest] = r.id.split('/');
-  sevOf.set(r.id, r.severity);
-  sevOf.set(`${dom}: ${rest.join('/').replace(/-/g, ':')}`, r.severity);
-}
-const idPattern = new RegExp(
-  '`(' + [...sevOf.keys()].sort((a, b) => b.length - a.length)
-    .map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + ')`', 'g');
+// Docs spell a rule id three ways and all three are in current use: most turn
+// every hyphen into a colon (`images: srcset:missing`), eight turn only the
+// first (`perf: cls:img-dimensions`, `modules: adapter:on-demand` — the tail is
+// a compound word, not a level), and three keep hyphens outright
+// (`seo: no-keywords`). Knowing only one spelling silently shrinks what these
+// assertions cover, which is how the first version of this test read 11 real
+// rule ids as unknown.
+// Docs spell a rule id several ways and every one is in current use: most turn
+// each hyphen into a colon (`images: srcset:missing`), some turn only the first
+// (`perf: cls:img-dimensions`), some only a later one (`images:
+// background-image:fixed-width`, where the colon separates the compound noun
+// from its qualifier), and a few keep hyphens outright (`seo: no-keywords`).
+// Enumerating the variants was tried and kept missing one — so both assertions
+// below compare a NORMALISED form with every separator stripped. Verified
+// lossless: all 165 rule ids reduce to 165 distinct keys, so nothing can be
+// matched to the wrong rule.
+const normId = (s) => s.toLowerCase().replace(/[:/-]/g, '');
+const sevOf = new Map(catalogue.map(r => [normId(r.id), r.severity]));
+const domains = new Set(catalogue.map(r => r.id.split('/')[0]));
+// A doc-style qualified id: `domain: some:thing-else`, or the raw `domain/id`.
+const idPattern = /`([a-z]+)[:/] ?([a-z0-9]+(?:[:-][a-z0-9-]+)*)`/g;
+const idIn = (text) => [...text.matchAll(idPattern)]
+  .filter(m => domains.has(m[1]) && sevOf.has(normId(m[1] + m[2])));
 const SEV_WORD = /\b(advisory|house[ -]style|house|universal)\b/gi;
 const normSev = (w) => w.toLowerCase().replace(/-/g, ' ').replace(/ style$/, '');
 
@@ -2839,15 +2853,15 @@ const sevMismatches = [];
 let sevPairs = 0;
 for (const rel of DOC_FILES) {
   docText(rel).split('\n').forEach((line, n) => {
-    for (const m of line.matchAll(idPattern)) {
+    for (const m of idIn(line)) {
       const win = line.slice(Math.max(0, m.index - 60), m.index + m[0].length + 60);
-      if ([...win.matchAll(idPattern)].length !== 1) continue;
+      if (idIn(win).length !== 1) continue;
       const claims = new Set([...win.matchAll(SEV_WORD)].map(w => normSev(w[0])));
       if (claims.size !== 1) continue;
       sevPairs++;
       const claimed = [...claims][0];
-      const actual = sevOf.get(m[1]);
-      if (claimed !== actual) sevMismatches.push(`${rel}:${n + 1} \`${m[1]}\` is ${actual}, doc says "${claimed}"`);
+      const actual = sevOf.get(normId(m[1] + m[2]));
+      if (claimed !== actual) sevMismatches.push(`${rel}:${n + 1} \`${m[1]}: ${m[2]}\` is ${actual}, doc says "${claimed}"`);
     }
   });
 }
@@ -2897,6 +2911,81 @@ for (const rel of DOC_FILES) {
 }
 check(`every backticked file path in the docs resolves (${pathTokens} paths)`,
   deadPaths.length === 0, [...new Set(deadPaths)].join(' | '));
+
+// --- a doc must not name a rule that does not exist -------------------------
+// The inverse of "six shipped rules had no home": a doc naming a rule that was
+// renamed or removed sends a reader to `--rules` for something that isn't there.
+// Matches the doc-style qualified form only, and only for a real domain, so
+// ordinary prose like `seo: the head meta` cannot trip it.
+const DOC_RULE_TOKEN = /`([a-z]+): ([a-z0-9]+(?:[:-][a-z0-9-]+)*)`/g;
+const unknownRules = [];
+let ruleTokens = 0;
+for (const rel of DOC_FILES) {
+  docText(rel).split('\n').forEach((line, n) => {
+    for (const m of line.matchAll(DOC_RULE_TOKEN)) {
+      if (!domains.has(m[1])) continue;
+      ruleTokens++;
+      if (!sevOf.has(normId(m[1] + m[2]))) unknownRules.push(`${rel}:${n + 1} ${m[0]}`);
+    }
+  });
+}
+check(`every rule id a doc names exists in the catalogue (${ruleTokens} named)`,
+  unknownRules.length === 0, [...new Set(unknownRules)].join(' | '));
+
+// --- restated counts must match what they count -----------------------------
+// A count written into prose is a claim with no owner. The 💡 assertion above
+// bans one kind outright; these two check the kinds that are legitimate to
+// state, because the thing counted is a deliberate list rather than a moving
+// tally. Both have already drifted: README said "Two dashboard steps" when
+// create mode prints three, and the domain counts are restated in five places.
+const NUMBER_WORD = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7,
+  eight: 8, nine: 9, ten: 10 };
+const wordNum = (w) => NUMBER_WORD[w.toLowerCase()] ?? Number(w);
+
+const helpText = spawnSync('node', [AUDIT, '--help'], { encoding: 'utf8' }).stdout;
+const offlineCount = helpText.match(/^Offline domains:\s*(.+)$/m)[1].split(',').length;
+const urlCount = helpText.match(/^With --url:\s*(.+)$/m)[1].split(',').length;
+const domainClaims = [];
+for (const rel of DOC_FILES) {
+  docText(rel).split('\n').forEach((line, n) => {
+    for (const m of line.matchAll(/\b([A-Za-z]+|\d+)\s+offline domains?\b/gi)) {
+      const got = wordNum(m[1]);
+      if (Number.isFinite(got) && got !== offlineCount) domainClaims.push(`${rel}:${n + 1} says ${m[1]} offline domains, there are ${offlineCount}`);
+    }
+    for (const m of line.matchAll(/\b([A-Za-z]+|\d+)\s+`?--url`?\s+domains?\b/gi)) {
+      const got = wordNum(m[1]);
+      if (Number.isFinite(got) && got !== urlCount) domainClaims.push(`${rel}:${n + 1} says ${m[1]} --url domains, there are ${urlCount}`);
+    }
+  });
+}
+check(`every stated domain count matches --help (${offlineCount} offline, ${urlCount} with --url)`,
+  domainClaims.length === 0, domainClaims.join(' | '));
+
+// The operator TODOs are a real list with a real length — CREATE.md numbers them
+// and two other files state how many there are in words. README said "Two"
+// against a list of three, in the sentence that tells the owner what is left to
+// do, which is the worst place for it.
+const createMd = docText('skills/rider/references/CREATE.md');
+// The HEADING, not the earlier in-step mention of the same phrase — indexOf
+// found that one and sliced an empty section, which reported a count of 0.
+const todoHeading = createMd.search(/^## .*operator TODOs/m);
+const afterHeading = createMd.slice(todoHeading + 1);
+const todoSection = afterHeading.slice(0, afterHeading.search(/^## /m) >= 0
+  ? afterHeading.search(/^## /m) : afterHeading.length);
+const todoCount = (todoSection.match(/^\d+\. \*\*/gm) ?? []).length;
+const todoClaims = [];
+for (const [rel, re] of [
+  ['README.md', /\b([A-Za-z]+|\d+)\s+dashboard steps?\b/gi],
+  ['examples/starter/CLAUDE.md', /\b([A-Za-z]+|\d+)\s+tasks?, once each\b/gi],
+  ['skills/rider/references/CREATE.md', /\bthe\s+([A-Za-z]+|\d+)\s+operator TODOs\b/gi],
+]) {
+  for (const m of docText(rel).matchAll(re)) {
+    const got = wordNum(m[1]);
+    if (Number.isFinite(got) && got !== todoCount) todoClaims.push(`${rel} says ${m[1]}, CREATE.md lists ${todoCount}`);
+  }
+}
+check(`the operator-TODO count agrees everywhere it is stated (${todoCount} listed)`,
+  todoCount > 0 && todoClaims.length === 0, todoClaims.join(' | '));
 
 console.log('the plugin wiring resolves — a broken path here is a dead command:');
 // The commands and the skill router reach their instructions by PATH, and a
