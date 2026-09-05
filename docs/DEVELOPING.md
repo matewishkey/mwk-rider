@@ -152,6 +152,10 @@ the alternative is a starter that quietly stops complying with the tool that shi
   instead *mirror* a live site — fetch its `robots.txt` and sitemap, fetch the pages, write
   them into a throwaway `dist/` with a stub `package.json` and `astro.config.mjs`, and point
   the audit at that. Six real sites in minutes, no build, no code executed.
+  **`node scripts/mirror-corpus.mjs <out-dir> <url…>` is that**, and
+  `https://astro.build/showcase/` is a ready-made list of real Astro sites to point it at
+  (29 of them; round 9 mirrored 27). Do it in a scratch dir — the corpus is large and
+  disposable.
 
   **The rule: a sampled mirror is only valid for per-page checks.** Anything whose subject
   is the *link graph* or *cross-page uniqueness* — `links:internal`, `links:orphan`,

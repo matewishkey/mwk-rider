@@ -238,6 +238,7 @@ examples/_fixture-i18n/      a compliant multi-locale Astro site — the harder
                              test target (i18n, search, preview routes)
 examples/ci/audit.yml        copy-paste GitHub Actions job for your own site
 evals/                       plugin-eval cases for the instructions, not the tool
+scripts/mirror-corpus.mjs    mirror live sites into throwaway dist/ trees, to audit against
 scripts/test-site.mjs        deploys the starter to the live test site (lighthouse
                              needs a public URL — see docs/DEVELOPING.md)
 BEST-PRACTICES.md            the why behind every check + the practice/check registry
