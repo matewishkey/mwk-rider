@@ -17,6 +17,7 @@ import {
   BEACON_SIGNALS, RUM_SIGNALS, ZARAZ_SIGNALS, GA_THIRD_PARTY_SIGNALS,
   matchSignals, hasSignal,
 } from '../lib/analytics-signals.mjs';
+import { truncate } from '../lib/text.mjs';
 
 // One image loop can otherwise emit a finding per <img> on a page that has
 // hundreds — or that was built to have hundreds.
@@ -855,4 +856,3 @@ function absolutize(src, base) {
   catch { return src; }
 }
 
-function truncate(s, n) { return s.length > n ? s.slice(0, n - 1) + '…' : s; }

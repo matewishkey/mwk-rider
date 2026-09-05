@@ -8,6 +8,7 @@
 // gracefully (the tool still works for everything else).
 
 import { attrValue, srcsetUrls } from '../lib/html.mjs';
+import { truncate } from '../lib/text.mjs';
 
 const SEC = 'lighthouse';
 // No timeout meant a host that accepts the connection and never answers hung the
@@ -218,9 +219,6 @@ function nameOf(entity) {
   return typeof entity === 'string' ? entity : entity?.text ?? entity?.name ?? null;
 }
 
-function truncate(s, n) {
-  return s.length > n ? s.slice(0, n - 1) + '…' : s;
-}
 
 // Cap the instances so one badly-themed site can't bury the rest of the audit.
 const MAX_A11Y_FINDINGS = 10;

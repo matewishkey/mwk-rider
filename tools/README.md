@@ -106,6 +106,7 @@ tools/
     headers.mjs          parse public/_headers into rules the cache checks can ask
     jsonld.mjs           parse the JSON-LD a page emits; Article-family types
     fonts-config.mjs     the Astro Fonts API config, as declared families
+    text.mjs             truncate() for finding messages — was five identical copies
     config-string.mjs    one reader for a string value in config TEXT — the quoted-value
                          regex lived in four places and all four dropped a value carrying
                          the other quote (`tagline: "Australia's …"` read as absent)

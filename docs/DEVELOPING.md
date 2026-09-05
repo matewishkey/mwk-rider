@@ -341,6 +341,16 @@ seven public builds kept in scratch.
       starter carries every `BASELINE_DEPS` entry, but it cannot assert taste.
 - [ ] If a check was added: it's classified in `tools/lib/policy.mjs`, and sanity-checked
       against an off-baseline site so you can see which mode it lands in.
+- [ ] If a doc states a rule's **severity**, it matches the catalogue — `tools/test.mjs`
+      asserts this now, so a stale "advisory" fails the suite rather than waiting for a
+      sweep. Two limits worth knowing. It only reads a claim where a **qualified** rule id
+      (`images: srcset:missing`) and exactly one severity word sit within 60 characters of
+      each other, so a line naming two rules is skipped rather than guessed at — that
+      narrowness is what keeps it at zero false positives. And it cannot see prose that
+      *describes* a check without naming it, which is how the original drift got in. The
+      same run asserts every backticked file path in the docs resolves; a path belonging
+      to an audited site rather than this repo (`robots.txt`, `/llms.txt`) goes in that
+      test's `FOREIGN_PATHS` list, not into existence.
 - [ ] If a **`browser`** check was added: it was run against hand-built pages for both
       verdicts, not just the failing one. Every false positive found there so far came
       from a page that was FINE — a trailing slash, a form's submit button, a collapsed

@@ -2793,6 +2793,111 @@ for (const rel of ['examples/starter/CLAUDE.md', 'skills/rider/references/CREATE
   check(`  ${rel} does not tell the reader how many 💡 to expect`, !hit, hit);
 }
 
+// Four of the six `docs:` commits in this repo's history are repairing prose that
+// contradicted the code — the largest single recurring cost here, and until now
+// found only by reading all fifteen documents at close time. These two assertions
+// automate the mechanical half of that sweep. Neither can catch prose that
+// describes a check WITHOUT naming it (yesterday's `images: srcset:missing`
+// "(advisory)" line named no rule id); what they catch is the moment a doc names
+// something and gets it wrong, which is the half a machine can settle.
+console.log('the docs are a contract too — a doc that names a rule or a path must be right:');
+
+const DOC_FILES = [
+  'README.md', 'CLAUDE.md', 'CONTRIBUTING.md', 'SECURITY.md', 'BEST-PRACTICES.md',
+  'docs/DEVELOPING.md', 'tools/README.md', 'examples/starter/CLAUDE.md',
+  'skills/rider/SKILL.md', 'skills/rider/references/AUDIT.md',
+  'skills/rider/references/CREATE.md',
+  'commands/audit.md', 'commands/create.md', 'commands/bug.md',
+];
+const docText = (rel) => readFileSync(join(here, '..', rel), 'utf8');
+
+// --- severity claims must match the catalogue ------------------------------
+// `images: transform:quality` was documented "Advisory." while policy.mjs has
+// listed it as house style all along, with a comment explaining why. Severity is
+// not decoration: advisory never fails, house style is a required 🔧 under
+// --strict, universal fails anyone.
+//
+// Deliberately narrow. Only a QUALIFIED id in backticks counts — a bare `seo` or
+// `alt` collides with ordinary prose — and the claim must be the only rule id AND
+// the only severity word within 60 characters, so a line carrying two rules with
+// one severity each ("`data: jsonld:breadcrumb` (house), `…-shape` (universal)")
+// is skipped rather than guessed at. That is what keeps this at zero false
+// positives; widening the window is how it starts crying wolf.
+const sevOf = new Map();
+for (const r of catalogue) {
+  const [dom, ...rest] = r.id.split('/');
+  sevOf.set(r.id, r.severity);
+  sevOf.set(`${dom}: ${rest.join('/').replace(/-/g, ':')}`, r.severity);
+}
+const idPattern = new RegExp(
+  '`(' + [...sevOf.keys()].sort((a, b) => b.length - a.length)
+    .map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + ')`', 'g');
+const SEV_WORD = /\b(advisory|house[ -]style|house|universal)\b/gi;
+const normSev = (w) => w.toLowerCase().replace(/-/g, ' ').replace(/ style$/, '');
+
+const sevMismatches = [];
+let sevPairs = 0;
+for (const rel of DOC_FILES) {
+  docText(rel).split('\n').forEach((line, n) => {
+    for (const m of line.matchAll(idPattern)) {
+      const win = line.slice(Math.max(0, m.index - 60), m.index + m[0].length + 60);
+      if ([...win.matchAll(idPattern)].length !== 1) continue;
+      const claims = new Set([...win.matchAll(SEV_WORD)].map(w => normSev(w[0])));
+      if (claims.size !== 1) continue;
+      sevPairs++;
+      const claimed = [...claims][0];
+      const actual = sevOf.get(m[1]);
+      if (claimed !== actual) sevMismatches.push(`${rel}:${n + 1} \`${m[1]}\` is ${actual}, doc says "${claimed}"`);
+    }
+  });
+}
+check(`every severity a doc states matches the catalogue (${sevPairs} unambiguous claims)`,
+  sevMismatches.length === 0, sevMismatches.join(' | '));
+
+// --- backticked file paths must resolve ------------------------------------
+// The close sweep re-checks every backticked path in every doc by hand, every
+// time. Resolution is generous on purpose — repo-root, relative to the doc, or a
+// unique basename — because docs legitimately write `policy.mjs` for
+// `tools/lib/policy.mjs`. What is left over is genuinely absent.
+//
+// The allow-list is paths that belong to an AUDITED site or to a third party,
+// which will never exist in this repo and must not be "fixed" into existence.
+const FOREIGN_PATHS = new Set([
+  'robots.txt', 'dist/robots.txt', 'llms.txt', '/llms.txt', 'search-index.json',
+  'src/fetch.ts', 'dist/server/wrangler.json', '_notes.md',
+  'gtag.js', 'gtm.js', 'analytics.js', 'chart.js', '/cdn-cgi/zaraz/i.js',
+  'astro/dist/assets/fonts/constants.js',
+]);
+const ROOT_DOCS = join(here, '..');
+const repoFiles = [];
+(function walkRepo(dir, prefix) {
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    if (['node_modules', '.git', 'dist', '.astro'].includes(e.name)) continue;
+    if (e.isDirectory()) walkRepo(join(dir, e.name), prefix ? `${prefix}/${e.name}` : e.name);
+    else repoFiles.push(prefix ? `${prefix}/${e.name}` : e.name);
+  }
+})(ROOT_DOCS, '');
+const basenames = new Set(repoFiles.map(f => f.split('/').pop()));
+const PATH_TOKEN = /`([A-Za-z0-9_./-]+\.(?:mjs|md|json|jsonc|ts|js|yml|yaml|txt|svg))`/g;
+const deadPaths = [];
+let pathTokens = 0;
+for (const rel of DOC_FILES) {
+  const dir = rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : '';
+  for (const m of docText(rel).matchAll(PATH_TOKEN)) {
+    const p = m[1];
+    pathTokens++;
+    if (FOREIGN_PATHS.has(p) || p.startsWith('http') || p.startsWith('$')) continue;
+    const bare = p.replace(/^\//, '');
+    const resolves = repoFiles.includes(bare)
+      || repoFiles.includes(dir ? `${dir}/${bare}` : bare)
+      || repoFiles.some(f => f.endsWith(`/${bare}`))
+      || basenames.has(bare.split('/').pop());
+    if (!resolves) deadPaths.push(`${rel}: ${p}`);
+  }
+}
+check(`every backticked file path in the docs resolves (${pathTokens} paths)`,
+  deadPaths.length === 0, [...new Set(deadPaths)].join(' | '));
+
 console.log('the plugin wiring resolves — a broken path here is a dead command:');
 // The commands and the skill router reach their instructions by PATH, and a
 // path is only checked when someone runs the command. Nothing else in this file

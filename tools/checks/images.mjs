@@ -16,6 +16,7 @@ import { transformSmells } from '../lib/cf-image.mjs';
 import { eachDistHtml, contentImgs, attrValue, srcsetUrls } from '../lib/html.mjs';
 import { imageSize } from '../lib/image-size.mjs';
 import { SKIP_DIST, distDir } from '../lib/dist.mjs';
+import { truncate } from '../lib/text.mjs';
 
 const SEC = 'images';
 
@@ -624,8 +625,5 @@ function humanSize(bytes) {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
-function truncate(s, n) {
-  return s.length > n ? s.slice(0, n - 1) + '…' : s;
-}
 
 function escapeRe(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }

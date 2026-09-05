@@ -839,7 +839,9 @@ works.
   `onerror=redirect`). → `images: transform:format` (offline + live)
 - **Transforms set an explicit `quality=`.** Cloudflare defaults to 85; an
   explicit cap (e.g. `quality=80`) is usually a large win on photographic
-  content. Advisory. → 💡 `images: transform:quality`
+  content. → 💡 `images: transform:quality` (house style — `💡` by default,
+  `🔧` under `--strict`; `tools/lib/policy.mjs` carries the reason it is not
+  required of everyone).
 - **Measure served bytes the way a browser sees them.** The live byte check
   sends a real `Accept: image/avif,image/webp,…` so a `format=auto` transform
   negotiates the format an actual visitor downloads — not the raw source a

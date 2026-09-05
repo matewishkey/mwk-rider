@@ -9,6 +9,7 @@ import { eachDistHtml, isContentPage, headingOutline, headingAudit, attrValue } 
 import { readSrcFiles, headMetaFiles } from '../lib/src-scan.mjs';
 import { distDir, distFiles, readDist, sitemapPages, sitemapPageFiles, sitemapEntries, decodePath, distRelative } from '../lib/dist.mjs';
 import { editFile } from '../lib/remedy.mjs';
+import { truncate } from '../lib/text.mjs';
 
 const SEC = 'seo';
 
@@ -657,9 +658,6 @@ function sampleOf(list, n = 3) {
   return list.slice(0, n).join('; ') + (list.length > n ? ' …' : '');
 }
 
-function truncate(s, n) {
-  return s.length > n ? s.slice(0, n - 1) + '…' : s;
-}
 
 // --- the built pages, read once ----------------------------------------------
 

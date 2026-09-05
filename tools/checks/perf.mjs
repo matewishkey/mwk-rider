@@ -17,6 +17,7 @@ import { fontFamilies } from '../lib/fonts-config.mjs';
 import { imageSize } from '../lib/image-size.mjs';
 import { copyFromStarter, editFile } from '../lib/remedy.mjs';
 import { outOfFlowSelectors, inlineStyles, isOutOfFlow } from '../lib/css-flow.mjs';
+import { truncate } from '../lib/text.mjs';
 
 const SEC = 'perf';
 
@@ -193,9 +194,6 @@ function lineOf(text, index) {
   return text.slice(0, index).split('\n').length;
 }
 
-function truncate(s, n) {
-  return s.length > n ? s.slice(0, n - 1) + '…' : s;
-}
 
 // 3. Payload weight — CSS and fonts -------------------------------------------
 //
