@@ -164,6 +164,10 @@ export class Reporter {
     }
   }
 
+  /** The same counts `--json` publishes. Public so a report can render them
+   *  without reaching into the private one and drifting from it. */
+  summary() { return this._counts(); }
+
   _counts() {
     return {
       pass:    this.results.filter(r => r.outcome === 'pass').length,

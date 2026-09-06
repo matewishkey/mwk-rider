@@ -106,6 +106,7 @@ tools/
     headers.mjs          parse public/_headers into rules the cache checks can ask
     jsonld.mjs           parse the JSON-LD a page emits; Article-family types
     fonts-config.mjs     the Astro Fonts API config, as declared families
+    report-html.mjs      --report: the run as a standalone brand-designed page
     walk.mjs             one directory traversal — was eight open-coded copies
     text.mjs             truncate() for finding messages — was five identical copies
     config-string.mjs    one reader for a string value in config TEXT — the quoted-value

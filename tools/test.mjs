@@ -2806,6 +2806,65 @@ for (const rel of ['examples/starter/CLAUDE.md', 'skills/rider/references/CREATE
 // silently suppressed tsconfig:exclude-dist along with it (issue #36, from a
 // real audited site). Every state gets an assertion because the failure was a
 // false positive, which is the one kind this tool must never produce.
+// The HTML report is the one thing a plain run can write, and only because
+// --report <path> is the user asking. Everything about it that could go wrong
+// quietly gets an assertion: that a plain run still writes nothing, that a
+// third party's bytes cannot become markup, and that the help route is the URL
+// that actually resolves.
+console.log('the --report page is written only when asked, and escapes what it renders:');
+const { renderReport } = await import('./lib/report-html.mjs');
+
+const reportDir = mkdtempSync(join(tmpdir(), 'rider-report-'));
+const reportPath = join(reportDir, 'out', 'audit.html');
+const plainProject = mkBuilt({});
+const withReport = spawnSync('node', [AUDIT, '-s', 'modules', '--report', reportPath],
+  { cwd: plainProject, encoding: 'utf8' });
+check('--report writes the page at exactly the path given',
+  existsSync(reportPath), `exit ${withReport.status}: ${withReport.stderr?.slice(0, 200)}`);
+check('  …creating intermediate directories rather than failing',
+  readFileSync(reportPath, 'utf8').startsWith('<!doctype html>'));
+
+// "Command-driven, never passive" is the rule the whole repo is built on.
+const beforeFiles = readdirSync(plainProject).sort().join(',');
+spawnSync('node', [AUDIT, '-s', 'modules'], { cwd: plainProject, encoding: 'utf8' });
+check('  …while a run WITHOUT --report still writes nothing into the project',
+  readdirSync(plainProject).sort().join(',') === beforeFiles);
+
+// A --url run renders a third party's <title>, filenames and console output.
+// lib/untrusted.mjs fences those, and the fencing itself turns the guillemets
+// into literal < and >, so fenced text arrives carrying angle brackets BY
+// DESIGN. If escaping slipped, an audited site would be writing markup into a
+// page its owner opens.
+const hostileReport = renderReport({
+  results: [{
+    id: 'seo/meta-title', section: 'seo', name: 'meta:title', outcome: 'fix',
+    message: '\u00ab<script>alert(document.cookie)</script>\u00bb and <img src=x onerror=alert(1)>',
+    fix: '</style><script>alert(2)</script>',
+    file: '"><script>alert(3)</script>',
+  }],
+  errors: [], summary: { pass: 0, fix: 1, block: 0, suggest: 0, skip: 0 },
+}, { site: '<svg onload=alert(4)>', version: '0.0.0' });
+const OURS = new Set(['doctype', 'html', 'head', 'meta', 'title', 'style', 'body', 'main', 'h1',
+  'h2', 'p', 'span', 'div', 'b', 'code', 'ul', 'li', 'section', 'details', 'summary', 'a', 'footer', 'br']);
+const foreignTags = [...new Set([...hostileReport.matchAll(/<\/?([a-zA-Z][a-zA-Z0-9-]*)/g)]
+  .map((m) => m[1].toLowerCase()))].filter((t) => !OURS.has(t));
+check('a hostile finding cannot introduce a tag into the report',
+  foreignTags.length === 0, `foreign tags: ${foreignTags.join(', ')}`);
+check('  \u2026nor break out of the stylesheet', !hostileReport.includes('</style><script>'));
+check('  \u2026nor out of an attribute', !/"><script/.test(hostileReport));
+check('  \u2026while the fence characters still reach the reader, so the quote is visible',
+  hostileReport.includes('\u00ab') && hostileReport.includes('\u00bb'));
+
+// mwkshow.com resolves (200, redirecting to matewishkey.com/show/). The www form
+// does NOT resolve at all, so it must never appear.
+check('the help route is the short link that resolves, never the www form',
+  hostileReport.includes('https://mwkshow.com') && !hostileReport.includes('www.mwkshow.com'));
+// --red is a display/surface colour and --red-field is the fill under a white
+// label; the design page states that as a rule, and swapping them fails contrast.
+check('the report carries both brand reds, and puts white labels on the field colour',
+  hostileReport.includes('#e2342b') && hostileReport.includes('#c9251d')
+  && /background:var\(--red-field\);color:#fff/.test(hostileReport));
+
 console.log('tsconfig.json is JSONC — comments are legal and must not read as absent:');
 const tsRow = (body) => runJson(mkBuilt({ 'tsconfig.json': body }), ['-s', 'modules', '--strict'])
   .json?.results.find(r => r.id === 'modules/tsconfig-strict') ?? null;

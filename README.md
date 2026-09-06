@@ -68,6 +68,7 @@ So by default only **universal practice** is required (`🔧`): missing canonica
 ```bash
 node audit.mjs             # universal practice only — 4 🔧, 18 💡 on the site above
 node audit.mjs --strict    # require the full baseline too — 18 🔧
+node audit.mjs --report audit.html   # …and write the run as a page you can send someone
 ```
 
 Use `--strict` when you've adopted the baseline deliberately and want it enforced. What counts as which — and why — is one readable table in [`tools/lib/policy.mjs`](tools/lib/policy.mjs); disagree with a call and it's a one-line edit.
@@ -98,6 +99,26 @@ has moved past is a different site. One audit reported clean on a project whose 
 outright broken, because it read the `dist/` the last good build left behind.
 
 The static domains answer *"is it wired right?"*; `lighthouse` answers *"what's the real score?"* — complementary layers.
+
+## A report you can hand to someone
+
+Terminal output is for whoever ran the audit. `--report <path>` also writes the same run as a
+single self-contained HTML page — no build step, no assets, no network — designed to be opened
+by the person who owns the site rather than the person who ran the tool.
+
+```bash
+node audit.mjs --strict --report audit.html
+```
+
+Findings are grouped by what they demand of you, blocking first, with the passing checks kept
+(collapsed) so a regression is visible next time. Skipped checks are stated rather than folded
+into a clean bill — a check that could not run is not a check that passed. It carries the same
+`«…»` fencing the terminal uses, and every value is escaped: a `--url` run renders a third
+party's `<title>` and console output, so the audited site does not get to write markup into a
+page its owner opens.
+
+It writes exactly where you point it and nowhere else. A run without `--report` still writes
+nothing at all.
 
 ## Fixing, without hand-writing the fix
 

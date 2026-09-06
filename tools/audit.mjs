@@ -21,8 +21,21 @@
 // Usage: node audit.mjs --help
 
 import { parseArgs } from 'node:util';
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { basename, dirname, resolve, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { detectProject } from './lib/project.mjs';
 import { Reporter } from './lib/reporter.mjs';
+import { renderReport } from './lib/report-html.mjs';
+
+// The plugin's own version, read from the manifest that defines it rather than
+// duplicated here — a second copy is a second thing to forget to bump.
+const PLUGIN_VERSION = (() => {
+  try {
+    const here = dirname(fileURLToPath(import.meta.url));
+    return JSON.parse(readFileSync(join(here, '..', '.claude-plugin', 'plugin.json'), 'utf8')).version ?? null;
+  } catch { return null; }
+})();
 
 const OFFLINE = {
   modules: () => import('./checks/modules.mjs'),
@@ -54,6 +67,7 @@ try {
       rules:    { type: 'boolean' },
       fix:      { type: 'boolean' },
       'dry-run': { type: 'boolean' },
+      report:   { type: 'string' },
       help:     { type: 'boolean', short: 'h' },
     },
     allowPositionals: true,
@@ -76,6 +90,7 @@ Usage:
   rider -s lighthouse --url https://example.com   Just the Lighthouse scorecard
   rider --strict              Treat house-style baseline checks as required too
   rider --json                Machine-readable output
+  rider --report audit.html   Also write a shareable HTML report of this run
   rider --quiet               Hide the ✅ lines (findings, 💡 and ⏭ still print)
   rider --verbose             Show them even when output is piped or $CI is set
   rider --dry-run             Show the exact changes --fix would make, write nothing
@@ -244,6 +259,39 @@ if (values.url) {
 // --fix runs on the findings this run actually produced, before the report is
 // printed so its result can be part of the same --json document. It never invents
 // work: a remedy comes from a check that already measured the answer, and the
+/**
+ * Write the HTML report, if `--report <path>` asked for one.
+ *
+ * This is the ONE thing a plain run writes, and only because the flag is the
+ * user asking — the same bar `--fix` clears. It writes exactly where told and
+ * nowhere else: no default path, no guessing at `dist/`, nothing dropped into
+ * the audited project unasked.
+ *
+ * A failure to write is reported and does NOT change the exit code. The audit's
+ * verdict is about the site; whether a file landed is about the filesystem, and
+ * conflating them would make a read-only directory look like a failing site.
+ */
+function writeReportIfAsked() {
+  if (!values.report) return;
+  try {
+    const html = renderReport(
+      { results: reporter.results, errors: reporter.errors, summary: reporter.summary() },
+      {
+        site: project?.root ? basename(project.root) : (values.url ?? null),
+        version: PLUGIN_VERSION,
+        strict: !!values.strict,
+        url: values.url ?? null,
+        generated: new Date().toISOString().slice(0, 10),
+      },
+    );
+    mkdirSync(dirname(resolve(values.report)), { recursive: true });
+    writeFileSync(resolve(values.report), html);
+    if (!values.json) console.log(`report written to ${resolve(values.report)}`);
+  } catch (err) {
+    console.error(`could not write the report to ${values.report}: ${err.message}`);
+  }
+}
+
 // audit is re-run afterwards to prove the finding is gone and nothing new
 // appeared. See lib/fixer.mjs — the verification is the point, not the writing.
 if ((values.fix || values['dry-run']) && project) {
@@ -262,10 +310,12 @@ if ((values.fix || values['dry-run']) && project) {
   if (values.fix && !out.reverted && out.unresolved?.length === 0 && out.fixed?.length) {
     const stillFailing = reporter.results.some(
       (r) => (r.outcome === 'fix' || r.outcome === 'block') && !out.fixed.includes(r.id));
-    if (!stillFailing) process.exit(0);
+    if (!stillFailing) { writeReportIfAsked(); process.exit(0); }
   }
+  writeReportIfAsked();
   process.exit(reporter.exitCode());
 }
 
 reporter.finish();
+writeReportIfAsked();
 process.exit(reporter.exitCode());
