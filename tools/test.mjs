@@ -2845,7 +2845,8 @@ const hostileReport = renderReport({
   errors: [], summary: { pass: 0, fix: 1, block: 0, suggest: 0, skip: 0 },
 }, { site: '<svg onload=alert(4)>', version: '0.0.0' });
 const OURS = new Set(['doctype', 'html', 'head', 'meta', 'title', 'style', 'body', 'main', 'h1',
-  'h2', 'p', 'span', 'div', 'b', 'code', 'ul', 'li', 'section', 'details', 'summary', 'a', 'footer', 'br']);
+  'h2', 'p', 'span', 'div', 'b', 'strong', 'code', 'ul', 'li', 'section', 'details', 'summary',
+  'a', 'footer', 'br', 'svg', 'path']);   // svg/path are the logo, drawn inline
 const foreignTags = [...new Set([...hostileReport.matchAll(/<\/?([a-zA-Z][a-zA-Z0-9-]*)/g)]
   .map((m) => m[1].toLowerCase()))].filter((t) => !OURS.has(t));
 check('a hostile finding cannot introduce a tag into the report',
@@ -2854,6 +2855,15 @@ check('  \u2026nor break out of the stylesheet', !hostileReport.includes('</styl
 check('  \u2026nor out of an attribute', !/"><script/.test(hostileReport));
 check('  \u2026while the fence characters still reach the reader, so the quote is visible',
   hostileReport.includes('\u00ab') && hostileReport.includes('\u00bb'));
+// The allow-list above has to be maintained; this does not. Every `<...>` left
+// in the document is authored markup by definition — a payload's brackets are
+// escaped to text — so any event handler on a real tag would be one this file
+// wrote, and there are none. It also catches an injected handler the tag
+// allow-list would wave through (`<a onclick=…>` uses an allowed tag).
+const realTags = [...hostileReport.matchAll(/<[a-zA-Z][^>]*>/g)].map((m) => m[0]);
+const handlered = realTags.filter((t) => /\son[a-z]+\s*=/i.test(t));
+check('  \u2026and no tag in the document carries an event handler',
+  handlered.length === 0, handlered.slice(0, 2).join(' | '));
 
 // mwkshow.com resolves (200, redirecting to matewishkey.com/show/). The www form
 // does NOT resolve at all, so it must never appear.
