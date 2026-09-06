@@ -2920,8 +2920,9 @@ console.log('the rules Google publishes, and the record that keeps them current:
 {
   const sources = JSON.parse(readFileSync(join(here, '..', 'docs', 'sources.json'), 'utf8'));
   const named = sources.sources.flatMap((s) => s.backs);
-  const { knownRuleIds: ids } = await import('./lib/rules.mjs');
+  const { knownRuleIds: ids, ruleCatalogue: cat } = await import('./lib/rules.mjs');
   const catalogued = ids();
+  const cited = new Set(named);
   const missing = named.filter((id) => !catalogued.has(id));
   check(`every rule docs/sources.json cites exists (${named.length} citations)`,
     missing.length === 0, missing.join(', '));
@@ -2932,6 +2933,21 @@ console.log('the rules Google publishes, and the record that keeps them current:
   const notGoogle = sources.sources.filter((s) => !/^https:\/\/developers\.google\.com\/search\//.test(s.url));
   check('  …and every URL is a Search Central page, not a blog post about one',
     notGoogle.length === 0, notGoogle.map((s) => s.slug).join(', '));
+  // The record's own scope is a stated pair of counts, in CLAUDE.md and in the
+  // file's `$comment`. Both said something false in their first version — "a
+  // rule with no source is house style" — so both now state the real split, and
+  // a stated number is a number that drifts. The first version of this
+  // paragraph was written into the file every session in this repo loads.
+  const universal = cat().filter((r) => r.severity === 'universal');
+  const uncited = universal.filter((r) => !cited.has(r.id)).length;
+  const claim = /(\d+) of the (\d+) universal rules/;
+  for (const [where, text] of [['CLAUDE.md', readFileSync(join(here, '..', 'CLAUDE.md'), 'utf8')],
+                               ['docs/sources.json', JSON.stringify(sources.$comment)]]) {
+    const m = claim.exec(text);
+    check(`  …and the split ${where} states is the real one (${uncited} of ${universal.length})`,
+      m != null && Number(m[1]) === uncited && Number(m[2]) === universal.length,
+      m ? `${where} says ${m[1]} of ${m[2]}` : `${where} states no split`);
+  }
 }
 
 // seo: favicon — Google reads BMP, GIF, ICO, PNG, JPEG, PPM and TIFF. Not SVG.

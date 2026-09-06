@@ -1781,6 +1781,31 @@ the bullet here is only its summary.
   the unmeasurable tally (both § images above). The honest report stays what it
   was — the image is named as unmeasurable rather than judged on a width no
   guard can check.
+- ~~**Title and meta-description length.**~~ **Declined, 2026-09-06, and the
+  evidence came from a report this tool produced.** An SEO review of a real site
+  counted 64 of 106 titles and 36 of 106 descriptions as "truncated in search
+  results" and ranked it the second-biggest issue. Then that site's own Search
+  Console data arrived and said it was wrong: at an average position of 19.7 the
+  snippet is not why nobody clicks, the ranking is. The rule had no authority
+  behind it either — **Google publishes no character count anywhere**. Both the
+  title-link and snippet pages say the same thing, that the text "is truncated in
+  Google Search results as needed, typically to fit the device width", and the
+  title page then lists seven sources Google may rewrite a title from, of which
+  `<title>` is one. So the check would have been a number we invented, applied to
+  a thing Google may replace, and it would have sent someone to spend a week on
+  the wrong work. A count is not a finding.
+- ~~**Search-performance data (Search Console, SerpAPI).**~~ **Dropped,
+  2026-09-06 — the owner's call, and the right one for what this repo is.** The
+  argument for it was real: rider can say how a site is built and never whether
+  any of it worked, and the case above is exactly a wrong finding that live data
+  would have caught. But it would have cost the invariant that makes the tool
+  what it is. PSI is the *one* place this tool talks to an external API and the
+  one operator secret it reads; a search domain meant two more, one of them paid
+  and third-party, plus per-user credentials, an OAuth flow and a whole class of
+  finding that is a fact about Google rather than a defect in the build. **A
+  validator checks the artifact in front of it.** What survives the decision is
+  the lesson, not the feature: a finding whose fix is a week of work needs an
+  authority behind it, and "we measured it" is not the same as "Google says so".
 - **Offline heading scan beyond the canonical gate (see also `headings:order`,
   which now names the component rather than the built page).** Today the offline outline
   check only inspects pages with a `<link rel="canonical">`; a page that should

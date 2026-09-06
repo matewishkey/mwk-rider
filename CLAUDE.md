@@ -41,16 +41,25 @@ This repo is **mwk-rider**: a Claude Code plugin whose two mode commands (`/mwk-
 - **Practice ⇒ check (the `BEST-PRACTICES.md` contract).** `BEST-PRACTICES.md` is the *why* behind every check and a living practice↔check registry. Every best practice there has an enforcing check in `tools/checks/*`; a practice with no check is a tracked *gap*, not a practice yet. Adding one = understand the integration (context7) → write the why in `BEST-PRACTICES.md` → bake the check → verify on the fixture (stays `0 🔧`) + a real site → ship. Keep `BEST-PRACTICES.md` § Gaps current.
 
   **Half of this is enforced now** (2026-09-05): 105 of the 117 practice bullets name their check with a `→ \`domain: rule\`` arrow, and `tools/test.mjs` asserts every id named that way exists in the catalogue — so a renamed or deleted check breaks the build instead of quietly orphaning a practice. The other half stays prose on purpose. Requiring an arrow on all 117 would be wrong: the 12 without one are explanatory notes ("comments are blanked before matching", "a finding that could not have gone the other way is not a finding"), not practices. And requiring every rule to be named by id would force 66 more id mentions into a document whose job is the *why*, turning a narrative into an index. `--rules --json` is already the index.
-- **A universal rule names its Google source, and the date it was read.**
-  `docs/sources.json` is the record: sixteen Search Central pages, each with the
-  `Last updated` date printed on it, the date we read it, and the rule ids that
-  rest on it. `node scripts/google-sources.mjs` re-reads them and exits non-zero
-  when one has moved; a weekly workflow opens one issue naming the page and its
-  rules. `--accept` records the new dates once a human has re-read the page.
-  `tools/test.mjs` asserts every id cited there still exists. A rule with no
-  source is house style and says so in `lib/policy.mjs` — the point is not to
-  cover every rule, it is that nothing called *universal* is unattributable.
-  **Never bump a date without reading the page.**
+- **A rule that encodes Google's behaviour names the page and the date it was
+  read.** `docs/sources.json` is the record: nineteen Search Central pages, each
+  with the `Last updated` date printed on it, the date we read it, and the rule
+  ids resting on it. `node scripts/google-sources.mjs` re-reads them and exits
+  non-zero when one has moved; a weekly workflow opens one issue naming the page
+  and its rules. `--accept` records the new dates once a human has re-read the
+  page. **Never bump a date without reading the page**, and note that Google
+  serves a dateless variant of these pages — the script sends no user-agent and
+  retries for that reason.
+
+  **It is not an inventory of universal rules, and absence from it means
+  nothing.** 72 of the 112 universal rules are uncited and most of them should
+  be: the `modules` domain answers to Astro's own docs, `perf` and image
+  delivery to the web platform, the `og:*` tags to the Open Graph protocol, the
+  JSON-LD shapes to schema.org, the scores to Lighthouse, and a dozen rows are
+  the tool reporting on itself. A build that will not start is a defect
+  whatever Google publishes. The first version of this bullet said a rule with
+  no source is house style; that was false when written, and it was written in
+  the file every session here loads.
 - **Verify Astro/Cloudflare specifics via `context7`** before writing about them or generating config/code (hard rule).
 - **Provenance comments name a date, never a BORROWED host.** Our own sites are fair to
   name and ~10 comments in `tools/` do (`tasmanvisa-web`, `cypruspokerbrisbane`,
