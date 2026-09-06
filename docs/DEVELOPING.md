@@ -345,6 +345,12 @@ seven public builds kept in scratch.
       starter carries every `BASELINE_DEPS` entry, but it cannot assert taste.
 - [ ] If a check was added: it's classified in `tools/lib/policy.mjs`, and sanity-checked
       against an off-baseline site so you can see which mode it lands in.
+- [ ] If `commands/`, `skills/` or the starter's instructions changed: `node evals/run.mjs`
+      passes. That is the only thing that asserts the *instructions* rather than the tool —
+      create mode copying rather than composing, audit touching nothing, skips being
+      reported, and `«…»` from an audited site being read as data. It needs a live model,
+      so CI cannot run it; CI runs `--self-test` (the graders against synthetic
+      transcripts, both directions) and parses every case file instead.
 - [ ] If a doc states a rule's **severity**, it matches the catalogue — `tools/test.mjs`
       asserts this now, so a stale "advisory" fails the suite rather than waiting for a
       sweep. Two limits worth knowing. It only reads a claim where a **qualified** rule id

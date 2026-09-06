@@ -32,8 +32,8 @@ export async function detectProject(cwd) {
     // modules.mjs can say which — the second used to be reported as "missing".
     packageJsonMalformed: packageJsonRaw != null && packageJson == null,
     astroConfig,
-    tsconfig: parseJson(tsconfigRaw),
-    tsconfigMalformed: tsconfigRaw != null && parseJson(tsconfigRaw) == null,
+    tsconfig: parseJsonc(tsconfigRaw),
+    tsconfigMalformed: tsconfigRaw != null && parseJsonc(tsconfigRaw) == null,
     contentConfig: readFileIfExists(join(cwd, 'src', 'content.config.ts'))
                 ?? readFileIfExists(join(cwd, 'src', 'content', 'config.ts')),
     // The Workers deploy config, as TEXT. `.jsonc` is the documented default and
@@ -72,6 +72,48 @@ function parseOgConfig(src) {
 function parseJson(raw) {
   if (raw == null) return null;
   try { return JSON.parse(raw); }
+  catch { return null; }
+}
+
+/**
+ * Parse JSONC — JSON with comments and trailing commas.
+ *
+ * `tsconfig.json` is JSONC, not JSON: TypeScript accepts comments and so does
+ * `astro check`, and Astro's own generated tsconfig ships with them. Reading it
+ * with a bare `JSON.parse` returned null for a perfectly valid file, which the
+ * caller then reported as "tsconfig.json missing" — a required finding against a
+ * file that is present and correct (issue #36, from a real audited site).
+ *
+ * The stripping is STRING-AWARE, which is the whole difficulty: a naive
+ * `//.*$` also eats the middle of `"url": "https://example.com"` and turns a
+ * valid file into a broken one — the same false "missing", arrived at from the
+ * other direction. Escapes are honoured so a `\"` inside a string does not end
+ * it early.
+ */
+function parseJsonc(raw) {
+  if (raw == null) return null;
+  let out = '';
+  let inString = false;
+  let comment = null;   // 'line' | 'block'
+  for (let i = 0; i < raw.length; i++) {
+    const c = raw[i];
+    const next = raw[i + 1];
+    if (comment === 'line') { if (c === '\n') { comment = null; out += c; } continue; }
+    if (comment === 'block') { if (c === '*' && next === '/') { comment = null; i++; } continue; }
+    if (inString) {
+      out += c;
+      if (c === '\\') { out += next ?? ''; i++; continue; }
+      if (c === '"') inString = false;
+      continue;
+    }
+    if (c === '"') { inString = true; out += c; continue; }
+    if (c === '/' && next === '/') { comment = 'line'; i++; continue; }
+    if (c === '/' && next === '*') { comment = 'block'; i++; continue; }
+    out += c;
+  }
+  // Trailing commas are legal in tsconfig and not in JSON.
+  out = out.replace(/,(\s*[}\]])/g, '$1');
+  try { return JSON.parse(out); }
   catch { return null; }
 }
 

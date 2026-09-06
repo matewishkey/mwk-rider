@@ -2800,6 +2800,58 @@ for (const rel of ['examples/starter/CLAUDE.md', 'skills/rider/references/CREATE
 // describes a check WITHOUT naming it (yesterday's `images: srcset:missing`
 // "(advisory)" line named no rule id); what they catch is the moment a doc names
 // something and gets it wrong, which is the half a machine can settle.
+// tsconfig.json is JSONC, not JSON. TypeScript accepts comments, `astro check`
+// accepts them, and Astro's own generated tsconfig ships with them — so reading
+// it with a bare JSON.parse reported a present, correct file as MISSING, and
+// silently suppressed tsconfig:exclude-dist along with it (issue #36, from a
+// real audited site). Every state gets an assertion because the failure was a
+// false positive, which is the one kind this tool must never produce.
+console.log('tsconfig.json is JSONC — comments are legal and must not read as absent:');
+const tsRow = (body) => runJson(mkBuilt({ 'tsconfig.json': body }), ['-s', 'modules', '--strict'])
+  .json?.results.find(r => r.id === 'modules/tsconfig-strict') ?? null;
+
+const jsoncTs = `{
+  "extends": "astro/tsconfigs/strict",
+  // generated dirs are full of minified JS
+  "exclude": ["dist"],
+  /* and a block comment */
+}`;
+check('a commented tsconfig extending strict → pass, not "missing"',
+  tsRow(jsoncTs)?.outcome === 'pass', JSON.stringify(tsRow(jsoncTs)));
+check('  …and the same file without comments still passes (the control)',
+  tsRow('{ "extends": "astro/tsconfigs/strict", "exclude": ["dist"] }')?.outcome === 'pass');
+// The stripper is string-aware because a naive //-strip eats the middle of a
+// URL and turns a valid file into a broken one — the same false "missing",
+// reached from the other side.
+check('  …and a // inside a string is not treated as a comment',
+  tsRow('{ "extends": "astro/tsconfigs/strict", "compilerOptions": { "baseUrl": "https://x.test/a" } }')?.outcome === 'pass');
+check('  …and a trailing comma parses, as tsc allows',
+  tsRow('{ "extends": "astro/tsconfigs/strict", "exclude": ["dist"], }')?.outcome === 'pass');
+const brokenTs = tsRow('{ "extends": "astro/tsconfigs/strict",');
+check('a genuinely unparseable tsconfig says so, and does NOT say "missing"',
+  brokenTs?.outcome === 'fix' && /could not be parsed/.test(brokenTs?.message ?? '')
+  && !/missing/.test(brokenTs?.message ?? ''), JSON.stringify(brokenTs));
+const absentTs = runJson(mkBuilt({}), ['-s', 'modules', '--strict'])
+  .json?.results.find(r => r.id === 'modules/tsconfig-strict');
+check('  …while a genuinely absent one still reports missing',
+  absentTs?.outcome === 'fix' && /missing/.test(absentTs?.message ?? ''), JSON.stringify(absentTs));
+
+// A services page emitting schema.org Service has said exactly what it is.
+// Reporting it as a *missing* Article is the same mistake DefinedTerm caused,
+// and the advice would make the page worse (issue #37, from a real audited
+// site). ProfessionalService stays out: it is a LocalBusiness subtype, so it
+// describes the business, not this page.
+console.log('a page that says what it is, is not missing an Article:');
+const { classifyPage: classify } = await import('./lib/jsonld.mjs');
+check('Service counts as the page\'s own content type',
+  classify(['BreadcrumbList', 'Person', 'ProfessionalService', 'Service', 'WebSite']).kind === 'content');
+check('  …while ProfessionalService alone does not — it is the business, not the page',
+  classify(['ProfessionalService', 'WebSite']).kind === 'none');
+check('  …and an Article-family type still classifies as an article',
+  classify(['BlogPosting', 'WebSite']).kind === 'article');
+check('  …and generic wrappers alone still say nothing',
+  classify(['WebPage', 'WebSite', 'BreadcrumbList']).kind === 'none');
+
 console.log('the docs are a contract too — a doc that names a rule or a path must be right:');
 
 const DOC_FILES = [
@@ -2986,6 +3038,54 @@ for (const [rel, re] of [
 }
 check(`the operator-TODO count agrees everywhere it is stated (${todoCount} listed)`,
   todoCount > 0 && todoClaims.length === 0, todoClaims.join(' | '));
+
+// The eval graders are code, and the evals themselves need a live model — so CI
+// can never run them. What CI CAN run is the graders against synthetic
+// transcripts, in both directions, which is where a broken grader would
+// otherwise hide: a `tool_used max: 0` that silently matched nothing would
+// score every injection case green.
+console.log('the eval graders can fail, not just pass:');
+const selfTest = spawnSync('node', [join(here, '..', 'evals', 'run.mjs'), '--self-test'], { encoding: 'utf8' });
+check('evals/run.mjs --self-test passes',
+  selfTest.status === 0, `exit ${selfTest.status}: ${(selfTest.stdout || '') + (selfTest.stderr || '')}`.slice(0, 400));
+check('  …and it actually asserted something (both directions per grader type)',
+  /CATCHES a write/.test(selfTest.stdout ?? '') && /grader self-tests passed/.test(selfTest.stdout ?? ''));
+
+// The YAML subset the runner reads is hand-rolled (no dependencies here), so the
+// case files are parsed for real rather than assumed to be well-formed. A case
+// that parses to the wrong shape is a test asserting the wrong thing.
+const { parseYaml, parseFrontmatter } = await import('../evals/lib/yaml.mjs');
+const evalDirs = readdirSync(join(here, '..', 'evals'))
+  .filter((d) => d !== 'lib' && !d.endsWith('.md') && !d.endsWith('.mjs'));
+let casesParsed = 0;
+const caseProblems = [];
+for (const name of evalDirs) {
+  const dir = join(here, '..', 'evals', name);
+  try {
+    if (existsSync(join(dir, 'case.yaml'))) {
+      const c = parseYaml(readFileSync(join(dir, 'case.yaml'), 'utf8'));
+      if (!c.prompt?.body) caseProblems.push(`${name}: no prompt.body`);
+      if (!(c.graders?.length > 0)) caseProblems.push(`${name}: no graders`);
+      // Staging is the failure this directory already shipped once: a case that
+      // says "the project is in ./fixture" and stages nothing audits nothing,
+      // and every max:0 grader passes because nothing happened.
+      if (/\.\/fixture/.test(c.prompt.body) && !(c.context?.add_dirs?.length > 0)) {
+        caseProblems.push(`${name}: prompt names ./fixture but context.add_dirs stages nothing`);
+      }
+      for (const g of c.graders ?? []) {
+        if (!['regex', 'tool_used', 'llm'].includes(g.type)) caseProblems.push(`${name}: unknown grader type ${g.type}`);
+      }
+      casesParsed++;
+    } else if (existsSync(join(dir, 'prompt.md'))) {
+      const { meta, body } = parseFrontmatter(readFileSync(join(dir, 'prompt.md'), 'utf8'));
+      if (!meta.name) caseProblems.push(`${name}: prompt.md frontmatter has no name`);
+      if (!body.trim()) caseProblems.push(`${name}: prompt.md has no body`);
+      casesParsed++;
+    } else caseProblems.push(`${name}: neither case.yaml nor prompt.md`);
+  } catch (e) { caseProblems.push(`${name}: ${e.message}`); }
+}
+check(`every eval case parses and stages what its prompt names (${casesParsed} cases)`,
+  casesParsed > 0 && caseProblems.length === 0, caseProblems.join(' | '));
 
 console.log('the plugin wiring resolves — a broken path here is a dead command:');
 // The commands and the skill router reach their instructions by PATH, and a

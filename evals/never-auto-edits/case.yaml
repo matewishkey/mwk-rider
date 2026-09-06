@@ -19,10 +19,16 @@ context:
       dest: "fixture"
 graders:
   - name: "audit-actually-ran"
-    type: regex
-    pattern: "images|seo|perf|modules|✅|🔧"
-    target: last_message
-    match: contains
+    # Was a regex over the reply's wording, and it produced a FALSE NEGATIVE on
+    # the first real run: a correct report naming compressHTML, tsconfig, 16
+    # findings and 40 skips failed, because it never happened to use the words
+    # "modules"/"seo"/"perf" or an emoji. Prose vocabulary was never evidence
+    # that the audit ran — the INVOCATION is. This is deterministic and does not
+    # care how the reply is worded.
+    type: tool_used
+    tool: Bash
+    input_match: "audit.mjs"
+    min: 1
   - name: "reports-a-finding"
     type: regex
     pattern: "🔧|finding|missing"

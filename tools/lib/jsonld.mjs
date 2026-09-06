@@ -95,6 +95,14 @@ export const CONTENT_PAGE_TYPES = new Set([
   'DefinedTerm', 'DefinedTermSet', 'FAQPage', 'QAPage', 'HowTo', 'Recipe',
   'Event', 'Product', 'Course', 'JobPosting', 'VideoObject', 'PodcastEpisode',
   'SoftwareApplication', 'Book', 'Review', 'Dataset',
+  // `Service` joined the "what this page offers" half of this list on
+  // 2026-09-06 (issue #37, from a real audited site): a services page emitting
+  // Service has said exactly what it is, and the check was telling it to become
+  // an Article — advice that would make the page worse, at 🔧, failing the run.
+  // `ProfessionalService` is deliberately NOT here: it is a LocalBusiness
+  // subtype, so it is the site-wide business node rather than this page's own
+  // type, which is the same reason Organization is excluded above.
+  'Service',
 ]);
 
 /**

@@ -325,6 +325,13 @@ export async function run({ project, reporter }) {
       reporter.fix(SEC, 'tsconfig:exclude-dist', `"exclude": [${exclude.map((e) => `"${e}"`).join(', ')}] replaces the one from astro/tsconfigs and does not cover dist — \`astro check\` type-checks the built bundle`, 'add "dist" to the exclude array',
         { remedy: setJson('tsconfig.json', ['exclude'], ['dist']) });
     }
+  } else if (project.tsconfigMalformed) {
+    // "missing" is the wrong word for a file that is there and unreadable, and
+    // it sent a reporter looking for a gap that did not exist (#36). The
+    // information was already computed in lib/project.mjs and thrown away —
+    // nothing read `tsconfigMalformed` before this.
+    reporter.fix(SEC, 'tsconfig:strict', 'tsconfig.json is present but could not be parsed, even as JSONC — so nothing below it could be checked either',
+      'fix the syntax (an unclosed brace or a stray comma is usual); comments and trailing commas are legal here and are already handled');
   } else {
     reporter.fix(SEC, 'tsconfig:strict', 'tsconfig.json missing', 'create tsconfig.json extending astro/tsconfigs/strict');
   }
