@@ -40,6 +40,9 @@ const year = new Date().getFullYear();
     )}
 
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!-- Google Search reads BMP, GIF, ICO, PNG, JPEG, PPM and TIFF — not SVG.
+         The SVG is for browsers; this PNG is what the search result shows. -->
+    <link rel="icon" type="image/png" sizes="96x96" href="/favicon.png" />
     <link rel="alternate" type="application/rss+xml" title={`${brand.siteName} — RSS`} href="/rss.xml" />
     <link rel="alternate" type="text/plain" title="llms.txt" href="/llms.txt" />
 

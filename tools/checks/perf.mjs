@@ -79,7 +79,7 @@ function checkCls(project, reporter) {
     let text;
     try { text = readFileSync(join(project.root, relPath), 'utf8'); }
     catch { return; }   // unreadable file — skip it, never lose the domain
-    const re = /<img\b((?:"[^"]*"|'[^']*'|[^>])*)>/gi;
+    const re = /<img\b((?:[^>"']|"[^"]*"|'[^']*')*)>/gi;
     let m;
     while ((m = re.exec(text)) !== null) {
       const attrs = m[1];
@@ -430,7 +430,7 @@ function checkEmbeds(project, reporter) {
   const found = [];
   const seen = new Set();
   eachDistHtml(project.root, (rel, html) => {
-    for (const m of fetchableMarkup(html).matchAll(/<iframe\b((?:"[^"]*"|'[^']*'|[^>])*)>/gi)) {
+    for (const m of fetchableMarkup(html).matchAll(/<iframe\b((?:[^>"']|"[^"]*"|'[^']*')*)>/gi)) {
       iframes++;
       const src = attrValue(m[1], 'src') ?? attrValue(m[1], 'data-src');
       if (!src) continue;
@@ -506,7 +506,7 @@ function checkCrossOrigin(project, reporter) {
     pagesJudged++;
     const page = distRelative(project.root, rel);
     const head = html.split(/<\/head>/i)[0] ?? html;
-    const links = [...head.matchAll(/<link\b((?:"[^"]*"|'[^']*'|[^>])*)>/gi)].map((m) => m[1]);
+    const links = [...head.matchAll(/<link\b((?:[^>"']|"[^"]*"|'[^']*')*)>/gi)].map((m) => m[1]);
 
     // Which hosts THIS page preconnects to, before its images are judged: the
     // hint only helps the page that carries it. Aggregating one flag per host
@@ -584,7 +584,7 @@ function pageOrigin(html, configSite) {
 function imageUrls(html) {
   const out = [];
   let el = 0;
-  for (const m of html.matchAll(/<(img|source)\b((?:"[^"]*"|'[^']*'|[^>])*)>/gi)) {
+  for (const m of html.matchAll(/<(img|source)\b((?:[^>"']|"[^"]*"|'[^']*')*)>/gi)) {
     const isImg = m[1].toLowerCase() === 'img';
     const attrs = m[2];
     const cors = hasAttr(attrs, 'crossorigin');
@@ -681,7 +681,7 @@ function reportPreconnect(hosts, pagesJudged, reporter) {
  * the image twice — the preload makes the page slower than none at all.
  */
 function collectPreloadMismatches(head, html, page, out, seen) {
-  for (const m of head.matchAll(/<link\b((?:"[^"]*"|'[^']*'|[^>])*)>/gi)) {
+  for (const m of head.matchAll(/<link\b((?:[^>"']|"[^"]*"|'[^']*')*)>/gi)) {
     const attrs = m[1];
     if (!/(?:^|\s)preload(?:\s|$)/i.test(attrValue(attrs, 'rel') ?? '')) continue;
     if ((attrValue(attrs, 'as') ?? '').toLowerCase() !== 'image') continue;
@@ -694,7 +694,7 @@ function collectPreloadMismatches(head, html, page, out, seen) {
     // match means the image is injected at runtime or lives on another page —
     // not something a static read can call a defect.
     const wanted = new Set([...(imagesrcset ? srcsetUrls(imagesrcset) : []), ...(href ? [href] : [])]);
-    for (const tag of html.matchAll(/<img\b((?:"[^"]*"|'[^']*'|[^>])*)>/gi)) {
+    for (const tag of html.matchAll(/<img\b((?:[^>"']|"[^"]*"|'[^']*')*)>/gi)) {
       const srcset = attrValue(tag[1], 'srcset');
       const src = attrValue(tag[1], 'src');
       const keys = new Set([...(srcset ? srcsetUrls(srcset) : []), ...(src ? [src] : [])]);

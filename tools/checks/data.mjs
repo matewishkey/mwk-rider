@@ -23,7 +23,16 @@ const SEC = 'data';
 
 export async function run({ project, reporter }) {
   const pages = listPages(project.root);
-  const read = (rel) => { try { return readFileSync(join(project.root, rel), 'utf8'); } catch { return ''; } };
+  // Comment-blanked, like every other source grep in the tool. Raw text meant
+  // `// TODO: build with getCollection(), filtering !draft && !previewOnly` in a
+  // placeholder endpoint passed BOTH `llms.txt` (content-driven) and
+  // `llms.txt:filter` — the tool reporting verified-good over a file that emits
+  // a hardcoded string. checkContentSchema three functions down already did
+  // this; these three reads were the ones left raw.
+  const read = (rel) => {
+    try { return stripComments(readFileSync(join(project.root, rel), 'utf8')); }
+    catch { return ''; }
+  };
   const contentDriven = (rel) => /getCollection\s*\(/.test(read(rel));
   // The baseline filter predicate is `!draft && !previewOnly` (the documented
   // invariant shared by llms/rss/search-index). Accept either form:

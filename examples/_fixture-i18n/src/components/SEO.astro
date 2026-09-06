@@ -83,8 +83,20 @@ if (entry?.data.translationKey) {
     href: postUrlFor(s),
   }));
 } else if (!entry) {
-  // Chrome / index page — every locale's same path
-  const paths = getRelativeLocaleUrlList(Astro.url.pathname);
+  // Chrome / index page — every locale's same path.
+  //
+  // getRelativeLocaleUrlList PREFIXES a locale onto the path it is given, so it
+  // must be handed the path with the current locale stripped off. Passing
+  // Astro.url.pathname straight in worked on English (no prefix to remove) and
+  // was wrong on every other locale: /hu produced alternates pointing at /hu
+  // and /hu/hu, the second of which is not a URL this site builds. Both halves
+  // were then one-way — the English page linked to /hu and /hu linked back to
+  // itself — and Google ignores a cluster whose members do not link to each
+  // other. Caught by `seo: hreflang:valid`.
+  const bare = lang === defaultLocale
+    ? Astro.url.pathname
+    : Astro.url.pathname.replace(new RegExp(`^/${lang}(?=/|$)`), '') || '/';
+  const paths = getRelativeLocaleUrlList(bare);
   alternates = paths.map((path, i) => ({
     hreflang: localeMap[locales[i]] ?? locales[i],
     href: new URL(path, siteUrl).toString(),

@@ -37,7 +37,9 @@ const lang = (Astro.currentLocale as string) ?? entry?.data.locale ?? 'en';
 
     <!-- Favicon + theme color -->
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="apple-touch-icon" href="/favicon.svg" />
+    <!-- Google Search does not read SVG; this PNG is what a result shows. -->
+    <link rel="icon" type="image/png" sizes="96x96" href="/favicon.png" />
+    <link rel="apple-touch-icon" href="/favicon.png" />
     <meta name="theme-color" content="#0a0a0a" />
 
     <!-- Feed + LLM discovery (per-locale + root) -->

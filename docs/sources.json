@@ -1,0 +1,116 @@
+{
+  "$comment": [
+    "Every Google Search Central page a universal rule in this tool rests on, with the",
+    "'Last updated' date printed on that page and the date we read it.",
+    "",
+    "This file is what makes 'follows current Google practice' a fact rather than a claim.",
+    "`node scripts/google-sources.mjs` re-reads each page, compares the date, and fails",
+    "when Google has moved — so drift becomes a build failure instead of a slow lie.",
+    "tools/test.mjs asserts every id under `backs` exists in the rule catalogue, so a",
+    "renamed check cannot orphan its source.",
+    "",
+    "A rule with no source here is HOUSE STYLE and says so in lib/policy.mjs. The point",
+    "of the list is not to cover every rule; it is that anything called universal can",
+    "be traced to a published page and a date."
+  ],
+  "read": "2026-09-06",
+  "feed": "https://developers.google.com/search/updates/search_docs_updates.rss",
+  "sources": [
+    {
+      "slug": "essentials",
+      "url": "https://developers.google.com/search/docs/essentials",
+      "updated": "2025-12-10",
+      "backs": []
+    },
+    {
+      "slug": "technical-requirements",
+      "url": "https://developers.google.com/search/docs/essentials/technical",
+      "updated": "2025-12-18",
+      "backs": ["seo/robots-blocks-all", "live/reachability"]
+    },
+    {
+      "slug": "spam-policies",
+      "url": "https://developers.google.com/search/docs/essentials/spam-policies",
+      "updated": "2026-08-28",
+      "backs": ["seo/no-keywords"]
+    },
+    {
+      "slug": "seo-starter-guide",
+      "url": "https://developers.google.com/search/docs/fundamentals/seo-starter-guide",
+      "updated": "2025-12-10",
+      "backs": ["seo/meta-title", "seo/meta-description", "seo/no-keywords", "seo/headings-h1"]
+    },
+    {
+      "slug": "title-link",
+      "url": "https://developers.google.com/search/docs/appearance/title-link",
+      "updated": "2025-12-10",
+      "backs": ["seo/meta-title", "seo/meta-unique-title", "seo/title"]
+    },
+    {
+      "slug": "snippet",
+      "url": "https://developers.google.com/search/docs/appearance/snippet",
+      "updated": "2026-04-20",
+      "backs": ["seo/meta-description", "seo/meta-unique-description", "seo/description"]
+    },
+    {
+      "slug": "page-experience",
+      "url": "https://developers.google.com/search/docs/appearance/page-experience",
+      "updated": "2025-12-10",
+      "backs": ["seo/viewport", "lighthouse/cls", "lighthouse/lcp", "lighthouse/tbt"]
+    },
+    {
+      "slug": "favicon",
+      "url": "https://developers.google.com/search/docs/appearance/favicon-in-search",
+      "updated": "2026-08-28",
+      "backs": ["seo/favicon", "seo/favicon-size"]
+    },
+    {
+      "slug": "structured-data-policies",
+      "url": "https://developers.google.com/search/docs/appearance/structured-data/sd-policies",
+      "updated": "2026-07-10",
+      "backs": ["data/jsonld-emitted", "data/jsonld-shapes", "data/jsonld-article-props", "data/jsonld-parses"]
+    },
+    {
+      "slug": "search-gallery",
+      "url": "https://developers.google.com/search/docs/appearance/structured-data/search-gallery",
+      "updated": "2026-06-15",
+      "backs": ["data/jsonld-deprecated"]
+    },
+    {
+      "slug": "links-crawlable",
+      "url": "https://developers.google.com/search/docs/crawling-indexing/links-crawlable",
+      "updated": "2025-12-10",
+      "backs": ["seo/links-internal", "seo/links-anchor-text", "seo/links-orphan"]
+    },
+    {
+      "slug": "google-images",
+      "url": "https://developers.google.com/search/docs/appearance/google-images",
+      "updated": "2026-03-02",
+      "backs": ["images/alt", "images/filename", "images/srcset-missing", "images/background-image"]
+    },
+    {
+      "slug": "robots-meta-tag",
+      "url": "https://developers.google.com/search/docs/crawling-indexing/robots-meta-tag",
+      "updated": "2026-03-24",
+      "backs": ["seo/robots-meta", "seo/sitemap-noindex"]
+    },
+    {
+      "slug": "robots-txt",
+      "url": "https://developers.google.com/search/docs/crawling-indexing/robots/robots_txt",
+      "updated": "2026-08-31",
+      "backs": ["seo/robots", "seo/robots-blocks-all", "seo/sitemap-blocked", "seo/sitemap-coverage"]
+    },
+    {
+      "slug": "canonicalization",
+      "url": "https://developers.google.com/search/docs/crawling-indexing/consolidate-duplicate-urls",
+      "updated": "2026-07-10",
+      "backs": ["seo/meta-canonical", "seo/canonical-value", "seo/canonical-unique", "seo/sitemap-canonical", "seo/canonical-direct"]
+    },
+    {
+      "slug": "localized-versions",
+      "url": "https://developers.google.com/search/docs/specialty/international/localized-versions",
+      "updated": "2025-12-22",
+      "backs": ["seo/hreflang", "seo/hreflang-valid", "seo/html-lang"]
+    }
+  ]
+}

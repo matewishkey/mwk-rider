@@ -628,6 +628,54 @@ argument for all seven.
   is total — no sitemap, canonical or JSON-LD underneath it can matter. Resolved with the
   same longest-match logic as `sitemap:blocked`, so a site-wide `Disallow` that a longer
   `Allow` reopens is correctly not a finding. → `seo: robots:blocks-all`
+- **Robots-meta directives Google implements, on URLs it can reach.** Two silent
+  failures, and both look like diligence from the inside. A misspelled directive
+  (`noidex`) is simply ignored, so a page a site believes it withheld is indexed.
+  And a `noindex` on a URL `robots.txt` disallows can never be read at all —
+  Googlebot is forbidden to fetch the page, so it never sees the tag, and the URL
+  can still be indexed from links pointing at it. Google states the second
+  outright: if a page is disallowed, "any information about indexing or serving
+  rules will not be found and will therefore be ignored". Directives are matched
+  against the full documented list, page-level and text-level, so a real one is
+  never called a typo. → `seo: robots:meta`
+- **A favicon Google can actually read.** Its list is BMP, GIF, ICO, PNG, JPEG,
+  PPM and TIFF, and **SVG is not on it** — which matters because an SVG-only
+  favicon is now a common, modern-looking choice that costs a site its icon in
+  every result. Measured on a 27-site sweep: three ship an SVG as their only icon
+  and serve nothing at `/favicon.ico` (one of them 301s `/favicon.ico` to the SVG,
+  which fails the same way), so their results carry the generic globe. Our own
+  starter did the same until this check was written. Both carriers count: the
+  documented `<link>` on the home page, and `/favicon.ico` at the root — three
+  sites in the same sweep ship no `<link>` at all and are served an icon from the
+  root file, so flagging them would have been wrong about three real sites. The
+  icon must also be square, and Google recommends above 48px.
+  → `seo: favicon`, `seo: favicon:size`
+- **A viewport meta on every page.** Without it a phone lays the page out at
+  desktop width and scales the result down: every tap target too small, every
+  line too long. It is one line in the root layout, so a page missing it is
+  almost always a page that never went through the layout — which is the more
+  useful thing the finding tells you. → `seo: viewport`
+- **hreflang alternates a crawler can follow.** Declaring alternates is one
+  practice; declaring usable ones is another, and Google ignores a cluster that
+  fails any of four rules. Alternate URLs must be fully-qualified — a real site in
+  the sweep declares `../fr/` on 23 pages. The language tag must be one Google
+  parses: ISO 639-1, optionally a script, optionally an ISO 3166-1 alpha-2 or UN
+  M.49 numeric region. `en-UK` is the classic error, since the country is GB, and
+  another site ships `en-AE-x-dubai`, a private-use tag Google does not read.
+  Each version must list itself. And the links must be reciprocal: "if page X
+  links to page Y, page Y must link back to page X." Reciprocity is checked only
+  between pages this build produced — an alternate on another host is not ours to
+  verify. It found a real bug in our own i18n fixture on the first run: Hungarian
+  pages prefixed their own locale twice and pointed at `/hu/hu`, a URL the site
+  does not build. → `seo: hreflang:valid`
+- **Link text that says where it goes.** "Avoid writing generic anchor text like
+  page, article, or click here." Advisory, and staying that way: a blog card whose
+  whole surface is the link legitimately reads "Read more", and 29 of the 66 hits
+  in the 27-site sweep were exactly that pattern. What makes it worth reporting is
+  the other reader — someone tabbing through a page's links hears them as a list,
+  where nine identical "Read more" say nothing. The check reads the accessible
+  name, so an `aria-label` or an image `alt` counts as the text.
+  → 💡 `seo: links:anchor-text`
 
 **Backtested before shipping, counting the wrongs.** Eight corpora — six real public sites
 plus both bundled examples — and, because the link-graph checks are meaningless against a
@@ -642,6 +690,26 @@ works.
 
 *Check files: `tools/checks/images.mjs` (offline: source + built `dist/`) and
 `tools/checks/live.mjs` (served HTML). Shared param logic: `tools/lib/cf-image.mjs`.*
+
+- **Built images are named after what they show.** "Use short, descriptive
+  filenames" — Google names `IMG00023.JPG` and `image1.jpg` as what to avoid,
+  because the filename is one of the few things Google Images has to go on.
+  Advisory by construction: a camera default is a housekeeping smell rather than a
+  defect, and renaming a shipped file breaks every URL already pointing at it,
+  which is a real cost the tool is not entitled to demand. The pattern is real —
+  a scan of `<img src>` across 27 public sites found ten such names on four of
+  them (`photo1.webp`, `image4.png`, `Untitled-1`) — but note the scope: this
+  check reads the FILES a build ships, the same denominator as `dist:size`, so a
+  site serving its images from elsewhere is not judged here. Astro's own output
+  is exempt by construction — `hero.CdEf1234.png` is a content hash on a
+  descriptive name.
+  → 💡 `images: filename`
+- **A file read only through `/cdn-cgi/image/` is the edge's input, not a
+  payload.** Its bytes on disk are what Cloudflare resizes; what a visitor
+  downloads is decided at the edge and is measurable only live. Judging the input
+  reported a 2.3 MB required finding against a site shipping exactly the transform
+  ladder `images: routed` recommends. A file the HTML also links directly really
+  does ship, and keeps the plain rule. → `images: dist:size` (see judgeDistSizes)
 
 - **Where media lives (2026-09-02).** Two lanes, and which one is not a
   preference. *Site chrome* — logo, favicon, one hero, the OG cards — is a

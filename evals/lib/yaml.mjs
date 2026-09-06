@@ -89,7 +89,7 @@ function blockScalar(lines, i, parentIndent, style) {
 // more indented by any particular amount.
 function parseBlock(lines, start, minIndent) {
   let i = start;
-  while (i < lines.length && lines[i].trim() === '') i++;
+  while (i < lines.length && (lines[i].trim() === '' || COMMENT_LINE.test(lines[i]))) i++;
   if (i >= lines.length) return [null, i];
   const ind = indentOf(lines[i]);
   if (ind < minIndent) return [null, start];
@@ -102,11 +102,11 @@ function parseSeq(lines, start, indent) {
   let i = start;
   while (i < lines.length) {
     const line = lines[i];
-    if (line.trim() === '') { i++; continue; }
+    if (line.trim() === '' || COMMENT_LINE.test(line)) { i++; continue; }
     const ind = indentOf(line);
     if (ind < indent) break;
     if (ind > indent) throw new Error(`yaml: unexpected indent at line ${i + 1}: ${line}`);
-    const item = line.trim();
+    const item = stripComment(line).trim();
     if (!item.startsWith('-')) break;
     const rest = item.slice(1).trim();
     if (rest === '') { const [v, ni] = parseBlock(lines, i + 1, indent + 1); out.push(v); i = ni; continue; }
@@ -133,7 +133,7 @@ function parseMap(lines, start, indent) {
   let i = start;
   while (i < lines.length) {
     const line = lines[i];
-    if (line.trim() === '') { i++; continue; }
+    if (line.trim() === '' || COMMENT_LINE.test(line)) { i++; continue; }
     const ind = indentOf(line);
     if (ind < indent) break;
     if (ind > indent) throw new Error(`yaml: unexpected indent at line ${i + 1}: ${line}`);
@@ -159,10 +159,18 @@ function parseMap(lines, start, indent) {
 
 /** Parse a YAML document (the subset above) into a plain object. */
 export function parseYaml(text) {
-  const lines = text.replace(/\r\n/g, '\n').split('\n').filter((l) => !/^\s*#/.test(l));
+  // Whole-line comments are skipped where STRUCTURE is read (parseMap, parseSeq,
+  // parseBlock), never here. Filtering the raw text first is the obvious version
+  // and it silently eats content: a `# heading` line inside a `prompt: |` body
+  // is literal text, and dropping it rewrote the prompt an eval sends without
+  // reporting anything — the one failure this parser exists to refuse.
+  const lines = text.replace(/\r\n/g, '\n').split('\n');
   const [value] = parseBlock(lines, 0, 0);
   return value ?? {};
 }
+
+/** A whole-line comment, which is structure, not content. */
+const COMMENT_LINE = /^\s*#/;
 
 /** Split `---\nfrontmatter\n---\nbody` into `{ meta, body }`. */
 export function parseFrontmatter(text) {

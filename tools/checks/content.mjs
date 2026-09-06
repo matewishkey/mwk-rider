@@ -61,7 +61,7 @@ export async function run({ project, reporter }) {
  * is not. Raised alongside issue #17.
  */
 function collectAlternates(html, out) {
-  for (const m of html.matchAll(/<link\b((?:"[^"]*"|'[^']*'|[^>])*)>/gi)) {
+  for (const m of html.matchAll(/<link\b((?:[^>"']|"[^"]*"|'[^']*')*)>/gi)) {
     const attrs = m[1];
     if (!/alternate/i.test(attrValue(attrs, 'rel') ?? '')) continue;
     if (!attrValue(attrs, 'hreflang')) continue;

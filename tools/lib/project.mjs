@@ -24,6 +24,7 @@ export async function detectProject(cwd) {
   if (astroConfig == null && deps.astro == null) return null;
 
   const tsconfigRaw = readFileIfExists(join(cwd, 'tsconfig.json'));
+  const wrangler = namedFirstFile(cwd, ['wrangler.jsonc', 'wrangler.json', 'wrangler.toml']);
 
   const project = {
     root: cwd,
@@ -39,7 +40,12 @@ export async function detectProject(cwd) {
     // The Workers deploy config, as TEXT. `.jsonc` is the documented default and
     // it carries comments, so no caller may JSON.parse this — strip comments
     // first (lib/src-scan.mjs), or a commented-out setting reads as a live one.
-    wranglerConfig: readFirstFile(cwd, ['wrangler.jsonc', 'wrangler.json', 'wrangler.toml']),
+    // `wranglerFile` names which of the three answered, because the comment
+    // syntax follows the format: TOML comments with `#`, which the JS/JSONC
+    // stripper does not touch. Reading the text without knowing the format is
+    // how `# main = …` passed as a live Worker entrypoint.
+    wranglerConfig: wrangler.text,
+    wranglerFile: wrangler.name,
     hasDist: existsSync(join(cwd, 'dist')),
     // Is dist/ older than the source it was built from? Every dist-reading
     // check judges the build, and a build the source has moved past is a
@@ -124,11 +130,16 @@ function readFileIfExists(path) {
 }
 
 function readFirstFile(cwd, names) {
+  return namedFirstFile(cwd, names).text;
+}
+
+/** As readFirstFile, but says WHICH file answered — the format is not the text. */
+function namedFirstFile(cwd, names) {
   for (const n of names) {
     const t = readFileIfExists(join(cwd, n));
-    if (t != null) return t;
+    if (t != null) return { name: n, text: t };
   }
-  return null;
+  return { name: null, text: null };
 }
 
 /**

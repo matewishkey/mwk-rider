@@ -151,6 +151,15 @@ const ADVISORY = [
   // outline jumps and leaves the call to the author. `headings:h1` — zero or
   // several <h1> — stays universal; that one is not a judgement call.
   'seo:headings:order',
+  // Generic anchor text. Advisory and staying that way: a blog card whose whole
+  // surface is the link legitimately reads "Read more", and 29 of the 66 hits
+  // in a 27-site sweep were exactly that. The check reports where the text
+  // carries no meaning on its own; whether that is wrong is the author's call.
+  'seo:links:anchor-text',
+  // A camera default filename is a housekeeping smell, not a defect, and
+  // renaming a shipped image breaks every URL already pointing at it — a real
+  // cost the tool is not entitled to demand of a stranger's site.
+  'images:filename',
   // Declared card dimensions are a layout HINT: a platform can reserve space
   // before fetching the image. The card renders fine without them, and two
   // well-built dogfood sites had exactly these two as their only required

@@ -2,14 +2,15 @@
 // canonical URL, OG meta, and the brand fields they need.
 // (Structured data / JSON-LD / llms.txt live in the data check.)
 
-import { existsSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readFileSync, statSync } from 'node:fs';
+import { join, relative } from 'node:path';
 
-import { eachDistHtml, isContentPage, headingOutline, headingAudit, attrValue } from '../lib/html.mjs';
-import { readSrcFiles, headMetaFiles } from '../lib/src-scan.mjs';
+import { eachDistHtml, isContentPage, headingOutline, headingAudit, attrValue, blankScripts } from '../lib/html.mjs';
+import { readSrcFiles, headMetaFiles, stripComments } from '../lib/src-scan.mjs';
 import { distDir, distFiles, readDist, sitemapPages, sitemapPageFiles, sitemapEntries, decodePath, distRelative } from '../lib/dist.mjs';
 import { editFile } from '../lib/remedy.mjs';
 import { truncate } from '../lib/text.mjs';
+import { imageSize } from '../lib/image-size.mjs';
 
 const SEC = 'seo';
 
@@ -32,9 +33,36 @@ const metaRe = (key) => new RegExp(`(?:property|name)\\s*=\\s*["']${key}["']`, '
 // `content=""` against `content\\s*=\\s*["'][^"']*\\S` MATCHES, because `\\S` is
 // happy to be the closing quote itself. An empty description read as ✅ until
 // the value had to be bounded on both sides.
-const metaFilled = (key) => new RegExp(
-  `<meta(?=[^>]*\\b(?:property|name)\\s*=\\s*["']${key}["'])`
-  + `(?=[^>]*\\bcontent\\s*=\\s*(?:"[^"]*\\S[^"]*"|'[^']*\\S[^']*'))[^>]*>`, 'i');
+// A FUNCTION, not a regex, and that is the whole point. The lookahead version
+// bounded the value on both sides — `content=""` no longer satisfied `\S` by
+// letting it be the closing quote — but the alternative it backtracked into
+// could leave the tag entirely: `"[^"]*\S[^"]*"` matches across a `>` to the
+// next quote anywhere in the document, so
+//
+//     <meta name="description" content=""><link rel="canonical" href="/">
+//
+// read as a FILLED description, because the value ran from the empty pair to
+// the quote in the <link>. An empty description reported as ✅ is precisely the
+// silent false negative this file's own comment says it fixed. It only stayed
+// hidden because the test put the empty tag last, where no later quote exists.
+//
+// Scanning real tags and reading the attribute out of one is not a
+// cleverer regex; it removes the class.
+const metaFilled = (key) => (html) => hasFilledMeta(html, key);
+
+// `<meta …>` with an unambiguous attribute scan — see lib/html.mjs on why the
+// alternation must not let `[^>]` also match a quote.
+const META_TAG_RE = /<meta\b((?:[^>"']|"[^"]*"|'[^']*')*)>/gi;
+
+function hasFilledMeta(html, key) {
+  META_TAG_RE.lastIndex = 0;
+  for (const m of String(html ?? '').matchAll(META_TAG_RE)) {
+    const name = attrValue(m[1], 'property') ?? attrValue(m[1], 'name');
+    if (!name || name.toLowerCase() !== key.toLowerCase()) continue;
+    if ((attrValue(m[1], 'content') ?? '').trim()) return true;
+  }
+  return false;
+}
 const CANONICAL_RE = /rel\s*=\s*["']canonical["']/i;
 // [name, source matcher, built-HTML matcher, severity when absent].
 //
@@ -111,6 +139,7 @@ export async function run({ project, reporter }) {
 
   checkRobots(project, reporter);
   checkRobotsScope(project, reporter);
+  checkFavicon(project, reporter);
   checkSitemap(project, reporter);
   checkHreflang(project, reporter);
   checkBuiltPages(project, reporter);
@@ -132,6 +161,9 @@ export async function run({ project, reporter }) {
  * across the site's declared pages: all → pass, none → fix, some → suggest,
  * naming the pages that omit it.
  */
+/** A META_TAGS matcher is either a RegExp (source text) or a tag-reading function. */
+const matches = (m, html) => (typeof m === 'function' ? m(html) : m.test(html));
+
 function checkMetaTags(project, reporter, headSrc, headFilePaths = []) {
   const all = [];
   if (project.hasDist) eachDistHtml(project.root, (rel, html) => all.push({ rel, html }));
@@ -155,7 +187,7 @@ function checkMetaTags(project, reporter, headSrc, headFilePaths = []) {
   if (all.length === 0) {
     const where = project.hasDist ? 'dist/ has no HTML' : 'no dist/';
     for (const [name, re, , severity] of META_TAGS) {
-      if (re.test(headSrc)) reporter.pass(SEC, `meta:${name}`, `emitted in src/ (${where} — build to check the shipped HTML)`);
+      if (matches(re, headSrc)) reporter.pass(SEC, `meta:${name}`, `emitted in src/ (${where} — build to check the shipped HTML)`);
       else reporter[severity](SEC, `meta:${name}`, `tag not emitted anywhere in src/ (${where}, so source is all there is to read)`, emitFrom);
     }
     return;
@@ -164,7 +196,7 @@ function checkMetaTags(project, reporter, headSrc, headFilePaths = []) {
   const judged = pages.length ? pages : all;
   for (const [name, srcRe, distRe, severity] of META_TAGS) {
     const re = distRe ?? srcRe;
-    const missing = judged.filter((p) => !re.test(p.html));
+    const missing = judged.filter((p) => !matches(re, p.html));
     if (missing.length === judged.length) {
       reporter[severity](SEC, `meta:${name}`, `not emitted on any of the ${judged.length} ${denominator}`, emitFrom);
     } else if (missing.length === 0) {
@@ -496,12 +528,27 @@ function robotsRules(text) {
   return rules;
 }
 
-/** The blocking rule's path, or null. Longest match wins; Allow wins a tie. */
+/**
+ * The blocking rule's path, or null. Longest rule path wins; Allow wins a tie.
+ *
+ * The length is the RULE PATH's, wildcards counted — Google's spec is explicit
+ * ("crawlers use the most specific rule based on the length of the rule path")
+ * and its own worked example settles the case this used to get backwards:
+ *
+ *     Allow: /page   Disallow: /*.htm   on  /page.htm   →  DISALLOWED,
+ *     "because the rule path is longer and it matches more characters".
+ *
+ * This measured `'/*.htm'.replace(/\*​/g,'')` = 5 against `'/page'` = 5, hit the
+ * Allow-wins-a-tie branch and reported the URL as crawlable. A sitemap listing
+ * it then passed `sitemap:blocked` while every real crawler refused the page.
+ * Verified against developers.google.com/search/docs/crawling-indexing/robots/robots_txt
+ * on 2026-09-06.
+ */
 function isBlocked(rules, path) {
   let best = null;
   for (const r of rules) {
     if (!robotsMatch(r.path, path)) continue;
-    const len = r.path.replace(/\*/g, '').length;
+    const len = r.path.length;
     if (!best || len > best.len || (len === best.len && r.allow)) best = { ...r, len };
   }
   return best && !best.allow ? best.path : null;
@@ -538,7 +585,12 @@ function normalizeUrl(url) {
  * Without one of them, each locale competes with its own translations.
  */
 function checkHreflang(project, reporter) {
-  const locales = declaredLocales(project.astroConfig);
+  // Comment-blanked: `// consider i18n later, e.g. locales: ['en', 'hu']` beside
+  // a single-locale config used to make hreflang required on a site that has
+  // nothing to alternate between — a finding against a compliant site, which is
+  // the one thing a check must never produce. modules.mjs already strips the
+  // same file before scanning it.
+  const locales = declaredLocales(stripComments(project.astroConfig ?? ''));
   if (locales.size < 2) {
     reporter.skip(SEC, 'hreflang', `astro.config declares ${locales.size === 1 ? 'a single locale' : 'no locales'} — a single-language site has no alternates to declare`);
     return;
@@ -669,7 +721,7 @@ function sampleOf(list, n = 3) {
 // two rules, not one, and a skip emitted under a name no check ever uses is a
 // catalogue entry with nothing behind it. tools/test.mjs asserts both directions
 // and caught exactly that.
-const PAGE_RULES = ['html:lang', 'canonical:value', 'links:internal', 'links:orphan', 'meta:unique:title', 'meta:unique:description', 'sitemap:coverage'];
+const PAGE_RULES = ['html:lang', 'viewport', 'canonical:value', 'links:internal', 'links:orphan', 'meta:unique:title', 'meta:unique:description', 'sitemap:coverage', 'hreflang:valid', 'robots:meta', 'links:anchor-text'];
 
 function scanPages(project) {
   const out = [];
@@ -681,14 +733,18 @@ function scanPages(project) {
     // counting those reported "more than one <title>" on four pages of a real
     // documentation site that has exactly one each.
     const head = headOf(html);
+    // `markup` is the document with script and style bodies blanked. Anything
+    // that looks for TAGS reads this; `html` stays verbatim for anything that
+    // needs the bytes as served.
+    const markup = blankScripts(html);
     out.push({
-      loc, file, html,
+      loc, file, html, markup,
       lang: openTag ? attrValue(openTag[1], 'lang') : null,
       titles: [...head.matchAll(/<title[^>]*>([\s\S]*?)<\/title>/gi)].map((m) => m[1].trim()),
       description: head.match(/<meta(?=[^>]*\bname\s*=\s*["']description["'])[^>]*\bcontent\s*=\s*["']([^"']*)["'][^>]*>/i)?.[1]?.trim() ?? null,
       canonicals: [...head.matchAll(/<link[^>]+rel=["']canonical["'][^>]*>/gi)]
         .map((m) => m[0].match(/href=["']([^"']+)["']/)?.[1]).filter(Boolean),
-      hrefs: [...html.matchAll(/<a\b[^>]*?\shref=["']([^"']+)["']/gi)].map((m) => m[1]),
+      hrefs: [...markup.matchAll(/<a\b[^>]*?\shref=["']([^"']+)["']/gi)].map((m) => m[1]),
     });
   }
   return out;
@@ -713,7 +769,11 @@ function checkBuiltPages(project, reporter) {
     return;
   }
   checkLang(reporter, pages);
+  checkViewport(reporter, pages);
   checkCanonicalValue(reporter, pages);
+  checkHreflangValid(project, reporter, pages);
+  checkRobotsMeta(project, reporter, pages);
+  checkAnchorText(reporter, pages);
   checkLinks(project, reporter, pages);
   checkMetaUnique(project, reporter, pages);
   checkSitemapCoverage(project, reporter, pages);
@@ -963,3 +1023,330 @@ function checkRobotsScope(project, reporter) {
   }
   reporter.pass(SEC, 'robots:blocks-all', rules.length ? `${rules.length} rule(s) for *, none of which blocks the site root` : 'nothing disallowed for *', { file: 'dist/robots.txt' });
 }
+
+/**
+ * The favicon Google Search can actually use.
+ *
+ * Google's own list: "BMP, GIF, ICO, PNG, JPEG, PPM, and TIFF" — SVG is not on
+ * it, and this is not a technicality. Three sites in a 27-site sweep ship an
+ * SVG as their only icon and serve no /favicon.ico, so their results carry the
+ * generic globe; our own starter did the same until this check was written.
+ * Square, at least 8×8, and Google recommends above 48×48.
+ *
+ * Two carriers, both accepted. The documented one is a <link> on the HOME PAGE
+ * ("Add a <link> tag to the header of your home page"), and Google names four
+ * rel values for it. The other is /favicon.ico at the root, which the page does
+ * not document — but michelin.com, porsche.com and feature.undp.org all ship
+ * NO link tag at all and are served a favicon from it, verified 2026-09-06. A
+ * check that flagged those three would be wrong about three real sites, so the
+ * root file counts.
+ *
+ * Verified against developers.google.com/search/docs/appearance/favicon-in-search
+ * (last updated 2026-08-28) on 2026-09-06.
+ */
+const FAVICON_REL_RE = /\b(?:shortcut\s+)?icon\b|\bapple-touch-icon(?:-precomposed)?\b/i;
+// Google's list, lowercased, plus the extensions those formats actually ship as.
+const FAVICON_OK_EXT = new Set(['.ico', '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.ppm', '.tif', '.tiff']);
+
+function checkFavicon(project, reporter) {
+  if (!project.hasDist) {
+    reporter.skip(SEC, 'favicon', 'no dist/ — build the site to read the icon its home page declares');
+    return;
+  }
+  const home = readDist(project.root, 'index.html');
+  if (!home) {
+    reporter.skip(SEC, 'favicon', 'no dist/index.html — the icon is read from the home page, and there is none');
+    return;
+  }
+  const rootIco = existsSync(join(distDir(project.root), 'favicon.ico'));
+  const links = [...headOf(home).matchAll(/<link\b((?:[^>"']|"[^"]*"|'[^']*')*)>/gi)]
+    .map((m) => ({ rel: attrValue(m[1], 'rel') ?? '', href: attrValue(m[1], 'href') ?? '' }))
+    .filter((l) => FAVICON_REL_RE.test(l.rel) && l.href);
+  const usable = links.filter((l) => FAVICON_OK_EXT.has(extOf(l.href)));
+
+  if (usable.length) {
+    reporter.pass(SEC, 'favicon', `the home page declares ${usable.length} icon Google can read (${usable.map((l) => truncate(l.href, 40)).join(', ')})`,
+      { file: 'dist/index.html' });
+  } else if (rootIco) {
+    reporter.pass(SEC, 'favicon', links.length
+      ? `no icon <link> in a format Google reads, but /favicon.ico is served — the root file is the fallback every crawler tries`
+      : '/favicon.ico is served — the root file is the fallback every crawler tries, so no <link> is needed',
+      { file: 'dist/favicon.ico' });
+  } else if (links.length) {
+    const exts = [...new Set(links.map((l) => extOf(l.href) || '?'))].join(', ');
+    reporter.fix(SEC, 'favicon',
+      `the only icon(s) the home page declares are ${exts} — Google Search reads BMP, GIF, ICO, PNG, JPEG, PPM and TIFF, and no /favicon.ico is served either, so the result shows a generic globe`,
+      'keep the SVG for browsers and add a raster beside it: a square PNG larger than 48×48, or a /favicon.ico at the root',
+      { file: 'dist/index.html' });
+  } else {
+    reporter.fix(SEC, 'favicon',
+      'the home page declares no icon and no /favicon.ico is served — the search result shows a generic globe',
+      'add <link rel="icon" href="/favicon.png"> to the head, pointing at a square PNG larger than 48×48',
+      { file: 'dist/index.html' });
+  }
+
+  // Dimensions, but only when the file is local and its format is one we can
+  // read. An unreadable icon is a missed finding, never a wrong one.
+  const local = usable.map((l) => l.href).find((h) => h.startsWith('/') && !h.startsWith('//'));
+  if (!local) { reporter.skip(SEC, 'favicon:size', 'no local raster icon to measure'); return; }
+  const abs = join(distDir(project.root), decodePath(local.split(/[?#]/)[0]).replace(/^\/+/, ''));
+  const at = { file: relative(project.root, abs) };
+  let dims = null;
+  try { dims = existsSync(abs) ? imageSize(readFileSync(abs)) : null; } catch { dims = null; }
+  if (!dims) {
+    reporter.skip(SEC, 'favicon:size', `could not read the dimensions of ${truncate(local, 50)} — ICO is not a format this tool decodes, and an unreadable one is a missed finding rather than a wrong one`);
+  } else if (dims.w !== dims.h) {
+    reporter.fix(SEC, 'favicon:size', `${truncate(local, 50)} is ${dims.w}×${dims.h} — Google requires a square (1:1) favicon`,
+      'export it square; a non-square icon is dropped rather than cropped', at);
+  } else if (dims.w < 48) {
+    reporter.suggest(SEC, 'favicon:size', `${truncate(local, 50)} is ${dims.w}×${dims.h} — above Google's 8px minimum, under the 48px it recommends`,
+      'export at 96×96 or larger so it stays sharp on every surface Google shows it', at);
+  } else {
+    reporter.pass(SEC, 'favicon:size', `${truncate(local, 50)} is ${dims.w}×${dims.h} — square and above the 48px Google recommends`, at);
+  }
+}
+
+const extOf = (href) => {
+  const clean = String(href).split(/[?#]/)[0];
+  const dot = clean.lastIndexOf('.');
+  return dot > clean.lastIndexOf('/') ? clean.slice(dot).toLowerCase() : '';
+};
+
+/**
+ * `<meta name="viewport">` on every built page.
+ *
+ * Page experience asks whether content "displays well on mobile devices", and
+ * without this meta a mobile browser lays the page out at desktop width and
+ * scales it down — every tap target too small, every line too long. It is one
+ * line in the root layout, so a page without it is nearly always a page that
+ * never went through the layout.
+ */
+function checkViewport(reporter, pages) {
+  const missing = pages.filter((p) => !hasViewport(headOf(p.html)));
+  if (!missing.length) {
+    reporter.pass(SEC, 'viewport', `all ${pages.length} built page(s) declare a viewport`);
+    return;
+  }
+  reporter.fix(SEC, 'viewport',
+    `${missing.length}/${pages.length} built page(s) have no <meta name="viewport"> — a phone lays these out at desktop width and scales them down — ${sampleOf(missing.map((p) => p.file))}`,
+    'add <meta name="viewport" content="width=device-width, initial-scale=1"> to the head component every page renders');
+}
+// Reads the tag, for the reason metaFilled() gives above: every lookahead
+// spelling of "content is non-empty" can be satisfied by a quote in a LATER
+// tag, so `content=""` reads as declared.
+const hasViewport = (html) => hasFilledMeta(html, 'viewport');
+
+/**
+ * hreflang alternates that a crawler can actually follow.
+ *
+ * `seo: hreflang` asks whether alternates exist at all. This asks whether the
+ * ones that exist are usable, which is four separate documented rules and three
+ * of them fired on a 27-site sweep:
+ *
+ *   - fully-qualified hrefs. "Alternate URLs must be fully-qualified, including
+ *     the transport method." 13 pages of one real site declare `../fr/`.
+ *   - a language subtag Google parses: ISO 639-1, optionally a script, optionally
+ *     an ISO 3166-1 alpha-2 region or a UN M.49 numeric one. `en-UK` is the
+ *     classic error (the country is GB), and one real site ships
+ *     `en-AE-x-dubai`, a private-use tag Google does not read.
+ *   - self-reference: "each language version must list itself".
+ *   - return links: "if page X links to page Y, page Y must link back to page X",
+ *     or the annotations may be ignored. Checked only between pages this build
+ *     produced — an alternate on another host is not ours to verify.
+ *
+ * Verified against developers.google.com/search/docs/specialty/international/localized-versions
+ * (last updated 2025-12-22) on 2026-09-06.
+ */
+function checkHreflangValid(project, reporter, pages) {
+  const withAlts = pages
+    .map((p) => ({ page: p, alts: alternatesOf(headOf(p.html)) }))
+    .filter((x) => x.alts.length);
+  if (!withAlts.length) {
+    reporter.skip(SEC, 'hreflang:valid', 'no built page carries a <link rel="alternate" hreflang> — seo: hreflang reports whether one should');
+    return;
+  }
+
+  const relative = [], badCode = [], noSelf = [], oneWay = [];
+  // Every declared alternate, keyed by the URL it points at, so a return link
+  // can be looked up without re-parsing.
+  const declares = new Map();
+  for (const { page, alts } of withAlts) {
+    const self = normalizeUrl(page.canonicals[0] ?? page.loc);
+    declares.set(keyOf(self), new Set(alts.map((a) => keyOf(normalizeUrl(a.href, page.loc))).filter(Boolean)));
+  }
+
+  for (const { page, alts } of withAlts) {
+    const self = normalizeUrl(page.canonicals[0] ?? page.loc);
+    for (const a of alts) {
+      if (!/^https?:\/\//i.test(a.href)) relative.push(`${page.file} → hreflang="${a.code}" href="${truncate(a.href, 40)}"`);
+      if (!HREFLANG_CODE.test(a.code) || BAD_REGION.test(a.code)) badCode.push(`${page.file} → hreflang="${truncate(a.code, 24)}"`);
+    }
+    const selfKey = keyOf(self);
+    if (selfKey && !alts.some((a) => keyOf(normalizeUrl(a.href, page.loc)) === selfKey)) {
+      noSelf.push(`${page.file} lists ${alts.length} alternate(s), none of them itself`);
+    }
+    for (const a of alts) {
+      const target = keyOf(normalizeUrl(a.href, page.loc));
+      // Only pages this build produced: a page we never wrote cannot be asked
+      // to link back, and asserting otherwise would flag a correct external
+      // alternate.
+      if (!target || !declares.has(target) || target === selfKey) continue;
+      if (!declares.get(target).has(selfKey)) {
+        oneWay.push(`${page.file} → ${truncate(a.href, 40)}, which does not link back`);
+      }
+    }
+  }
+
+  const parts = [
+    relative.length ? `${relative.length} alternate(s) use a relative href — Google requires fully-qualified URLs — ${sampleOf(relative)}` : '',
+    badCode.length ? `${badCode.length} declare a language tag Google cannot parse — ${sampleOf(badCode)}` : '',
+    noSelf.length ? `${noSelf.length} page(s) do not list themselves — ${sampleOf(noSelf)}` : '',
+    oneWay.length ? `${oneWay.length} alternate pair(s) are one-way — ${sampleOf(oneWay)}` : '',
+  ].filter(Boolean);
+
+  if (!parts.length) {
+    reporter.pass(SEC, 'hreflang:valid', `all alternates on ${withAlts.length} page(s) are absolute, self-referencing, reciprocal and use a parseable language tag`);
+    return;
+  }
+  reporter.fix(SEC, 'hreflang:valid', parts.join('; '),
+    'an hreflang cluster is only read when every member lists every member, itself included, by absolute URL and with a real language[-script][-region] tag (en-GB, not en-UK)');
+}
+
+// `<link rel="alternate" hreflang="…" href="…">`, in either attribute order.
+function alternatesOf(head) {
+  const out = [];
+  for (const m of head.matchAll(/<link\b((?:[^>"']|"[^"]*"|'[^']*')*)>/gi)) {
+    const rel = attrValue(m[1], 'rel') ?? '';
+    if (!/\balternate\b/i.test(rel)) continue;
+    const code = attrValue(m[1], 'hreflang');
+    const href = attrValue(m[1], 'href');
+    if (code && href) out.push({ code, href });
+  }
+  return out;
+}
+// ISO 639-1/2 language, optional ISO 15924 script, optional ISO 3166-1 alpha-2
+// or UN M.49 numeric region. Deliberately no private-use (`-x-…`) branch:
+// Google reads the registry, not an extension.
+const HREFLANG_CODE = /^(?:x-default|[a-z]{2,3}(?:-[A-Z][a-z]{3})?(?:-(?:[A-Z]{2}|\d{3}))?)$/i;
+// Codes that parse as regions but are not ISO 3166-1 alpha-2. UK is the one
+// everybody writes; the country is GB.
+const BAD_REGION = /-(?:UK|EU|UN)$/i;
+
+const keyOf = (u) => (u ? `${u.origin}${u.path.replace(/\/$/, '')}` : null);
+
+/**
+ * Robots meta directives Google actually implements, and the trap where a
+ * directive can never be read.
+ *
+ * A misspelled directive is silent: `noidex` is ignored, and the page is
+ * indexed by a site that believes it withheld it. And a `noindex` on a URL
+ * robots.txt disallows is worse than useless — Google is forbidden to fetch the
+ * page, so it never sees the tag and may index the URL anyway from links.
+ * Google states this outright: if a page is disallowed, "any information about
+ * indexing or serving rules will not be found and will therefore be ignored".
+ *
+ * Verified against developers.google.com/search/docs/crawling-indexing/robots-meta-tag
+ * (last updated 2026-03-24) on 2026-09-06.
+ */
+function checkRobotsMeta(project, reporter, pages) {
+  const withMeta = pages
+    .map((p) => ({ page: p, directives: robotsDirectives(headOf(p.html)) }))
+    .filter((x) => x.directives.length);
+  if (!withMeta.length) {
+    reporter.skip(SEC, 'robots:meta', `none of the ${pages.length} built page(s) carries a robots meta — there is nothing here to misread`);
+    return;
+  }
+
+  const unknown = [], unreadable = [];
+  const rules = robotsRules(readDist(project.root, 'robots.txt'));
+  for (const { page, directives } of withMeta) {
+    for (const d of directives) {
+      const base = d.split(':')[0];
+      if (!ROBOTS_DIRECTIVES.has(base)) unknown.push(`${page.file} → "${truncate(d, 30)}"`);
+    }
+    if (!directives.some((d) => /^noindex$|^none$/.test(d))) continue;
+    const path = normalizeUrl(page.loc)?.path;
+    const blocking = path && rules.length ? isBlocked(rules, path) : null;
+    if (blocking) unreadable.push(`${page.file} (robots.txt: Disallow: ${blocking})`);
+  }
+
+  const parts = [
+    unknown.length ? `${unknown.length} directive(s) are not ones Google implements, so they do nothing — ${sampleOf(unknown)}` : '',
+    unreadable.length ? `${unreadable.length} page(s) carry noindex on a URL robots.txt disallows — Googlebot may never fetch the page, so it never reads the tag — ${sampleOf(unreadable)}` : '',
+  ].filter(Boolean);
+
+  if (!parts.length) {
+    reporter.pass(SEC, 'robots:meta', `all robots meta directives on ${withMeta.length} page(s) are ones Google implements, and none sits on a URL robots.txt withholds`);
+    return;
+  }
+  reporter.fix(SEC, 'robots:meta', parts.join('; '),
+    'spell directives as Google documents them, and never pair noindex with a Disallow — to drop a page from the index, let it be crawled and let the noindex do the work');
+}
+
+function robotsDirectives(head) {
+  const out = [];
+  for (const m of head.matchAll(/<meta\b((?:[^>"']|"[^"]*"|'[^']*')*)>/gi)) {
+    const name = (attrValue(m[1], 'name') ?? '').toLowerCase();
+    if (name !== 'robots' && name !== 'googlebot') continue;
+    for (const d of (attrValue(m[1], 'content') ?? '').split(',')) {
+      const t = d.trim().toLowerCase();
+      if (t) out.push(t);
+    }
+  }
+  return out;
+}
+// Every rule the robots-meta page documents, page-level and text-level.
+const ROBOTS_DIRECTIVES = new Set([
+  'all', 'noindex', 'nofollow', 'none', 'noarchive', 'nosnippet', 'indexifembedded',
+  'max-snippet', 'max-image-preview', 'max-video-preview', 'notranslate', 'noimageindex',
+  'unavailable_after',
+  // Not in the current docs, but historically honoured and harmless to see.
+  'index', 'follow', 'nocache',
+]);
+
+/**
+ * Link text that says what is on the other end.
+ *
+ * "Avoid writing generic anchor text like page, article, or click here."
+ * Advisory, and it will stay advisory: a blog card whose whole surface is the
+ * link legitimately reads "Read more", and 29 of the 66 hits in a 27-site sweep
+ * were exactly that pattern. What makes it worth reporting anyway is that a
+ * screen-reader user tabbing through links hears the list on its own, where
+ * nine identical "Read more" say nothing at all.
+ *
+ * Verified against developers.google.com/search/docs/crawling-indexing/links-crawlable
+ * (last updated 2025-12-10) on 2026-09-06.
+ */
+function checkAnchorText(reporter, pages) {
+  const hits = new Map();
+  let total = 0;
+  for (const p of pages) {
+    for (const m of p.markup.matchAll(/<a\b((?:[^>"']|"[^"]*"|'[^']*')*)>([\s\S]*?)<\/a>/gi)) {
+      if (!attrValue(m[1], 'href')) continue;
+      total++;
+      // The accessible name, near enough: an image-only link takes its alt, and
+      // aria-label wins over both — flagging a link that HAS a name because the
+      // name is not in the text would be wrong.
+      const label = attrValue(m[1], 'aria-label')
+        ?? (m[2].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+          || attrValue(m[2].match(/<img\b((?:[^>"']|"[^"]*"|'[^']*')*)>/i)?.[1] ?? '', 'alt')
+          || '');
+      const norm = label.toLowerCase().replace(/[\s ]+/g, ' ').replace(/[.!?…»→]+$/, '').trim();
+      if (!norm || !GENERIC_ANCHOR.test(norm)) continue;
+      const key = norm;
+      if (!hits.has(key)) hits.set(key, { text: label.trim(), n: 0, files: new Set() });
+      const h = hits.get(key);
+      h.n++; h.files.add(p.file);
+    }
+  }
+  if (!total) { reporter.skip(SEC, 'links:anchor-text', 'no links on the built pages read — nothing to check'); return; }
+  if (!hits.size) {
+    reporter.pass(SEC, 'links:anchor-text', `none of the ${total} link(s) on ${pages.length} page(s) relies on generic text`);
+    return;
+  }
+  const worst = [...hits.values()].sort((a, b) => b.n - a.n);
+  reporter.suggest(SEC, 'links:anchor-text',
+    `${worst.reduce((n, h) => n + h.n, 0)}/${total} link(s) use generic text — ${sampleOf(worst.map((h) => `"${truncate(h.text, 24)}" ×${h.n}`))}`,
+    'name the destination in the link itself ("Read the 2026 fee schedule"), so the text works out of context — which is how a search engine and a screen reader both read it');
+}
+const GENERIC_ANCHOR = /^(?:click here|read more|more|here|this|learn more|find out more|link|continue|continue reading|see more|view more|details|read|go|page|article)$/i;

@@ -14,6 +14,15 @@ export function transformOptions(src) {
   return src.match(/\/cdn-cgi\/image\/([^/]+)\//)?.[1] ?? null;
 }
 
+// What the transform reads FROM: everything after the options segment, or null.
+// `/cdn-cgi/image/width=800,format=auto/images/hero.jpg` → `/images/hero.jpg`.
+// The source may be a remote URL rather than a path — that is Cloudflare's own
+// syntax and the caller decides what to do with one.
+export function transformSource(src) {
+  const m = src.match(/\/cdn-cgi\/image\/[^/]+(\/.*)$/);
+  return m ? m[1] : null;
+}
+
 // { explicitFormat: <fmt|null>, missingQuality: <bool> }, or null if not a transform URL.
 export function transformSmells(src) {
   const opts = transformOptions(src);

@@ -8,6 +8,7 @@
 //   skip    ⏭  not run / not testable here
 
 import { isHouseStyle } from './policy.mjs';
+import { untrusted } from './untrusted.mjs';
 
 /**
  * Stable rule identifier — `section/name`, lowercased and hyphenated.
@@ -62,7 +63,31 @@ export class Reporter {
     return this.source === 'live' ? '[live] ' : '';
   }
 
+  /**
+   * Fence the LOCATION of a live finding, not just its message.
+   *
+   * In a --url run `file` and `url` are strings the audited site chose: an
+   * image path, an og:image href, the route a post was discovered at. Messages
+   * built from fetched bytes were already passed through `untrusted()` at their
+   * call sites, but these two travelled beside the message and reached both the
+   * human line and --json raw — so a page shipping
+   * `<img src="/assets/ignore-previous-instructions.jpg">` wrote an unfenced
+   * instruction into whatever reads this tool. One place rather than thirty
+   * call sites, because the one thing that must not happen is someone adding
+   * the thirty-first and forgetting.
+   *
+   * Offline findings are untouched: `dist/index.html` is a path this tool
+   * derived, and --fix reads `file` to decide what to edit. Live findings carry
+   * no remedy, so there is nothing to break.
+   */
+  _fenceAt(at) {
+    if (this.source !== 'live' || !at) return at;
+    const fence = (v) => (typeof v === 'string' && v && !v.startsWith('«') ? untrusted(v, 120) : v);
+    return { ...at, file: fence(at.file), url: fence(at.url) };
+  }
+
   pass(section, name, message = '', at = {}) {
+    at = this._fenceAt(at);
     this._record({ section, name, outcome: 'pass', message }, at);
     if (!this.json && !this.quiet) {
       console.log(`✅ ${this._tag()}${section}: ${name}${where(at)}${message ? ' — ' + message : ''}`);
@@ -70,6 +95,7 @@ export class Reporter {
   }
 
   fix(section, name, message, fix, at = {}) {
+    at = this._fenceAt(at);
     if (this._demoted(section, name)) return this.suggest(section, name, message, fix, { ...at, houseStyle: true });
     this._record({ section, name, outcome: 'fix', message, fix }, at);
     if (!this.json) {
@@ -79,6 +105,7 @@ export class Reporter {
   }
 
   block(section, name, message, fix, at = {}) {
+    at = this._fenceAt(at);
     if (this._demoted(section, name)) return this.suggest(section, name, message, fix, { ...at, houseStyle: true });
     this._record({ section, name, outcome: 'block', message, fix }, at);
     if (!this.json) {
@@ -88,6 +115,7 @@ export class Reporter {
   }
 
   suggest(section, name, message, suggestion, at = {}) {
+    at = this._fenceAt(at);
     const houseStyle = at.houseStyle === true;
     this._record({ section, name, outcome: 'suggest', message, fix: suggestion, houseStyle }, at);
     // --quiet hides ✅ only. A 💡 is a finding and a ⏭ says a check did NOT
@@ -100,6 +128,7 @@ export class Reporter {
   }
 
   skip(section, name, reason, at = {}) {
+    at = this._fenceAt(at);
     this._record({ section, name, outcome: 'skip', message: reason }, at);
     if (!this.json) {
       console.log(`⏭  ${this._tag()}${section}: ${name}${where(at)} — ${reason}`);

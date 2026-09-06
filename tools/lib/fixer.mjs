@@ -70,15 +70,44 @@ export function runFix({ root, results, args, dryRun, json }) {
   }
   const afterIds = requiredIds(after);
 
-  for (const t of targets) {
-    if (!out.applied.some((a) => a.id === t.id)) continue;
-    (afterIds.has(t.id) ? out.unresolved : out.fixed).push(t.id);
+  // Verified by COUNT per id, not by presence of the id.
+  //
+  // `ruleId()` names the rule, and several rows legitimately share one: two
+  // <img> on a page missing dimensions are two findings with one id, and only
+  // the one whose bytes we could read carries a remedy. Asking "is this id
+  // still reported?" then calls a fix that demonstrably worked unresolved,
+  // because its sibling — which never had a remedy — is still firing.
+  //
+  // Counting is also why this does not key on {id, file, line}: a remedy that
+  // inserts a line shifts every finding below it, so an instance key would go
+  // the other way and call a still-broken finding fixed. A count can only be
+  // wrong in the direction of under-claiming.
+  const beforeN = requiredCounts(results);
+  const afterN = requiredCounts(after);
+  for (const [id, applied] of appliedCounts(out.applied)) {
+    const expected = Math.max(0, (beforeN.get(id) ?? 0) - applied);
+    const stillBroken = Math.min(applied, Math.max(0, (afterN.get(id) ?? 0) - expected));
+    for (let i = 0; i < applied - stillBroken; i++) out.fixed.push(id);
+    for (let i = 0; i < stillBroken; i++) out.unresolved.push(id);
   }
   out.regressed = [...afterIds].filter((id) => !before.has(id) && !EXPECTED_AFTER_SOURCE_EDIT.has(id));
   out.rebuildNeeded = [...afterIds].some((id) => EXPECTED_AFTER_SOURCE_EDIT.has(id));
+  // What the RE-AUDIT still calls required, which is the only thing entitled to
+  // decide whether this run may exit 0. Bookkeeping over ids cannot: fix one of
+  // two findings sharing an id and the id appears in `fixed` while the project
+  // still fails.
+  out.remaining = [...afterN].reduce(
+    (n, [id, c]) => n + (EXPECTED_AFTER_SOURCE_EDIT.has(id) ? 0 : c), 0);
 
   if (out.regressed.length) {
-    for (const u of undo) revert(root, u);
+    // LIFO. Each remedy snapshots the file as it found it, so two remedies
+    // against one file (tsconfig.json takes `extends` and `exclude`; a page
+    // with two undimensioned <img> takes two edits) leave two snapshots, the
+    // second of which already contains the first change. Replaying them
+    // forwards writes the true original and then overwrites it with that
+    // intermediate — leaving the first fix applied under a message promising
+    // the file was put back exactly as it was.
+    for (const u of [...undo].reverse()) revert(root, u);
     out.reverted = true;
   }
   return out;
@@ -87,6 +116,30 @@ export function runFix({ root, results, args, dryRun, json }) {
 /** The ids this run treats as required — the set a fix must shrink and never grow. */
 function requiredIds(results) {
   return new Set(results.filter((r) => r.outcome === 'fix' || r.outcome === 'block').map((r) => r.id));
+}
+
+/** How many required findings each id accounts for. */
+function requiredCounts(results) {
+  const n = new Map();
+  for (const r of results) {
+    if (r.outcome !== 'fix' && r.outcome !== 'block') continue;
+    n.set(r.id, (n.get(r.id) ?? 0) + 1);
+  }
+  return n;
+}
+
+/** `a, b ×2` — ids repeat now that fixes are counted rather than set-tested. */
+function tally(ids) {
+  const n = new Map();
+  for (const id of ids) n.set(id, (n.get(id) ?? 0) + 1);
+  return [...n].map(([id, c]) => (c > 1 ? `${id} ×${c}` : id)).join(', ');
+}
+
+/** How many remedies were applied per id. */
+function appliedCounts(applied) {
+  const n = new Map();
+  for (const a of applied) n.set(a.id, (n.get(a.id) ?? 0) + 1);
+  return n;
 }
 
 /**
@@ -125,7 +178,7 @@ export function printFixReport(out, { dryRun }) {
     console.log('   every file this run touched has been put back exactly as it was.');
     return;
   }
-  if (out.fixed.length) console.log(`\n   verified fixed by re-audit: ${out.fixed.join(', ')}`);
-  if (out.unresolved.length) console.log(`   still reported after the change: ${out.unresolved.join(', ')}`);
+  if (out.fixed.length) console.log(`\n   verified fixed by re-audit: ${tally(out.fixed)}`);
+  if (out.unresolved.length) console.log(`   still reported after the change: ${tally(out.unresolved)}`);
   if (out.rebuildNeeded) console.log('\n   source changed, so dist/ is now stale — rebuild before trusting any dist-reading check.');
 }

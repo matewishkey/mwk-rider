@@ -12,7 +12,7 @@
 
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join, extname, relative } from 'node:path';
-import { transformSmells } from '../lib/cf-image.mjs';
+import { transformSmells, transformSource } from '../lib/cf-image.mjs';
 import { eachDistHtml, contentImgs, attrValue, srcsetUrls } from '../lib/html.mjs';
 import { imageSize } from '../lib/image-size.mjs';
 import { SKIP_DIST, distDir } from '../lib/dist.mjs';
@@ -69,6 +69,13 @@ export async function run({ project, reporter }) {
     // phone ever requests.
     distSizes: new Map(),
     ladders: [],
+    // Files the built HTML only ever reads THROUGH /cdn-cgi/image/, and files it
+    // also links directly. A transform source is never delivered as it sits on
+    // disk — the edge resizes and re-encodes it — so its size on disk is not a
+    // delivered size and `dist:size` must not judge it. Sitting in both sets
+    // means the raw file really does ship, and the plain rule applies.
+    edgeSources: new Set(),
+    directSources: new Set(),
     transformParams: [],
     transformTotal: 0,
     altMissing: [],
@@ -78,6 +85,9 @@ export async function run({ project, reporter }) {
     singleWidthTotal: 0,
     singleWidthExempt: 0,
     singleWidthUnknown: [],
+    // How many built files dist:size left to the edge (see judgeDistSizes).
+    edgeOnly: 0,
+    genericNames: [],
     // Totals, so "nothing was wrong" and "there was nothing to look at" report
     // differently. `✅ routed — all content <img> go through a transform` on a
     // page with no images is a pass for work never done.
@@ -103,6 +113,7 @@ export async function run({ project, reporter }) {
     scanDist(project.root, findings);
     scanDistHtml(project.root, findings);
     judgeDistSizes(findings);
+    judgeFilenames(findings);
   }
 
   // Report
@@ -167,9 +178,12 @@ export async function run({ project, reporter }) {
   }
 
   if (project.hasDist) {
-    const ladderNote = findings.ladders.length
+    const ladderNote = (findings.ladders.length
       ? `; ${findings.ladders.length} srcset ladder(s) judged by their smallest rung`
-      : '';
+      : '')
+      + (findings.edgeOnly
+        ? `; ${findings.edgeOnly} read only through /cdn-cgi/image/ — the edge decides those bytes, so --url measures them`
+        : '');
     if (findings.distImgTotal === 0) {
       reporter.skip(SEC, 'dist:size', 'no content images in dist/ — nothing to check');
     } else if (findings.oversizedDist.length === 0 && findings.oversizedLadders.length === 0) {
@@ -182,6 +196,16 @@ export async function run({ project, reporter }) {
         const rungs = l.rungs.map((r) => humanSize(r.sizeBytes)).join(', ');
         reporter.fix(SEC, 'dist:size', `every rung of a srcset ladder is over ${humanSize(SIZE_WARN_DIST)} — smallest is ${humanSize(l.rungs[0].sizeBytes)} (${l.rungs.length} rungs: ${rungs})`, 'the smallest rung is what a phone downloads — add narrower widths (<Image widths={[...]}> or image.breakpoints), or downscale the source', { file: l.rungs[0].path });
       }
+    }
+
+    if (findings.distImgTotal === 0) {
+      reporter.skip(SEC, 'filename', 'no content images in dist/ — nothing to check');
+    } else if (findings.genericNames.length === 0) {
+      reporter.pass(SEC, 'filename', `none of the ${findings.distImgTotal} built content image(s) ships under a camera or export default name`);
+    } else {
+      reporter.suggest(SEC, 'filename',
+        `${findings.genericNames.length}/${findings.distImgTotal} built image(s) keep a camera or export default name — ${findings.genericNames.slice(0, 3).map((p) => p.split('/').pop()).join(', ')}${findings.genericNames.length > 3 ? ' …' : ''}`,
+        'name the file after what it shows (dalmatian-puppy-fetch.jpg, not IMG00023.JPG) — it is one of the few things Google Images has to go on. Rename at the source, before the URL is one anyone has linked to');
     }
 
     // Transform-param anti-patterns on built HTML (catches the markdown ![]()
@@ -260,7 +284,7 @@ function scanImgTags(text, relPath, findings) {
   // Quote-aware, like every other tag scanner here: `[^>]*` stops at a `>`
   // inside an attribute value, which truncates the attribute string and can
   // drop the `src` this reads off it.
-  const re = /<img\b((?:"[^"]*"|'[^']*'|[^>])*)>/g;
+  const re = /<img\b((?:[^>"']|"[^"]*"|'[^']*')*)>/g;
   let m;
   while ((m = re.exec(text)) !== null) {
     const src = attrValue(m[1], 'src');
@@ -371,6 +395,16 @@ function judgeDistSizes(findings) {
 
   for (const [path, sizeBytes] of findings.distSizes) {
     if (inLadder.has(path)) continue;
+    // Read only through a transform: the bytes on disk are the edge's INPUT,
+    // and what a visitor downloads is decided at Cloudflare. Judging the input
+    // reported a 2.3 MB finding against a site shipping a correct
+    // /cdn-cgi/image/ ladder — a required fix for doing exactly what
+    // `images: routed` recommends. The delivered size is measurable, but only
+    // live: that is `images: bytes` with --url.
+    if (findings.edgeSources.has(path) && !findings.directSources.has(path)) {
+      findings.edgeOnly++;
+      continue;
+    }
     if (sizeBytes > SIZE_WARN_DIST) findings.oversizedDist.push({ path, sizeBytes });
   }
 
@@ -393,6 +427,7 @@ function scanDistHtml(projectRoot, findings) {
   eachDistHtml(projectRoot, (rel, html) => {
     collectLadders(html, projectRoot, findings, seenLadder);
     collectSingleWidth(html, rel, projectRoot, findings, seenSingle);
+    collectDirectSources(html, projectRoot, findings);
     const re = /\/cdn-cgi\/image\/[^"'`)\s>]+/g;
     let m;
     while ((m = re.exec(html)) !== null) {
@@ -402,6 +437,9 @@ function scanDistHtml(projectRoot, findings) {
       const smells = transformSmells(url);
       if (!smells) continue;
       findings.transformTotal++;
+      const from = transformSource(url);
+      const fromPath = from ? distPathOf(from, projectRoot) : null;
+      if (fromPath) findings.edgeSources.add(fromPath);
       if (smells.explicitFormat || smells.missingQuality) {
         findings.transformParams.push({ file: rel, url, ...smells });
       }
@@ -442,7 +480,7 @@ function collectSingleWidth(html, rel, projectRoot, findings, seen) {
   // An <img> inside <picture> gets its ladder from the sibling <source> tags.
   const pictures = [...html.matchAll(/<picture\b[\s\S]*?<\/picture>/gi)].map((m) => [m.index, m.index + m[0].length]);
 
-  for (const m of html.matchAll(/<img\b((?:"[^"]*"|'[^']*'|[^>])*)>/gi)) {
+  for (const m of html.matchAll(/<img\b((?:[^>"']|"[^"]*"|'[^']*')*)>/gi)) {
     const attrs = m[1];
     if (attrValue(attrs, 'srcset')) continue;
     if (pictures.some(([from, to]) => m.index > from && m.index < to)) continue;
@@ -530,15 +568,35 @@ function collectLadders(html, projectRoot, findings, seenLadder) {
     findings.ladders.push(paths);
   };
 
-  for (const m of html.matchAll(/<img\b((?:"[^"]*"|'[^']*'|[^>])*)>/gi)) {
+  for (const m of html.matchAll(/<img\b((?:[^>"']|"[^"]*"|'[^']*')*)>/gi)) {
     const srcset = attrValue(m[1], 'srcset');
     if (!srcset) continue;
     const src = attrValue(m[1], 'src');
     add([...srcsetUrls(srcset), ...(src ? [src] : [])]);
   }
-  for (const m of html.matchAll(/<source\b((?:"[^"]*"|'[^']*'|[^>])*)>/gi)) {
+  for (const m of html.matchAll(/<source\b((?:[^>"']|"[^"]*"|'[^']*')*)>/gi)) {
     const srcset = attrValue(m[1], 'srcset');
     if (srcset) add(srcsetUrls(srcset));
+  }
+}
+
+/**
+ * Built files the HTML links DIRECTLY, not through a transform.
+ *
+ * The counterpart to `edgeSources`: a file in both sets really does ship raw
+ * somewhere, so `dist:size` keeps judging it. Without this half, one page using
+ * a transform would excuse the same file being served whole on another.
+ */
+function collectDirectSources(html, projectRoot, findings) {
+  const note = (u) => {
+    if (!u || IT_PREFIX_RE.test(u)) return;
+    const p = distPathOf(u, projectRoot);
+    if (p) findings.directSources.add(p);
+  };
+  for (const m of html.matchAll(/<(?:img|source)\b((?:[^>"']|"[^"]*"|'[^']*')*)>/gi)) {
+    note(attrValue(m[1], 'src'));
+    const srcset = attrValue(m[1], 'srcset');
+    if (srcset) for (const u of srcsetUrls(srcset)) note(u);
   }
 }
 
@@ -546,6 +604,11 @@ function collectLadders(html, projectRoot, findings, seenLadder) {
 // for anything not a local file in this build (remote hosts, data:, transforms).
 function distPathOf(url, projectRoot) {
   if (!url.startsWith('/') || url.startsWith('//')) return null;
+  // A transform URL is a request to the edge, not a file. It reads root-relative
+  // and ends in .jpg, so without this it resolved to a `dist/cdn-cgi/image/…`
+  // path that exists nowhere — building phantom ladders that matched no file.
+  // The source it reads FROM is tracked separately, as findings.edgeSources.
+  if (IT_PREFIX_RE.test(url)) return null;
   const clean = url.split(/[?#]/)[0];
   if (!CONTENT_IMAGE_EXTS.has(extname(clean).toLowerCase())) return null;
   return relative(projectRoot, join(distDir(projectRoot), clean.slice(1)));
@@ -616,3 +679,30 @@ function humanSize(bytes) {
 
 
 function escapeRe(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+/**
+ * What a built image file calls itself.
+ *
+ * "Use short, descriptive filenames" — Google names `IMG00023.JPG` and
+ * `image1.jpg` as what to avoid, because the filename is one of the few signals
+ * Google Images has about what a picture shows. Advisory, and deliberately so:
+ * a camera name is a housekeeping smell rather than a defect, and renaming a
+ * file breaks every URL already pointing at it, which is a real cost the tool
+ * is not entitled to demand.
+ *
+ * Astro's own build output is exempt by construction — `hero.CdEf1234.png` is a
+ * content hash on a descriptive name, and `_astro/` is skipped outright.
+ *
+ * Verified against developers.google.com/search/docs/appearance/google-images
+ * (last updated 2026-03-02) on 2026-09-06.
+ */
+function judgeFilenames(findings) {
+  for (const path of findings.distSizes.keys()) {
+    const base = path.split('/').pop();
+    if (GENERIC_FILENAME.test(base)) findings.genericNames.push(path);
+  }
+}
+// Camera and export defaults, plus the placeholders an editor leaves behind.
+// Anchored at the start of the name so `hero-photo-2.jpg` — descriptive, then
+// numbered — is not caught; it is `photo2.jpg` that says nothing.
+const GENERIC_FILENAME = /^(?:img|imgp|dsc|dscn|dscf|pxl|p|photo|image|picture|pic|untitled|unnamed|download|screen[\s-]?shot|screenshot|copy[\s-]of|final|new|temp|tmp|asset|file)[\s._-]?\d*(?:\s*\(\d+\))?\.[a-z0-9]+$/i;

@@ -28,10 +28,16 @@ const SKIP_DIR = new Set(['node_modules', 'dist', '.astro', '.git']);
  * to the right line for reporting.
  *
  * `js` is off for .md/.mdx, where slash-star and `//` are prose, not syntax.
+ *
+ * `hash` is on for TOML, where `#` opens a comment and `//` does not. It is off
+ * by default and must never be turned on for JS or JSONC: `'#fff'`, a URL
+ * fragment and a `#!` line are all ordinary content there, and blanking to
+ * end-of-line would delete live code. Callers pick the mode from the FILENAME,
+ * not the text — lib/project.mjs records `wranglerFile` for exactly this.
  */
-export function stripComments(text, { js = true } = {}) {
+export function stripComments(text, { js = true, hash = false } = {}) {
   const out = text.replace(/<!--[\s\S]*?-->/g, (s) => s.replace(/[^\n]/g, ' '));
-  return js ? blankJsComments(out) : out;
+  return blankLineComments(out, { js, hash });
 }
 
 // Only after start-of-line or an opener/separator — never after `:` (so an
@@ -56,7 +62,7 @@ const LINE_COMMENT_LEAD = /[\s{(,;]/;
  * cost is that a `/*` on a line after a prose apostrophe is missed; the cost of
  * the alternative is unbounded.
  */
-function blankJsComments(src) {
+function blankLineComments(src, { js = true, hash = false } = {}) {
   const c = src.split('');   // UTF-16 units: offsets stay aligned with `src`
   let quote = null;
   for (let i = 0; i < c.length; i++) {
@@ -67,6 +73,14 @@ function blankJsComments(src) {
       continue;
     }
     if (c[i] === '"' || c[i] === "'" || c[i] === '`') { quote = c[i]; continue; }
+    // TOML: `#` to end of line, outside a string. Same string-state machine as
+    // the JS rules above it, so `key = "a#b"` keeps its value.
+    if (hash && c[i] === '#') {
+      while (i < c.length && c[i] !== '\n') c[i++] = ' ';
+      i--;
+      continue;
+    }
+    if (!js) continue;
     if (c[i] === '/' && c[i + 1] === '*') {
       // No closer means this is not a comment — an unterminated one is a syntax
       // error, so the likelier reading is that we mis-detected an opener.

@@ -306,11 +306,14 @@ if ((values.fix || values['dry-run']) && project) {
   reporter.finish({ fix: out });
   if (!values.json) printFixReport(out, { dryRun: !!values['dry-run'] });
   // A run that fixed everything it found should not still exit 1 — CI would
-  // never go green on a `--fix` step. A reverted or unresolved one still fails.
-  if (values.fix && !out.reverted && out.unresolved?.length === 0 && out.fixed?.length) {
-    const stillFailing = reporter.results.some(
-      (r) => (r.outcome === 'fix' || r.outcome === 'block') && !out.fixed.includes(r.id));
-    if (!stillFailing) { writeReportIfAsked(); process.exit(0); }
+  // never go green on a `--fix` step. A reverted one still fails, and so does
+  // one with anything left: `out.remaining` is what the RE-AUDIT counted, not
+  // bookkeeping over the ids we claimed. Counting ids let a run exit 0 with a
+  // required finding still on disk, whenever a fixed finding shared its id with
+  // an unfixable sibling.
+  if (values.fix && !out.reverted && out.fixed?.length && out.remaining === 0) {
+    writeReportIfAsked();
+    process.exit(0);
   }
   writeReportIfAsked();
   process.exit(reporter.exitCode());

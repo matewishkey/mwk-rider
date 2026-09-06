@@ -177,7 +177,7 @@ export function contentImgs(html) {
   const out = [];
   // `[^>]*` truncates at a `>` inside an attribute value (data-x="a>b"), which
   // hid the real alt attribute and invented a violation. Consume quoted values.
-  for (const m of html.matchAll(/<img\b((?:"[^"]*"|'[^']*'|[^>])*)>/gi)) {
+  for (const m of html.matchAll(/<img\b((?:[^>"']|"[^"]*"|'[^']*')*)>/gi)) {
     const attrs = m[1];
     // srcset-only images are still content images; fall back to its first URL.
     const src = attrValue(attrs, 'src') ?? srcsetUrls(attrValue(attrs, 'srcset'))[0] ?? '';
@@ -194,4 +194,26 @@ export function contentImgs(html) {
 // (decorative) and passes; a missing attribute is the WCAG 1.1.1 violation.
 export function imgsMissingAlt(html) {
   return contentImgs(html).filter((i) => !i.hasAlt).map((i) => i.src);
+}
+
+/**
+ * Blank out the CONTENT of <script> and <style>, keeping every offset.
+ *
+ * A document's markup is what a crawler reads; the JavaScript inside it is not
+ * markup, and scanning it for tags is how a real page hung this tool for 15
+ * minutes. Minified React ships `<a.addedNodes.length` — a `<a` with no `>` for
+ * two kilobytes and no `</a>` anywhere — and an anchor scan over that has an
+ * enormous number of ways to fail before it gives up. It is also simply wrong:
+ * a `href="…"` inside a script is not a link on the page, so `links:internal`
+ * could be resolving URLs that were never in the document.
+ *
+ * Blanked to spaces rather than removed, so a match offset still maps to the
+ * line it came from. Line breaks survive for the same reason. Same trick, and
+ * the same reason, as lib/src-scan.mjs's comment blanking.
+ */
+export function blankScripts(html) {
+  return String(html ?? '').replace(
+    /(<(script|style)\b[^>]*>)([\s\S]*?)(<\/\2\s*>)/gi,
+    (_, open, _tag, body, close) => open + body.replace(/[^\n]/g, ' ') + close,
+  );
 }

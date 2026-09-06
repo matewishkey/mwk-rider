@@ -689,14 +689,18 @@ function findInDist(dir, nameRe, re, budget = { n: 400 }) {
  *
  * Read comment-blanked: the starter's own wrangler.jsonc is heavily commented,
  * and a commented-out setting satisfying a check is a failure this repo has
- * fixed three times already.
+ * fixed three times already. The comment syntax follows the FORMAT, which is
+ * why the filename decides: TOML comments with `#` and the JS/JSONC stripper
+ * leaves those alone, so `# main = "./dist/_worker.js/index.js"` in a
+ * wrangler.toml reported a live Worker entrypoint for a site that has none.
  */
 function check404Served(project, reporter) {
   if (!project.wranglerConfig) {
     reporter.skip(SEC, '404:served', 'no wrangler.jsonc/json/toml — nothing here says how a host answers an unmatched URL');
     return;
   }
-  const cfg = stripComments(project.wranglerConfig);
+  const isToml = /\.toml$/i.test(project.wranglerFile ?? '');
+  const cfg = stripComments(project.wranglerConfig, { js: !isToml, hash: isToml });
   // A [assets] table in TOML or an "assets" key in JSONC; either way, static
   // assets are being served by the platform rather than by a Worker route.
   if (!/(^|\s|\[)"?assets"?\s*[:=\]]/m.test(cfg)) {
@@ -716,5 +720,5 @@ function check404Served(project, reporter) {
   reporter.fix(SEC, '404:served',
     'static assets with no Worker `main` and no assets.not_found_handling — an unmatched URL gets a bare platform 404, never the site\'s own 404 page (which still builds, ships and passes 404:custom)',
     'set "not_found_handling": "404-page" under "assets" in the wrangler config',
-    { file: 'wrangler.jsonc' });
+    { file: project.wranglerFile ?? 'wrangler.jsonc' });
 }

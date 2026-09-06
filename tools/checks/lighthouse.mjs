@@ -8,7 +8,7 @@
 // gracefully (the tool still works for everything else).
 
 import { attrValue, srcsetUrls } from '../lib/html.mjs';
-import { truncate } from '../lib/text.mjs';
+import { untrusted } from '../lib/untrusted.mjs';
 
 const SEC = 'lighthouse';
 // No timeout meant a host that accepts the connection and never answers hung the
@@ -172,20 +172,25 @@ function lcpElement(audits) {
  * snippet, which is all there is to say about it.
  */
 function describeElement(snippet) {
-  const attrs = snippet.match(/^<img\b((?:"[^"]*"|'[^']*'|[^>])*)>?/i)?.[1];
-  if (!attrs) return truncate(snippet, 140);
+  const attrs = snippet.match(/^<img\b((?:[^>"']|"[^"]*"|'[^']*')*)>?/i)?.[1];
+  // Every value below is the AUDITED PAGE's own markup, relayed by PSI — the
+  // outerHTML of an element a third party wrote. `truncate()` shortened it and
+  // handed it on as prose; the labels around it are ours, the values inside the
+  // fences are theirs. The checklist labels are Lighthouse's own wording and
+  // stay unfenced, because Google is not the untrusted party here.
+  if (!attrs) return untrusted(snippet, 140);
 
   const src = attrValue(attrs, 'src') ?? srcsetUrls(attrValue(attrs, 'srcset'))[0] ?? '?';
-  const parts = [`img ${truncate(src.split('/').pop(), 46)}`];
+  const parts = [`img ${untrusted(src.split('/').pop(), 46)}`];
   // Named whether present or not: "no fetchpriority" is the finding as often as
   // a wrong value is, and an attribute silently absent from a summary reads as
   // one that was never checked.
   for (const name of ['loading', 'fetchpriority', 'sizes']) {
     const v = attrValue(attrs, name);
-    parts.push(v == null ? `no ${name}` : `${name}="${truncate(v, 40)}"`);
+    parts.push(v == null ? `no ${name}` : `${name}=${untrusted(v, 40)}`);
   }
   const w = attrValue(attrs, 'width'), h = attrValue(attrs, 'height');
-  parts.push(w && h ? `${w}×${h}` : 'no width/height');
+  parts.push(w && h ? `${untrusted(w, 8)}×${untrusted(h, 8)}` : 'no width/height');
   return parts.join(', ');
 }
 

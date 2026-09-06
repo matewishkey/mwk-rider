@@ -67,7 +67,7 @@ export function inlineStyles(html) {
 /** Every `<link rel="stylesheet">` href in a document, in order. */
 export function stylesheetHrefs(html) {
   const out = [];
-  for (const m of String(html ?? '').matchAll(/<link\b((?:"[^"]*"|'[^']*'|[^>])*)>/gi)) {
+  for (const m of String(html ?? '').matchAll(/<link\b((?:[^>"']|"[^"]*"|'[^']*')*)>/gi)) {
     const attrs = m[1];
     if (!/(?:^|\s)stylesheet(?:\s|$)/i.test(attrValue(attrs, 'rel') ?? '')) continue;
     const href = attrValue(attrs, 'href');
