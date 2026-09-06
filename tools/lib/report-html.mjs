@@ -178,7 +178,6 @@ a{color:var(--red-deep)}
 .rb{display:grid;place-items:center;background:var(--red);color:#fff;
   width:var(--rb,44px);height:var(--rb,44px);flex:none}
 .rb .mk{width:64%;height:auto}
-.brand{display:flex;align-items:center;gap:.7rem;margin:0 0 2rem}
 /* --red is a display colour and this is 700 weight, far above 19px. */
 h1{font-family:var(--display);font-size:clamp(1.9rem,5vw,2.9rem);font-weight:700;
   line-height:1.1;margin:0 0 .4rem}
@@ -229,8 +228,6 @@ summary::-webkit-details-marker{display:none}
 </style>
 </head><body>
 <main class="wrap">
-
-<div class="brand"><span class="rb">${MARK(44)}</span></div>
 
 <h1>Site <span class="hl">audit</span></h1>
 <p class="sub">${meta.site ? `${esc(meta.site)} · ` : ''}${esc(meta.generated ?? new Date().toISOString().slice(0, 10))}${meta.version ? ` · rider ${esc(meta.version)}` : ''}${meta.strict ? ' · strict' : ''}${meta.url ? ` · live checks against ${esc(meta.url)}` : ''}</p>
