@@ -176,7 +176,14 @@ From inside any Astro project, in [Claude Code](https://claude.com/claude-code):
 `/mwk-rider:create` scaffolds. It asks three
 questions — site name and domain, contact email, a one-line tagline — then copies
 [`examples/starter/`](examples/starter), edits them in, builds, and runs
-the audit on what it just made. That last step is the point: the starter is kept
+the audit on what it just made.
+
+**Or paste it a brief instead of answering.** If you picked a look somewhere else
+and arrived with a spec — several versions to compare, palettes, type, and often
+the words already written and sourced — create mode reads that rather than asking
+what colour you want. It builds one site per version, applies each palette and
+type pair exactly, gives each version different content so they are worth
+comparing, and credits any sourced material on every page it builds. That last step is the point: the starter is kept
 at `0 🔧 / 0 🛑` under `--strict` by this repo's own CI, so a scaffolded site is
 compliant by construction rather than by intention.
 
@@ -247,12 +254,14 @@ skills/rider/
   references/CREATE.md       the steps for create mode, same arrangement
 tools/
   audit.mjs                  entry: detect project, run domains, report
+  brief.mjs                  read a pasted design brief into a plan create mode can
+                             work: versions, exact token/font values, fetched content
   test.mjs                   the offline half of the gate: fixture + known-bad projects
   verify-example.mjs         the live half: build, serve, audit with --url, run from inside an example
   checks/{modules,seo,images,perf,data,analytics,content,live,lighthouse,browser}.mjs
   lib/{project,reporter,policy,rules,cf-image,html,css-flow,dist,headers,jsonld,
        image-size,src-scan,untrusted,analytics-signals,search-engines,embed-hosts,
-       fonts-config,config-string,remedy,fixer,report-html,text,walk}.mjs
+       fonts-config,config-string,remedy,fixer,report-html,text,walk,brief}.mjs
 docs/sources.json            every Google page a rule rests on, its printed date, and
                              the rules resting on it
 scripts/google-sources.mjs   re-reads them; a weekly workflow files an issue when one moved

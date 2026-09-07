@@ -151,6 +151,7 @@ const RULES = [
   // --- content ---------------------------------------------------------------
   ['content/mediakit', 'content', 'mediakit', 'The one URL you hand to press, partners and directories; without it "send us your logo" becomes an email thread.'],
   ['content/designkit', 'content', 'designkit', 'A page rendering the real tokens and components shows what exists without reading every file — and makes drift visible.'],
+  ['content/sources-credited', 'content', 'sources:credited', 'A site whose src/data/sources.json names the works its words came from must credit them in what it builds — a credit block is the first thing dropped when a page is tightened, and nothing else notices.'],
   ['content/quotes-ambiguous', 'content', 'quotes:ambiguous', 'A straight quote sharing a line with a directional one is the input Sätteri and remark resolve differently. Advisory: correct prose can do it too.'],
 
   // --- data ------------------------------------------------------------------

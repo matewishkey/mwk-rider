@@ -48,7 +48,12 @@ Deterministic graders wherever possible; an LLM judge only where the assertion
 is about wording. The create-mode case is deliberately
 absent: it needs `npm install` and a build inside the sandbox, which is minutes
 per run — the offline suite already scaffolds and builds the starter from a
-clean copy, so the copy-never-compose rule is covered there.
+clean copy, so the copy-never-compose rule is covered there. **The brief branch
+of create mode is absent for the same reason and is not equally covered**: its
+"do not read the JSON yourself, run `tools/brief.mjs`" rule is prose, and
+`tools/test.mjs` asserts what the reader *does* rather than that an agent
+reaches for it. A case that pastes a brief and grades on `tool_used
+brief.mjs` would close that, and it costs a build per run to write honestly.
 
 | case | the prose rule it holds |
 |---|---|

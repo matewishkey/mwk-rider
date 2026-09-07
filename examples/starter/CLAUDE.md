@@ -18,6 +18,12 @@ instead of a new set every time.
 After that: `src/pages/` is one file per route, and `src/styles/global.css` is
 the whole design system (rendered live at `/design`).
 
+One more file worth knowing about: **`src/data/sources.json`** ships empty and
+renders nothing. If any of this site's words came from someone else's work, name
+the works there — `components/Sources.astro` renders a "Where this comes from"
+block from it, in the layout, so every page carries the credit. The auditor fails
+the build if that file names a work the built pages never mention.
+
 ## The rules this site is built on
 
 **Prefer boring and readable over clever.** Someone will read this in a year with

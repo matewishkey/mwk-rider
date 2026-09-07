@@ -7,7 +7,7 @@
 
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import { eachDistHtml, attrValue } from '../lib/html.mjs';
+import { eachDistHtml, attrValue, decodeEntities, blankScripts } from '../lib/html.mjs';
 import { distRelative, distDir } from '../lib/dist.mjs';
 import { walkFiles } from '../lib/walk.mjs';
 
@@ -29,6 +29,7 @@ const MEDIA_KIT_NAMES = '/media, /media-kit, /press, /presskit, /newsroom or /br
 
 export async function run({ project, reporter }) {
   checkAmbiguousQuotes(project, reporter);
+  checkSourcesCredited(project, reporter);
 
   if (!project.hasDist || !existsSync(join(project.root, 'dist'))) {
     reporter.skip(SEC, 'mediakit', 'no dist/ — build the site to check for a media-kit page');
@@ -48,6 +49,95 @@ export async function run({ project, reporter }) {
 
   checkMediaKit(reporter, media);
   checkDesignKit(reporter, design);
+}
+
+/**
+ * A site built from someone else's material still credits it.
+ *
+ * `src/data/sources.json` is where a site records the works its words came from
+ * — create mode writes it when a brief arrives carrying sourced content, and the
+ * starter ships it empty. The file existing and naming works is the site saying
+ * "these are not my words". This check asks the only question that can then be
+ * answered mechanically: did any of it reach the built pages?
+ *
+ * It is deliberately not a judgement about *where* the block sits or how it
+ * reads. It proves the credit was not dropped — which is the failure that
+ * actually happens, because a credit block is the first thing to go when a page
+ * is tightened up, and nothing else notices.
+ *
+ * A site that credits nothing is not audited for this. The check reports a skip
+ * rather than a pass, because "no sources file" is not compliance.
+ */
+function checkSourcesCredited(project, reporter) {
+  const rel = join('src', 'data', 'sources.json');
+  const file = join(project.root, rel);
+  if (!existsSync(file)) {
+    reporter.skip(SEC, 'sources:credited', 'no src/data/sources.json — this site records no sourced material to credit');
+    return;
+  }
+
+  let works;
+  try {
+    const parsed = JSON.parse(readFileSync(file, 'utf8'));
+    works = (Array.isArray(parsed?.works) ? parsed.works : [])
+      .map((w) => (typeof w?.title === 'string' ? w.title.trim() : ''))
+      .filter(Boolean);
+  } catch (err) {
+    // Not a skip. The site declared a sources file; one that cannot be parsed
+    // renders no credit block at all, and does it silently.
+    reporter.block(SEC, 'sources:credited', `${rel} is not readable JSON — ${String(err.message).split('\n')[0]}`,
+      'fix the file: the credit block renders from it, so a site that cannot read its own sources publishes none');
+    return;
+  }
+
+  if (!works.length) {
+    reporter.skip(SEC, 'sources:credited', `${rel} names no work — nothing to credit`);
+    return;
+  }
+  if (!project.hasDist) {
+    reporter.skip(SEC, 'sources:credited', `${rel} names ${works.length} work(s) — build the site to check they are credited in it`);
+    return;
+  }
+
+  const pages = [];
+  eachDistHtml(project.root, (_rel, html) => pages.push(readableText(html)));
+
+  const missing = works.filter((title) => {
+    const needle = searchable(title);
+    return needle.length > 0 && !pages.some((text) => text.includes(needle));
+  });
+
+  if (missing.length === 0) {
+    reporter.pass(SEC, 'sources:credited', `all ${works.length} work(s) named in ${rel} are credited in the built pages`);
+    return;
+  }
+  const sample = missing.slice(0, 3).map((t) => `"${t.slice(0, 60)}"`).join(', ');
+  reporter.block(
+    SEC, 'sources:credited',
+    `${missing.length} of ${works.length} work(s) named in ${rel} appear nowhere in the built site — ${sample}${missing.length > 3 ? ', …' : ''}`,
+    'render the credit block on the pages built from that material — the licence the content came under requires it, and a page that drops it is republishing someone else\'s work uncredited',
+  );
+}
+
+/**
+ * A built page as readable text: no markup, entities resolved, lowercased.
+ *
+ * Script and style bodies are blanked first — they are not markup, and a title
+ * that happened to appear inside a JSON blob in a script tag would otherwise
+ * count as credited to a reader who cannot see it.
+ */
+function readableText(html) {
+  return decodeEntities(blankScripts(html).replace(/<[^>]*>/g, ' '))
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
+}
+
+/** A work title reduced to what a page must contain for it to count. */
+function searchable(title) {
+  // Titles arrive truncated — "Bird Neighbors An…" is what the content carries.
+  // Matching on the prefix means a site that re-truncates, or prints the full
+  // title, still counts; the ellipsis itself never has to match.
+  return String(title).replace(/[….]+$/, '').replace(/\s+/g, ' ').trim().toLowerCase();
 }
 
 /**

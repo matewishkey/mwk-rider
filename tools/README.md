@@ -90,6 +90,8 @@ reading `dist/`, one reading served HTML — stay apart in a combined run.
 ```
 tools/
   audit.mjs              entry — arg parsing, project detection, domain dispatch
+  brief.mjs              read a pasted design brief: the plan it implies, and the
+                         content it names, fetched and checked before a page sees it
   lib/
     project.mjs          cwd → Astro-project detection + config/source loading
     policy.mjs           universal vs house-style vs advisory (drives --strict)
@@ -98,6 +100,7 @@ tools/
     reporter.mjs         outcome collection, human/JSON output, exit code
     rules.mjs            the rule catalogue behind --rules --json
     untrusted.mjs        fence bytes fetched from an audited site before printing
+    brief.mjs            a pasted brief, read as data — shape, not who wrote it
     cf-image.mjs         Cloudflare transform-URL param parsing (shared offline + live)
     html.mjs             dist/served HTML scanning — headings, alt text, srcset, content-page gate
     css-flow.mjs         which elements CSS takes out of flow (so CLS checks don't false-fire)

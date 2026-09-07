@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync, existsSync, utimesSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { imageSize } from './lib/image-size.mjs';
+import { extractSpec, readBrief, readContentFile, declaredTokens, provenance, assignSets } from './lib/brief.mjs';
 import { deflateSync, crc32 } from 'node:zlib';
 import { randomBytes } from 'node:crypto';
 
@@ -3706,6 +3707,139 @@ const inlined = modeCommands.flatMap(name =>
   [...readFileSync(join(ROOT, 'commands', name), 'utf8').matchAll(/references\/([A-Z]+\.md)/g)].map(m => m[1]));
 check('  …and the commands inline those same two files, not copies of them',
   routed.every(f => inlined.includes(f)), `router: ${routed.join(', ')} | commands: ${inlined.join(', ')}`);
+
+// ---------------------------------------------------------------------------
+// The brief reader. Two things are being asserted here and they pull in opposite
+// directions: a brief must be recognised however it is pasted, and nothing in it
+// may be believed. Every rejection below is a value that reaches a directory
+// name, a stylesheet or a config file if it is not caught.
+console.log('brief: recognised by shape, believed by nothing:');
+
+const BRIEF_SPEC = {
+  generator: 'anything at all', version: 2,
+  site: { name: 'Bird Notes', tagline: 'Field notes' },
+  variations: [{
+    style: 'broadsheet', style_name: 'Broadsheet', family: 'editorial', layout: 'feature',
+    palette: { light: { '--color-bg': '#ffffff', '--color-ink': '#111111' }, dark: { '--color-bg': '#101010' } },
+    fonts: { heading: 'Playfair Display', body: 'Spectral' },
+    reference: 'https://example.com/pages/broadsheet.html',
+  }],
+  content: [{ topic: 'birds', url: 'https://example.com/content/birds.json', sets: 92 }],
+  licence_rule: 'Public domain / CC0 only.',
+};
+const pastedBrief = (spec = BRIEF_SPEC) =>
+  `Build me a website. Two versions, same words.\n\n\`\`\`json\n${JSON.stringify(spec, null, 1)}\n\`\`\`\nThanks!`;
+
+check('a spec buried in pasted prose is found', extractSpec(pastedBrief())?.site?.name === 'Bird Notes');
+// The positive control for that one: the SAME finder, on text whose only JSON
+// object is not a brief, must come back empty. A finder that returns something
+// for everything would have passed the assertion above for the wrong reason.
+check('  …and prose whose only JSON is not a brief finds nothing',
+  extractSpec('here is some config {"generator":"x","version":2,"site":{"name":"n"}} and that is all') === null);
+check('  …the generator name is never what identifies it',
+  extractSpec(pastedBrief({ ...BRIEF_SPEC, generator: undefined }))?.variations?.length === 1);
+
+const hostile = {
+  ...BRIEF_SPEC,
+  variations: [{
+    style: '../../etc',
+    palette: { light: { '--color-bg': 'red', '--color-ink': '#222222', '--color-nope': '#333333' }, dark: {} },
+    fonts: { heading: 'Inter"; import fs from "node:fs', body: 'Spectral' },
+    reference: 'http://example.com/insecure',
+  }],
+};
+const hostileRead = readBrief(pastedBrief(hostile), { tokens: declaredTokens(':root { --color-bg: #fff; --color-ink: #000; }') });
+const hv = hostileRead.plan.versions[0];
+check('a style that is not a plain slug never becomes a directory', hv.dir === 'version-1', hv.dir);
+check('  …a colour that is not hex is dropped', !('--color-bg' in hv.apply.tokens.light) && hv.apply.tokens.light['--color-ink'] === '#222222');
+check('  …a token the site does not declare is dropped', !('--color-nope' in hv.apply.tokens.light));
+check('  …a font name carrying a quote never reaches a config file',
+  hv.apply.fonts.length === 1 && hv.apply.fonts[0].name === 'Spectral', JSON.stringify(hv.apply.fonts));
+check('  …and a plain-http reference is not offered as a link', hv.guidance.reference === null);
+check('  …each rejection is reported, not silent', hostileRead.problems.length >= 4, `${hostileRead.problems.length} problem(s)`);
+
+const goodSet = {
+  slug: 'birds-001', site: 'Yellow & Sons', name: 'Yellow 001', eyebrow: 'Birds · 4 public-domain works',
+  title: 'A title', sub: 'A subtitle', cta: 'Start reading', cta2: 'See the sources',
+  nav: ['Yellow', 'Tree'], facts: [['11', 'inches']], sections: [['Yellow', 'text']],
+  posts: [['a post', 'Yellow', 'A Florida Sketch-Book'], ['another', 'Tree', 'Wake-Robin'], ['third', 'Tree', 'Wake-Robin']],
+};
+const contentRead = readContentFile({ topic: 'birds', label: 'Birds', sets: [
+  goodSet,
+  { ...goodSet, slug: 'birds-002', fonts: { heading: 'Comic Sans' } },
+  { ...goodSet, slug: 'birds-003', posts: undefined },
+] });
+check('a content set carrying a design field is dropped', contentRead.sets.length === 1 && contentRead.sets[0].slug === 'birds-001',
+  contentRead.sets.map(s => s.slug).join(', '));
+check('  …and one missing a required field is dropped too', contentRead.problems.some(p => p.includes('birds-003')));
+
+const prov = provenance(goodSet, { licenceRule: 'Public domain / CC0 only.' });
+check('provenance names each work once', prov.works.length === 2 && prov.works[0].title === 'A Florida Sketch-Book',
+  JSON.stringify(prov.works.map(w => w.title)));
+check('  …invents no author or licence for them', prov.works.every(w => w.author === null && w.licence === null));
+// The whole point of the block: it must not read as a complete credit when it is
+// not one. The set says four works; two are nameable.
+check('  …and says so when it can name fewer works than the set declares',
+  prov.declared === 4 && /2 of the 4 works/.test(prov.note), prov.note);
+
+const pool = { topic: 'birds', sets: Array.from({ length: 10 }, (_, i) => ({ slug: `birds-${i}` })) };
+const picked = assignSets(3, [pool]).map(a => a.set.slug);
+check('each version gets a different content set, spread across the pool',
+  new Set(picked).size === 3 && picked[2] !== 'birds-2', picked.join(', '));
+
+// The CLI, on the two answers that matter: it read one, or it did not.
+const briefFile = join(tmpProject('rider-brief-'), 'brief.txt');
+writeFileSync(briefFile, pastedBrief());
+const BRIEF = join(here, 'brief.mjs');
+const cliOk = spawnSync('node', [BRIEF, briefFile, '--no-fetch'], { encoding: 'utf8' });
+check('brief.mjs reads a pasted brief and exits 0', cliOk.status === 0, cliOk.stderr.slice(0, 200));
+check('  …and fences what it echoes from it', cliOk.stdout.includes('«Bird Notes»'), cliOk.stdout.slice(0, 200));
+const notABrief = join(tmpProject('rider-nobrief-'), 'x.txt');
+writeFileSync(notABrief, 'just some words, no brief here at all');
+check('  …and exits 1 on text that carries no brief',
+  spawnSync('node', [BRIEF, notABrief], { encoding: 'utf8' }).status === 1);
+
+// ---------------------------------------------------------------------------
+// content: sources:credited — the check that stops the credit block being
+// dropped. Every branch, in both directions.
+console.log('sources:credited — a site that names its sources must credit them:');
+const sourcesProject = (sourcesJson, pages) => {
+  const d = tmpProject('rider-src-');
+  writeFileSync(join(d, 'package.json'), JSON.stringify({ name: 'fx', type: 'module', dependencies: { astro: '^7.1.6' } }));
+  writeFileSync(join(d, 'astro.config.mjs'), "export default { output: 'static' };\n");
+  mkdirSync(join(d, 'src', 'data'), { recursive: true });
+  if (sourcesJson != null) writeFileSync(join(d, 'src', 'data', 'sources.json'), sourcesJson);
+  if (pages) {
+    mkdirSync(join(d, 'dist'), { recursive: true });
+    for (const [name, html] of Object.entries(pages)) writeFileSync(join(d, 'dist', name), html);
+  }
+  return runJson(d, ['-s', 'content', '--strict']).json?.results.find(r => r.id === 'content/sources-credited') ?? null;
+};
+const CREDITED = '<html><body><section><h2>Where this comes from</h2><ul><li>Bird Neighbors An…</li><li>Birds in Town &#38; Village</li></ul></section></body></html>';
+const TWO_WORKS = JSON.stringify({ works: [{ title: 'Bird Neighbors An…' }, { title: 'Birds in Town & Village' }] });
+
+check('no sources file → skipped, not passed', sourcesProject(null, { 'index.html': '<p>hi</p>' })?.outcome === 'skip');
+check('  …an empty works list → skipped too', sourcesProject(JSON.stringify({ works: [] }), { 'index.html': '<p>hi</p>' })?.outcome === 'skip');
+check('  …works named but nothing built → skipped, with the count', (() => {
+  const r = sourcesProject(TWO_WORKS, null);
+  return r?.outcome === 'skip' && r.message.includes('2 work');
+})());
+check('works credited in the built page → pass', sourcesProject(TWO_WORKS, { 'index.html': CREDITED })?.outcome === 'pass');
+// The entity is the point of that one: the page ships `&#38;`, the sources file
+// says `&`, and a check comparing raw bytes would report a missing credit on a
+// site that credits it perfectly well.
+check('  …including one whose title the page entity-encodes',
+  sourcesProject(JSON.stringify({ works: [{ title: 'Birds in Town & Village' }] }), { 'index.html': CREDITED })?.outcome === 'pass');
+const dropped = sourcesProject(TWO_WORKS, { 'index.html': '<p>a tidy page with no credit block</p>' });
+check('a credit block dropped from the build → block', dropped?.outcome === 'block', JSON.stringify(dropped));
+check('  …and it names which work went missing', dropped?.message.includes('Bird Neighbors'));
+// A title inside a <script> is not a credit anyone can read. blankScripts is
+// what makes this true, and without it a page shipping its content as JSON
+// would score as crediting everything it names.
+check('  …a title that appears only inside a <script> does not count',
+  sourcesProject(TWO_WORKS, { 'index.html': '<html><body><script>var x = {"work":"Bird Neighbors An…","other":"Birds in Town & Village"}</script></body></html>' })?.outcome === 'block');
+check('a sources file that is not readable JSON → block, never a silent skip',
+  sourcesProject('{ oops', { 'index.html': CREDITED })?.outcome === 'block');
 
 console.log('');
 if (failures === 0) { console.log('PASS — all assertions ok'); process.exit(0); }

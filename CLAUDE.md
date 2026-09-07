@@ -6,13 +6,22 @@ This repo is **mwk-rider**: a Claude Code plugin whose two mode commands (`/mwk-
 ## What it is
 
 - **Two modes, one copy of each.** `skills/rider/SKILL.md` is a router *only*: it picks **create** or **audit** and sends the reader to `references/CREATE.md` or `references/AUDIT.md`. The commands in `commands/` inline those same two files with `@${CLAUDE_PLUGIN_ROOT}/…`, so a typed command and an inferred mode run identical instructions and there is no second copy to drift. The router exists for the inferred path alone — never duplicate a mode's steps into it. **`commands/bug.md` is deliberately not part of that arrangement**: it is self-contained, because a reference file exists to be shared with the router and the router routes *modes*. It has one consumer, so it gets one file, not two.
-- **One tool:** `tools/audit.mjs` — the entry. Detects an Astro project, runs the offline domain checks, and (with `--url`) the live ones. `tools/verify-example.mjs` is the harness that builds an example, serves it the way its adapter demands, and points the audit at it — never a static server on a split `dist/`, which serves a directory listing and passes against nothing. Reports `✅ / 🔧 / 🛑 / 💡 / ⏭` and exits non-zero on findings.
+- **Two tools, and only one of them audits.** `tools/brief.mjs` reads a design
+  brief someone pasted into create mode — the versions to build, the exact token
+  and font values each gets, and the content the brief names, fetched and checked
+  before a page can see it. It writes nothing into a site. It exists because the
+  alternative is an agent parsing a stranger's JSON by eye and pasting the result
+  into a config file: `lib/brief.mjs` re-derives every value that reaches a
+  directory name, a stylesheet or `astro.config.mjs` from a strict pattern, and a
+  brief is recognised by SHAPE — a `variations[]` naming colour and type — never
+  by the `generator` string that names its producer.
+- **The audit tool:** `tools/audit.mjs` — the entry. Detects an Astro project, runs the offline domain checks, and (with `--url`) the live ones. `tools/verify-example.mjs` is the harness that builds an example, serves it the way its adapter demands, and points the audit at it — never a static server on a split `dist/`, which serves a directory listing and passes against nothing. Reports `✅ / 🔧 / 🛑 / 💡 / ⏭` and exits non-zero on findings.
 - **Seven offline domains + three `--url` domains**, one module each under `tools/checks/`:
   `modules`, `seo`, `images`, `perf`, `data`, `analytics`, `content` offline; `live`,
   `lighthouse`, `browser` only with `--url`.
 
   **What each one checks is NOT written here — `node tools/audit.mjs --rules --json` is
-  the authoritative list**, 172 rules with each one's id, section, severity, mode and why.
+  the authoritative list**, 173 rules with each one's id, section, severity, mode and why.
   A prose copy of it used to sit in this bullet and drifted: four releases after
   `images: srcset:missing` was promoted, this file still gave it the severity it had
   before — in the document every session in this repo loads. `README.md` and `tools/README.md`
@@ -61,7 +70,7 @@ This repo is **mwk-rider**: a Claude Code plugin whose two mode commands (`/mwk-
   retries for that reason.
 
   **It is not an inventory of universal rules, and absence from it means
-  nothing.** 72 of the 112 universal rules are uncited and most of them should
+  nothing.** 73 of the 113 universal rules are uncited and most of them should
   be: the `modules` domain answers to Astro's own docs, `perf` and image
   delivery to the web platform, the `og:*` tags to the Open Graph protocol, the
   JSON-LD shapes to schema.org, the scores to Lighthouse, and a dozen rows are
@@ -82,6 +91,22 @@ This repo is **mwk-rider**: a Claude Code plugin whose two mode commands (`/mwk-
   instead, which is true whatever the branding does next.
 - **The `lighthouse` domain can only be exercised against a public URL** — PSI fetches from Google's side, so `127.0.0.1` always answers 400 and CI has no key. `node scripts/test-site.mjs deploy` publishes the starter to `mwk-rider-test1.matewishkey.com` and `… audit --strict` audits it live; redeploy after changing the starter. Ours for testing only — the plugin never asks a user for one. `docs/DEVELOPING.md` has the why.
 - **Two example sites, upgraded together.** `examples/_fixture-i18n/` is the multi-locale exerciser (i18n, search, preview routes); `examples/starter/` is the single-locale reference and what create mode copies. Both must be `0 🔧 / 0 🛑` in default **and** `--strict` — and now also LIVE: CI runs the matrix offline in both modes and then `node ../../tools/verify-example.mjs --strict` inside each, so the `live`/`lighthouse`/`browser` domains are exercised against them too. **Raising the baseline means upgrading both in the same commit** — a floor moved in one makes the other's clean run a lie. Testing/deploy discipline lives in `docs/DEVELOPING.md`.
+- **A brief answers create mode's questions; it does not get to answer them
+  loosely.** Palette and type are an *edit list* — every value names a custom
+  property the starter already declares, so applying it is mechanical. Ornament
+  family and layout archetype are *guidance*: they describe a page structure this
+  starter does not have, and the plan keeps the two apart so a version is never
+  claimed to reproduce a reference it merely resembles. Content that arrives with
+  a brief is public-domain/CC0 material under a licence that requires a visible
+  credit, which is `src/data/sources.json` + `components/Sources.astro` in the
+  starter and `content: sources:credited` in the audit. **That credit is honest
+  about being incomplete**: the content ships work titles and no author or
+  licence, so the block says so rather than inferring one — see `BEST-PRACTICES.md`
+  § content. The fonts recipe in `references/CREATE.md` lists two weights per
+  family rather than a range, which is not what Astro's docs suggest and is what
+  measured clean: a range asked of a *static* family builds one face per published
+  weight and trips `perf: font:faces` (measured 2026-09-07, Playfair Display +
+  Spectral, 5 faces → 🔧).
 - **The starter is the baseline's existence proof, not a second copy of it.** The checks define compliant; `examples/starter/` is a site that is. `references/CREATE.md` describes only the *interaction* and is forbidden from restating the rules — it points at `--rules --json` for what, and `BEST-PRACTICES.md` for why. A third prose copy of the baseline is how all three drift.
 - **Create mode copies, never composes.** It copies `${CLAUDE_PLUGIN_ROOT}/examples/starter` verbatim and edits four files. Writing files from memory is exactly how a scaffold stops matching the reference the audit keeps clean. The starter ships *inside* the plugin, so it is always the version create mode was written against — that used to be a symlink that could go missing.
 

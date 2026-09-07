@@ -1113,9 +1113,12 @@ works.
 *Check file: `tools/checks/content.mjs`. Reads built `dist/` HTML, so any routing
 convention counts — detection is on what the page renders, not its filename.*
 
-Both practices here are **house style**. A personal Astro blog is not broken for
-lacking either, and a tool that says otherwise gets uninstalled. They report
-`💡 [baseline]` by default and bind under `--strict`.
+The two *page* practices here are **house style**. A personal Astro blog is not
+broken for lacking either, and a tool that says otherwise gets uninstalled. They
+report `💡 [baseline]` by default and bind under `--strict`. The credit practice
+at the end of the section is not house style and does not move with `--strict`:
+it fires only on a site that has itself declared it is built from someone else's
+material.
 
 - **A media kit.** A small business or project site is regularly asked for "your
   logo and a short description". Without one canonical page that becomes an email
@@ -1176,6 +1179,31 @@ lacking either, and a tool that says otherwise gets uninstalled. They report
   Markdown is found by walking `src/`, not `src/content/` — the starter keeps its
   posts in `src/data/blog/`, and hardcoding the other path is the mistake that
   once made a whole SEO domain silently not run.
+- **A site built from someone else's material credits it, visibly, on the pages
+  that use it.** Create mode can be handed a brief that arrives with content
+  already written and sourced — public-domain and CC0 works, under a licence that
+  requires the work, the author and the licence to be named where a reader can see
+  them. `src/data/sources.json` is where a site records that, the starter ships it
+  empty, and `components/Sources.astro` renders it from the root layout, so every
+  page carries the block rather than each page remembering to.
+  → `content: sources:credited` (`⏭` when the file is absent or names nothing)
+
+  **What the check proves is narrow on purpose: the credit was not dropped.** Every
+  work the site names must appear in the built HTML — script and style bodies
+  blanked first, entities decoded, so a title shipped inside a JSON blob does not
+  count as a credit anyone can read. It says nothing about where the block sits or
+  how it reads, because that is a judgement and this is not. The failure it exists
+  for is mechanical and common: a credit block is the first thing to go when a page
+  is tightened up, and nothing else in a build notices.
+
+  **A block that is honest about being incomplete beats one that looks finished.**
+  The content this was written against carries work titles and a count of the works
+  a page drew on — and no author, no licence and no link per work. So the block
+  names what it has and states plainly what it does not, and rider does not infer
+  an author from a title. Filling that in would invent the one thing a credit block
+  exists to state, and it would be invisible: a complete-looking credit is exactly
+  what nobody re-checks. The gap is upstream's to close, and asking for it is a
+  smaller job than papering over it.
 
 ## data — the machine-readable surface
 

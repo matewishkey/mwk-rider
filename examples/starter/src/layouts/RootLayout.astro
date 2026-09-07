@@ -4,6 +4,7 @@ import Icon from '../components/Icon.astro';
 import { ClientRouter } from 'astro:transitions';
 import SEO from '../components/SEO.astro';
 import SiteHeader from '../components/SiteHeader.astro';
+import Sources from '../components/Sources.astro';
 import { config as ogConfig } from '../../scripts/og.config.mjs';
 import '../styles/global.css';
 
@@ -54,6 +55,11 @@ const year = new Date().getFullYear();
       <main>
         <slot />
       </main>
+      <!-- Renders only when src/data/sources.json names a work. It sits in the
+           layout rather than on the pages that use sourced material, because
+           "which pages" is exactly the judgement that ends with the credit
+           missing from one of them. -->
+      <Sources />
       <footer class="muted">
         <p>
           © {year} {brand.siteName} ·

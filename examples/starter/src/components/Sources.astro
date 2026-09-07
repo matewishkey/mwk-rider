@@ -1,0 +1,40 @@
+---
+// Where this comes from — the credit a site owes the material it was built from.
+//
+// Renders from src/data/sources.json and nothing else. It ships empty, so a site
+// whose words are its own renders nothing here; create mode fills it when a
+// brief arrives carrying sourced content, and then every page gets the block,
+// because the layout renders it rather than each page remembering to.
+//
+// It names what the content carried and states what it did not. The content this
+// was written against supplies work titles and a count of the works a page drew
+// on — no author, no licence, no link per work. Inferring an author from a title
+// would invent the one thing a credit block exists to state, so the gap is
+// printed instead. A block that looks complete and is not is the only version of
+// this that can mislead the reader.
+//
+// `content: sources:credited` fails the audit when this file names works and the
+// built HTML does not, which is what stops the block being dropped for space.
+import sourcesJson from '../data/sources.json';
+
+type Work = { title: string; author?: string | null; licence?: string | null; url?: string | null };
+const sources = sourcesJson as { works?: Work[]; note?: string | null; licence?: string | null };
+
+const works = (sources.works ?? []).filter((w) => w && typeof w.title === 'string' && w.title.length > 0);
+---
+{works.length > 0 && (
+  <section class="sources">
+    <h2>Where this comes from</h2>
+    <ul>
+      {works.map((work) => (
+        <li>
+          {work.url ? <a href={work.url}>{work.title}</a> : <span>{work.title}</span>}
+          {work.author && <span> — {work.author}</span>}
+          {work.licence && <span> · {work.licence}</span>}
+        </li>
+      ))}
+    </ul>
+    {sources.note && <p class="muted">{sources.note}</p>}
+    {sources.licence && <p class="muted">{sources.licence}</p>}
+  </section>
+)}
