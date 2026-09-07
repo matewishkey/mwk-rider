@@ -9,7 +9,7 @@
 # `docs/sources.json` records each page's printed "Last updated" date and the
 # date we read it. This job re-reads them weekly and opens an issue when one has
 # moved, naming the rules that rest on it, so a human re-reads that one page
-# rather than all sixteen. Nothing here decides WHAT changed: a diff of Google's
+# rather than all of them. Nothing here decides WHAT changed: a diff of Google's
 # prose is not a thing a script should judge.
 #
 # It is deliberately NOT part of the test gate. A PR must not go red because

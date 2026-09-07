@@ -40,7 +40,16 @@ This repo is **mwk-rider**: a Claude Code plugin whose two mode commands (`/mwk-
 - **This repo is a validator and nothing upstream of one.** It checks sites and scaffolds a compliant one. Which pages a site should have is an input that arrives as an issue or a request; where that input was worked out is not this repo's concern, and nothing here should name or depend on it.
 - **Practice ⇒ check (the `BEST-PRACTICES.md` contract).** `BEST-PRACTICES.md` is the *why* behind every check and a living practice↔check registry. Every best practice there has an enforcing check in `tools/checks/*`; a practice with no check is a tracked *gap*, not a practice yet. Adding one = understand the integration (context7) → write the why in `BEST-PRACTICES.md` → bake the check → verify on the fixture (stays `0 🔧`) + a real site → ship. Keep `BEST-PRACTICES.md` § Gaps current.
 
-  **Half of this is enforced now** (2026-09-05): 105 of the 117 practice bullets name their check with a `→ \`domain: rule\`` arrow, and `tools/test.mjs` asserts every id named that way exists in the catalogue — so a renamed or deleted check breaks the build instead of quietly orphaning a practice. The other half stays prose on purpose. Requiring an arrow on all 117 would be wrong: the 12 without one are explanatory notes ("comments are blanked before matching", "a finding that could not have gone the other way is not a finding"), not practices. And requiring every rule to be named by id would force 66 more id mentions into a document whose job is the *why*, turning a narrative into an index. `--rules --json` is already the index.
+  **Half of this is enforced, and the half is deliberate.** Most practice bullets
+  name their check with a `→ \`domain: rule\`` arrow, and `tools/test.mjs` asserts
+  every id named that way exists in the catalogue — so a renamed or deleted check
+  breaks the build instead of quietly orphaning a practice. The rest stays prose
+  on purpose: the bullets without an arrow are explanatory notes ("comments are
+  blanked before matching", "a finding that could not have gone the other way is
+  not a finding"), not practices, and requiring an id on every rule would turn a
+  document whose job is the *why* into an index. `--rules --json` is already the
+  index. **The counts that used to sit here are gone** — they were four numbers
+  no test pinned, and all four had drifted from the file they described.
 - **A rule that encodes Google's behaviour names the page and the date it was
   read.** `docs/sources.json` is the record: nineteen Search Central pages, each
   with the `Last updated` date printed on it, the date we read it, and the rule

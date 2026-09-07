@@ -252,7 +252,10 @@ tools/
   checks/{modules,seo,images,perf,data,analytics,content,live,lighthouse,browser}.mjs
   lib/{project,reporter,policy,rules,cf-image,html,css-flow,dist,headers,jsonld,
        image-size,src-scan,untrusted,analytics-signals,search-engines,embed-hosts,
-       fonts-config,config-string,remedy,fixer}.mjs
+       fonts-config,config-string,remedy,fixer,report-html,text,walk}.mjs
+docs/sources.json            every Google page a rule rests on, its printed date, and
+                             the rules resting on it
+scripts/google-sources.mjs   re-reads them; a weekly workflow files an issue when one moved
 examples/starter/            the reference site: single-locale, compliant under
                              --strict, and what create mode copies
 examples/_fixture-i18n/      a compliant multi-locale Astro site — the harder

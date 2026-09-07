@@ -23,6 +23,7 @@ node $rider --quiet    # hide ✅ lines; findings, 💡 and ⏭ still print
 node $rider --verbose  # show ✅ even when piped or under $CI
 node $rider --dry-run  # the exact changes --fix would make; writes nothing
 node $rider --fix      # apply them, then re-audit to prove each one worked
+node $rider --report audit.html  # also write the run as a shareable HTML page
 node $rider --rules --json  # every rule id, severity, mode and why; runs nothing
 node $rider --help
 ```
