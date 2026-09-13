@@ -20,8 +20,11 @@ not the first-party runner and does not pretend to be: **no ablation arm**, and
 is stricter than a pass rate. `max_turns` is not enforced because this CLI has
 no such flag — `timeout_seconds` is the bound.
 
-The cases stay written against `claude plugin eval`'s schema, so when that lands
-they run there unchanged:
+The cases stay written against `claude plugin eval`'s schema, and **it has landed**
+— `--ablation`, `--runs` and `--eval-dir` all exist as spelled below (checked
+2026-09-13). `evals/run.mjs` is no longer the only way to run these; it stays
+because it is what CI's `--self-test` path uses and because it needs no
+entitlement:
 
 ```bash
 claude plugin eval ~/projects/mwk-rider --ablation none --runs 2 --allow-tools Bash
